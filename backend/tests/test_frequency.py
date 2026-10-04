@@ -124,7 +124,7 @@ def test_frequency_cache_is_reused_until_activities_change(tmp_path, monkeypatch
     first = api.load_frequency(tmp_path, fc)
     assert (tmp_path / "cache" / "frequency.geojson").exists()
 
-    def boom(_):
+    def boom(*_):
         raise AssertionError("recomputed although activities did not change")
 
     monkeypatch.setattr(frequency, "frequency_collection", boom)
@@ -143,3 +143,55 @@ def test_frequency_cache_is_recomputed_when_settings_change(tmp_path, monkeypatc
     api.load_frequency(tmp_path, fc)
     monkeypatch.setattr(frequency, "SIGNATURE", "other settings")
     assert api.load_frequency(tmp_path, fc)["signature"] == "other settings"
+
+
+# --- drawing on OSM ways ---
+
+def way(length_m=1000, north_m=0.0, east_m=0.0, step_m=50.0):
+    """An OSM way as a line (sparse vertices, like OSM)."""
+    return path(length_m, north_m, east_m, step_m)
+
+
+def north_of(feature) -> list[float]:
+    """Offsets (meters, north of LAT0) of a drawn line's vertices."""
+    return [(lat - LAT0) * EARTH_M_PER_DEG_LAT for _, lat in feature["geometry"]["coordinates"]]
+
+
+def test_runs_with_gps_offset_are_drawn_on_the_street_itself():
+    street = way()
+    runs = [activity(i, path(north_m=(-6, 3, 8)[i])) for i in range(3)]
+    fc = frequency_collection({"features": runs}, [(street, ("Rue A", "residential"))])
+    assert fc["features"]
+    assert all(abs(n) < 0.5 for f in fc["features"] for n in north_of(f))  # on the way, not on a GPS line
+    assert {f["properties"]["passes"] for f in fc["features"]} == {3}
+    assert drawn_m(fc) == pytest.approx(1000, abs=30)  # the whole street, without gaps
+
+
+def test_sidewalk_like_path_beside_the_street_is_not_drawn_twice():
+    road, footway = way(), way(north_m=8)
+    runs = [activity(i, path(north_m=1)) for i in range(2)]
+    fc = frequency_collection({"features": runs}, [(road, ("Rue A", "residential")), (footway, None)])
+    assert drawn_m(fc) == pytest.approx(1000, abs=60)
+
+
+def test_crossed_street_is_not_drawn_but_the_street_run_along_is_whole():
+    along = way()
+    across = [[LON0 + 500 / GRID.kx, LAT0 + (i * 50 - 500) / EARTH_M_PER_DEG_LAT] for i in range(21)]
+    fc = frequency_collection({"features": [activity(0, path(north_m=4))]}, [(along, ("Rue A", "residential")), (across, ("Rue B", "residential"))])
+    assert drawn_m(fc) == pytest.approx(1000, abs=60)
+    assert all(abs(n) < 0.5 for f in fc["features"] for n in north_of(f))
+
+
+def test_both_carriageways_of_an_avenue_are_drawn():
+    north, south = way(north_m=10), way(north_m=-10)
+    runs = [activity(0, path(north_m=9)), activity(1, path(north_m=-9))]
+    key = ("Avenue C", "tertiary")
+    fc = frequency_collection({"features": runs}, [(north, key), (south, key)])
+    assert drawn_m(fc) == pytest.approx(2000, abs=100)
+
+
+def test_tracks_off_any_osm_way_are_drawn_themselves():
+    street = way(500)  # mapped for the first half only
+    fc = frequency_collection({"features": [activity(0, path(1000, north_m=3))]}, [(street, ("Rue A", "residential"))])
+    assert drawn_m(fc) == pytest.approx(1000, abs=80)
+    assert max(c[0] for f in fc["features"] for c in f["geometry"]["coordinates"]) == pytest.approx(path(1000)[-1][0], abs=1e-5)

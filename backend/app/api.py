@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -22,6 +23,7 @@ from .ingest.pipeline import ingest
 from .ingest.privacy import DEFAULT_TRIM_M
 from .ingest.simplify import simplify
 from .routing import Preferences, RoutingError, RoutingService
+from .routing.osm import TILE_DEG, load_cached_tiles, tile_path
 from .routing.elevation import Dem
 
 DATA_DIR = Path(os.environ.get("TRAILMAP_DATA", Path(__file__).parents[2] / "data"))
@@ -75,14 +77,24 @@ def load_cached(data_dir: Path, force: bool = False) -> dict:
 
 
 def load_frequency(data_dir: Path, fc: dict, force: bool = False) -> dict:
-    """Pass counts of the tracks, cached in data/cache/ until the activities cache changes."""
+    """Pass counts drawn on the OSM ways, cached in data/cache/.
+
+    Recomputed when the activities cache changes, when the algorithm settings change,
+    or when more OSM tiles around the tracks have been downloaded since.
+    """
     activities = data_dir / "cache" / "activities.geojson"
     cache = data_dir / "cache" / "frequency.geojson"
+    tiles = sorted(
+        {(math.floor(lat / TILE_DEG), math.floor(lon / TILE_DEG)) for f in fc["features"] for line in f["geometry"]["coordinates"] for lon, lat in line}
+    )
+    osm_dir = data_dir / "osm"
+    osm_key = " ".join(f"{i},{j}" for i, j in tiles if tile_path((i, j), osm_dir).exists())
     if not force and cache.exists() and activities.exists() and cache.stat().st_mtime >= activities.stat().st_mtime:
         cached = json.loads(cache.read_text())
-        if cached.get("signature") == frequency.SIGNATURE:
+        if cached.get("signature") == frequency.SIGNATURE and cached.get("osm") == osm_key:
             return cached
-    out = frequency.frequency_collection(fc)
+    ways = frequency.osm_lines(load_cached_tiles(tiles, osm_dir)) if osm_key else None
+    out = frequency.frequency_collection(fc, ways, osm_key)
     cache.parent.mkdir(exist_ok=True)
     cache.write_text(json.dumps(out))
     return out
@@ -99,7 +111,8 @@ async def lifespan(_: FastAPI):
     state["frequency"] = load_frequency(DATA_DIR, state["activities"])
     state["routing"] = routing_service(state["activities"])
     if PREFETCH_OSM:
-        state["routing"].start_prefetch()
+        # New OSM tiles let more of the tracks be drawn on the streets themselves.
+        state["routing"].start_prefetch(on_done=lambda: state.update(frequency=load_frequency(DATA_DIR, state["activities"])))
     yield
 
 

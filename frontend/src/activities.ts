@@ -60,8 +60,15 @@ export class ActivitiesView {
         layout: { "line-join": "round", "line-cap": "round", "line-sort-key": ["get", "passes"] },
         paint: {
           "line-color": stepBy((s) => s.color) as never,
-          // Thinner when zoomed out, so busy areas stay readable.
-          "line-width": ["interpolate", ["linear"], ["zoom"], 10, ["*", 0.6, stepBy((s) => s.width)], 16, ["*", 1.4, stepBy((s) => s.width)]] as never,
+          // Thinner when zoomed out, so busy areas stay readable; zoomed in, as wide as the street.
+          "line-width": [
+            "interpolate", ["linear"], ["zoom"],
+            10, ["*", 0.5, stepBy((s) => s.width)],
+            13, ["*", 0.9, stepBy((s) => s.width)],
+            15, ["*", 1.6, stepBy((s) => s.width)],
+            17, ["*", 3, stepBy((s) => s.width)],
+            19, ["*", 6, stepBy((s) => s.width)],
+          ] as never,
         },
       });
       this.legend = new FrequencyLegend(freq.max_passes);

@@ -36,21 +36,24 @@ class RoutingService:
         self._requests_downloading = 0  # prefetch yields Overpass slots to user requests
         self._idle = threading.Condition()
 
-    def start_prefetch(self) -> None:
-        """Download, in the background, the OSM tiles around where the user runs."""
+    def start_prefetch(self, on_done=None) -> None:
+        """Download, in the background, the OSM tiles around where the user runs.
+
+        `on_done()` is called from the download thread once it is over, if tiles were downloaded.
+        """
         if self._prefetching:
             return
         self._prefetching = True
 
         def run() -> None:
-            failed = 0
+            failed = downloaded = 0
             try:
                 # Small batches so progress is visible and a request can slip its own tiles in.
                 for i in range(0, len(self.prefetch_tiles), 2):
                     with self._idle:
                         self._idle.wait_for(lambda: self._requests_downloading == 0)
                     try:
-                        download_missing(self.prefetch_tiles[i : i + 2], self.osm_dir)
+                        downloaded += download_missing(self.prefetch_tiles[i : i + 2], self.osm_dir)
                     except Exception as e:  # noqa: BLE001 - skip the tile, it will load on demand
                         failed += 1
                         log.warning("OSM prefetch: tiles skipped: %s", e)
@@ -58,6 +61,11 @@ class RoutingService:
                     self.prefetch_error = f"{failed} zone(s) non téléchargée(s), elles le seront à la demande"
             finally:
                 self._prefetching = False
+            if downloaded and on_done is not None:
+                try:
+                    on_done()
+                except Exception:  # noqa: BLE001 - a failed refresh must not break the prefetch thread
+                    log.exception("after OSM prefetch")
 
         threading.Thread(target=run, name="osm-prefetch", daemon=True).start()
 

@@ -71,6 +71,11 @@ def load_tiles(tiles: list[tuple[int, int]], cache_dir: Path) -> OsmData:
     return OsmData(nodes, list(ways.values()))
 
 
+def load_cached_tiles(tiles: list[tuple[int, int]], cache_dir: Path) -> OsmData:
+    """Like load_tiles, from the cache only: tiles not downloaded yet are left out."""
+    return load_tiles([t for t in tiles if tile_path(t, cache_dir).exists()], cache_dir)
+
+
 def _tile(tile: tuple[int, int], cache_dir: Path) -> dict:
     path = tile_path(tile, cache_dir)
     if path.exists():

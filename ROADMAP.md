@@ -106,6 +106,25 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 - Résultat sur les vraies données : 817 tronçons, 0,3 Mo (contre 3 950 et 1,3 Mo), 2,7 s de calcul.
 - 42 tests OK, 1 ignoré.
 
+### 2026-10-04 — Fréquentation dessinée sur les rues et chemins OSM
+- Le tracé « une trace par chemin » laissait de grandes coupures et ne suivait pas les rues.
+  Le trait est maintenant la rue / le chemin OpenStreetMap lui-même (tuiles déjà en cache pour le routage) :
+  - les voies OSM sont découpées en portions de ~25–50 m ; une sortie compte un passage sur une
+    portion si sa trace (tolérance 12–24 m) en suit au moins 60 % (la croiser ne compte pas) ;
+  - trottoirs et passages piétons cartographiés à part (`footway=sidewalk/crossing`) ignorés :
+    la route porte le trait ;
+  - dédoublonnage seulement entre voies **parallèles** à moins de ~20 m (on garde celle où tombent
+    les points GPS) ; les rues qui se croisent ne se masquent jamais ; les deux chaussées d'une
+    même avenue sont toutes deux dessinées ;
+  - petite portion sans passage au milieu d'une rue fréquentée comblée ; débuts de rues
+    adjacentes (« moustaches ») retirés ;
+  - là où aucune voie OSM n'explique la trace (zone pas encore téléchargée, chemin absent d'OSM),
+    la trace elle-même est dessinée, une fois par chemin.
+- Recalcul automatique quand de nouvelles tuiles OSM arrivent (fin du pré-téléchargement, et au
+  démarrage si la liste des tuiles a changé). 5–6 s de calcul, ~1,2 Mo.
+- Traits plus larges aux zooms rapprochés pour couvrir la largeur de la rue.
+- 47 tests OK, 1 ignoré (5 nouveaux sur le dessin OSM).
+
 ---
 
 ## État au 2026-10-04
@@ -119,9 +138,9 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 2. **Performances** : encore ~7 s pour 20 km + tranche de D+ (132 recherches A*). Pistes : un seul
    Dijkstra depuis le départ partagé entre candidats, ou GraphHopper. Regarder les erreurs
    réseau Overpass (« Cannot assign requested address », IPv6 ?).
-3. **Fréquentation** : à refaire sur les tronçons OSM après le map-matching (étape 2) : le trait
-   suit aujourd'hui une trace GPS (pas l'axe exact du chemin), quelques coupures subsistent aux
-   carrefours, et deux chemins parallèles à moins de ~30 m sont fusionnés en un seul trait.
+3. **Fréquentation** : quelques coupures courtes subsistent dans les carrefours complexes ; deux voies
+   parallèles de noms différents à moins de ~20 m ne sont dessinées qu'une fois. À reprendre avec le
+   vrai map-matching (étape 2), qui pourra réutiliser le comptage par portion de voie OSM.
 4. **Profil altimétrique des sorties passées** dans « Mes sorties » (seul le D+ montre est affiché).
 5. **Étape 2 — map-matching** des traces sur les tronçons OSM (GraphHopper en Docker ou moteur Python).
 6. **Étape 3 — notation des tronçons** : modèle de données (PostGIS), API, interface de notation.
