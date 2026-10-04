@@ -49,10 +49,12 @@ def test_strava_archive_filters_runs(tmp_path: Path):
         "1,x,Sortie trail,Trail Run,activities/1.gpx\n"
         "2,x,Vélo,Ride,activities/2.gpx\n"
         "3,x,Tapis,Run,\n"
+        "4,x,Rando,Randonnée,activities/2.gpx\n"
     )
     acts = list(iter_strava_archive(tmp_path))
-    assert len(acts) == 1
+    assert len(acts) == 2
     assert acts[0].sport == "trail_run" and acts[0].source == "strava:1"
+    assert acts[1].sport == "hike" and acts[1].source == "strava:4"
 
 
 SAMPLE_FIT = Path(__file__).parents[2] / "data" / "raw" / "PollionnayTrail20261003154439.fit"

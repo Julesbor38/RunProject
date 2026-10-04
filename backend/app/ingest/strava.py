@@ -8,11 +8,12 @@ from typing import Iterator
 from .models import Activity
 from .parsers import parse_file
 
-RUN_TYPES = {"run", "trail run", "course à pied", "trail", "course"}
+HIKE_TYPES = {"hike", "randonnée"}
+ACTIVITY_TYPES = {"run", "trail run", "course à pied", "trail", "course"} | HIKE_TYPES
 
 
-def iter_strava_archive(root: str | Path, types: set[str] = RUN_TYPES) -> Iterator[Activity | Exception]:
-    """Yield parsed running activities. Errors are yielded (not raised) so one bad file doesn't stop the import."""
+def iter_strava_archive(root: str | Path, types: set[str] = ACTIVITY_TYPES) -> Iterator[Activity | Exception]:
+    """Yield parsed running and hiking activities. Errors are yielded (not raised) so one bad file doesn't stop the import."""
     root = Path(root)
     with open(root / "activities.csv", newline="", encoding="utf-8") as f:
         rows = list(csv.reader(f))
@@ -30,7 +31,10 @@ def iter_strava_archive(root: str | Path, types: set[str] = RUN_TYPES) -> Iterat
             continue
         act.source = f"strava:{row[col['id']]}"
         act.name = row[col["name"]] or act.name
-        act.sport = "trail_run" if "trail" in atype else (act.sport or "run")
+        if atype in HIKE_TYPES:
+            act.sport = "hike"
+        else:
+            act.sport = "trail_run" if "trail" in atype else (act.sport or "run")
         yield act
 
 

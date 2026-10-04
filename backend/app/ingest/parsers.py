@@ -46,6 +46,8 @@ def _normalize_sport(sport: str | None, sub_sport: str | None = None) -> str | N
         return "trail_run"
     if s in ("running", "run", "1"):
         return "run"
+    if s in ("hiking", "hike"):
+        return "hike"
     return s or None
 
 

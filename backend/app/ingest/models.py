@@ -52,15 +52,15 @@ class Activity:
         times = [p.time for p in self.points if p.time]
         return (times[-1] - times[0]).total_seconds() if len(times) >= 2 else None
 
-    def to_geojson(self) -> dict:
+    def to_geojson(self, segments: list[list[TrackPoint]] | None = None) -> dict:
+        """Feature with the full track, or a MultiLineString of `segments` (e.g. privacy-masked)."""
+        if segments is None:
+            geometry = {"type": "LineString", "coordinates": _coords(self.points)}
+        else:
+            geometry = {"type": "MultiLineString", "coordinates": [_coords(s) for s in segments]}
         return {
             "type": "Feature",
-            "geometry": {
-                "type": "LineString",
-                "coordinates": [
-                    [p.lon, p.lat] + ([p.ele] if p.ele is not None else []) for p in self.points
-                ],
-            },
+            "geometry": geometry,
             "properties": {
                 "source": self.source,
                 "sport": self.sport,
@@ -70,6 +70,10 @@ class Activity:
                 "ascent_m": round(self.ascent_m),
             },
         }
+
+
+def _coords(points: list[TrackPoint]) -> list[list[float]]:
+    return [[p.lon, p.lat] + ([p.ele] if p.ele is not None else []) for p in points]
 
 
 def haversine(a: TrackPoint, b: TrackPoint) -> float:

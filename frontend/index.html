@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Trail Map</title>
+  </head>
+  <body>
+    <div id="map"></div>
+
+    <button id="panel-toggle" class="fab" aria-label="Afficher le menu" hidden>☰</button>
+
+    <aside id="panel">
+      <header class="panel-head">
+        <div class="brand">
+          <span class="logo"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M2 20 9 8l4 6 3-4 6 10z" fill="currentColor"/></svg></span>
+          <div>
+            <h1>Trail Map</h1>
+            <p id="summary" class="muted">Chargement…</p>
+          </div>
+        </div>
+        <button id="panel-close" class="icon-btn" aria-label="Replier le menu">«</button>
+      </header>
+
+      <nav class="tabs" role="tablist">
+        <button role="tab" data-tab="route" aria-selected="true">Itinéraire</button>
+        <button role="tab" data-tab="activities" aria-selected="false">Mes sorties</button>
+      </nav>
+
+      <section id="tab-route" class="tab-body">
+        <div class="segmented" id="mode">
+          <button data-mode="loop" class="on">Boucle</button>
+          <button data-mode="oneway">Aller simple</button>
+        </div>
+
+        <div class="points">
+          <div class="point">
+            <span class="pin start">A</span>
+            <span id="start-label" class="muted">Départ</span>
+          </div>
+          <div class="point-actions">
+            <button id="place-start" class="secondary">📍 Placer sur la carte</button>
+            <button id="locate" class="secondary">◎ Ma position</button>
+          </div>
+          <div id="end-row" hidden>
+            <div class="point">
+              <span class="pin end">B</span>
+              <span id="end-label" class="muted">Arrivée</span>
+            </div>
+            <div class="point-actions">
+              <button id="place-end" class="secondary">📍 Placer l'arrivée sur la carte</button>
+            </div>
+          </div>
+        </div>
+
+        <label class="field" id="distance-field">
+          <span class="field-head">Distance <strong id="distance-value">10 km</strong></span>
+          <input type="range" id="distance" min="2" max="42" step="1" value="10" />
+        </label>
+
+        <div class="field" id="ascent-field">
+          <span class="field-head">Dénivelé positif <strong id="ascent-value">Indifférent</strong></span>
+          <div class="presets" id="ascent-presets"></div>
+          <div class="range-inputs" id="ascent-custom" hidden>
+            <label>entre <input type="number" id="ascent-min" min="0" step="10" inputmode="numeric" /> m</label>
+            <label>et <input type="number" id="ascent-max" min="0" step="10" inputmode="numeric" /> m</label>
+          </div>
+        </div>
+
+        <h2>Mes exigences</h2>
+        <div class="presets" id="presets"></div>
+        <div id="prefs"></div>
+
+        <button id="generate" class="primary">Générer l'itinéraire</button>
+        <p id="route-status" class="status" hidden></p>
+
+        <div id="results"></div>
+
+        <p class="muted small note">
+          Plaisir, sécurité, abri, entretien et fréquentation arriveront avec la notation des tronçons.
+          Éclairage estimé d'après OpenStreetMap quand il n'est pas renseigné.
+        </p>
+      </section>
+
+      <section id="tab-activities" class="tab-body" hidden>
+        <div id="filters"></div>
+        <ul id="list"></ul>
+      </section>
+
+      <footer class="panel-foot">
+        <label class="switch"><input type="checkbox" id="show-tracks" checked /> Afficher mes traces</label>
+        <div id="osm-status" class="osm-status" hidden>
+          <span id="osm-status-text"></span>
+          <div class="track"><div id="osm-status-bar"></div></div>
+        </div>
+      </footer>
+    </aside>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
