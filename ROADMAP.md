@@ -144,10 +144,29 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
   traces (surtout des zones dont les tuiles OSM ne sont pas encore téléchargées). ~9 s de calcul.
 - 50 tests OK, 1 ignoré.
 
+### 2026-10-04 — Fréquentation : lignes complètes, plus de gribouillage
+- Il restait des coupures, des rues jamais courues dessinées (barreaux entre deux rues parallèles
+  courues, ex. Vaise) et des traits GPS hors des rues. Mesuré puis corrigé jusqu'à disparition :
+  - **direction** : une sortie ne compte sur une portion de voie que si sa trace y va dans le même
+    sens (±34°) ; une rue perpendiculaire près d'un carrefour ne compte plus (cause des barreaux) ;
+  - **traces hors OSM** : là où OSM est connu, un morceau de trace sans voie correspondante n'est
+    dessiné que s'il fait ≥ 300 m, ne revient pas près de son départ (< 800 m) et passe surtout à
+    plus de ~30 m de toute voie (vrai sentier non cartographié) ; sinon c'est une erreur GPS ;
+  - **culs-de-sac peu utilisés** (< 200 m, 4 fois moins fréquentés que la rue qu'ils quittent) retirés ;
+  - **raccords** : une extrémité de trait qui s'arrête à moins de 25 m d'un autre trait y est reliée ;
+    comblement des trous aussi à travers le réseau (virages), pas seulement en ligne droite ;
+  - **toutes les zones traversées** par une trace sont maintenant pré-téléchargées (avant : seulement
+    celles courues 2 fois ou plus ; 15 zones manquaient pour toujours).
+- Résultat : 33 coupures (2 388 au départ), 541 km dessinés sur les rues, 74 km d'après les traces
+  (presque tous dans des zones OSM pas encore téléchargées, qui basculeront sur les rues).
+- Essayé puis retiré : suppression des petites boucles redondantes (ouvrait des coupures sur de vraies rues).
+- 53 tests OK, 1 ignoré.
+
 ---
 
 ## État au 2026-10-04
-- Pré-téléchargement OSM : 65 / 161 zones en cache (il reprend au lancement de l'API).
+- Pré-téléchargement OSM : 74 / 176 zones en cache (il reprend au lancement de l'API ; la carte de
+  fréquentation se recalcule quand il se termine).
   Overpass renvoie souvent des erreurs réseau (« Cannot assign requested address ») sur ce PC.
 - Rien n'utilise encore PostGIS ni GraphHopper.
 
@@ -157,9 +176,9 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 2. **Performances** : encore ~7 s pour 20 km + tranche de D+ (132 recherches A*). Pistes : un seul
    Dijkstra depuis le départ partagé entre candidats, ou GraphHopper. Regarder les erreurs
    réseau Overpass (« Cannot assign requested address », IPv6 ?).
-3. **Fréquentation** : quelques petits artefacts dans les carrefours complexes ; les chemins qui
-   aboutissent sur un trottoir cartographié s'arrêtent à quelques mètres de la route. À reprendre avec
-   le vrai map-matching (étape 2), qui pourra réutiliser le comptage par portion de voie OSM.
+3. **Fréquentation** : quelques petits détails dans les carrefours complexes (géométrie OSM réelle) ;
+   à vérifier quand toutes les zones OSM seront téléchargées. Le comptage par portion de voie OSM
+   (avec direction) est une base pour le map-matching de l'étape 2.
 4. **Profil altimétrique des sorties passées** dans « Mes sorties » (seul le D+ montre est affiché).
 5. **Étape 2 — map-matching** des traces sur les tronçons OSM (GraphHopper en Docker ou moteur Python).
 6. **Étape 3 — notation des tronçons** : modèle de données (PostGIS), API, interface de notation.

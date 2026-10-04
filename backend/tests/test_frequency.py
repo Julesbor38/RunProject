@@ -222,3 +222,31 @@ def test_side_street_start_is_not_drawn():
     side = [[LON0 + 500 / GRID.kx, LAT0 + i * 30 / EARTH_M_PER_DEG_LAT] for i in range(11)]
     fc = frequency_collection({"features": [activity(0, path(north_m=3))]}, [(main, ("Rue A", "residential")), (side, ("Rue B", "residential"))])
     assert all(abs(n) < 0.5 for f in fc["features"] for n in north_of(f))
+
+
+def test_short_gps_excursion_off_the_streets_is_not_drawn():
+    """One run strays 60 m off the street for ~120 m (GPS error): nothing is drawn off the street."""
+    stray = [[LON0 + x / GRID.kx, LAT0 + (60 if 440 <= x <= 560 else 0) / EARTH_M_PER_DEG_LAT] for x in range(0, 1001, 20)]
+    runs = [activity(0, stray)] + [activity(i, path(north_m=i)) for i in range(1, 4)]
+    fc = frequency_collection({"features": runs}, [(way(), ("Rue A", "residential"))])
+    assert all(abs(n) < 0.5 for f in fc["features"] for n in north_of(f))
+    assert drawn_m(fc) == pytest.approx(1000, abs=30)
+
+
+def test_little_used_dead_end_off_a_busy_street_is_not_drawn():
+    main = way()
+    side = [[LON0 + 500 / GRID.kx, LAT0 + i * 30 / EARTH_M_PER_DEG_LAT] for i in range(5)]  # 120 m dead end
+    runs = [activity(i, path(north_m=i % 3)) for i in range(8)]
+    runs.append(activity(8, path(500) + [list(p) for p in side[1:]]))  # one run went up it
+    fc = frequency_collection({"features": runs}, [(main, ("Rue A", "residential")), (side, None)])
+    assert all(abs(n) < 0.5 for f in fc["features"] for n in north_of(f))
+
+
+
+def test_cross_streets_between_two_run_streets_are_not_drawn():
+    """Runs along two parallel streets 100 m apart: the short streets linking them stay blank."""
+    north, south = way(north_m=100, step_m=50), way(step_m=50)
+    rungs = [([[LON0 + x / GRID.kx, LAT0], [LON0 + x / GRID.kx, LAT0 + 100 / EARTH_M_PER_DEG_LAT]], (f"Rue {x}", "residential")) for x in (200, 400, 600, 800)]
+    runs = [activity(i, path(north_m=100 + i % 3)) for i in range(4)] + [activity(4 + i, path(north_m=i % 3)) for i in range(4)]
+    fc = frequency_collection({"features": runs}, [(north, ("Rue N", "residential")), (south, ("Rue S", "residential"))] + rungs)
+    assert drawn_m(fc) == pytest.approx(2000, abs=60)

@@ -153,7 +153,9 @@ class RoutingService:
 
 
 def home_tiles(tracks: list[list[tuple[float, float]]]) -> list[tuple[int, int]]:
-    """Tiles crossed by at least PREFETCH_MIN_RUNS tracks, plus their neighbours, busiest first."""
+    """Tiles to prefetch: crossed by at least PREFETCH_MIN_RUNS tracks plus their neighbours (routing
+    around home), busiest first, then every other tile a track crossed (drawing the run frequency
+    on the streets needs them)."""
     runs: Counter[tuple[int, int]] = Counter()
     for line in tracks:
         runs.update({(math.floor(lat / TILE_DEG), math.floor(lon / TILE_DEG)) for lon, lat in line})
@@ -163,6 +165,8 @@ def home_tiles(tracks: list[list[tuple[float, float]]]) -> list[tuple[int, int]]
         for di in (-1, 0, 1):
             for dj in (-1, 0, 1):
                 out.setdefault((i + di, j + dj))
+    for t, _ in runs.most_common():
+        out.setdefault(t)
     return list(out)
 
 

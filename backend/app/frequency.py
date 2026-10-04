@@ -19,6 +19,7 @@ never show (OSM pieces only exist where masked tracks went).
 """
 from __future__ import annotations
 
+import heapq
 import math
 from collections import Counter, deque
 from statistics import median
@@ -37,25 +38,31 @@ DRAWN_CELLS = 2
 SELF_LAG = 12  # a piece only hides itself behind its samples this far back (out-and-back legs)
 MIN_GAP = 24  # a shorter run over drawn cells (a crossing: ~60 m of them) does not cut the new line
 MIN_RUN = 12  # a shorter run off drawn cells (GPS wobble beside a path) is not drawn
+OFF_OSM_MIN_M = 300  # where OSM is known, a shorter track part matching no way is a GPS error,
+OFF_OSM_LOOP_M = 800  # and so is a shorter one coming back within OFF_OSM_MIN_M of where it left,
+OFF_OSM_NEAR = 0.5  # or one running this much within ~30 m of known ways (an unmapped trail is not)
+SNAP_M = 25.0  # a line stopping this close to another one is joined to it (mapping or GPS gap)
 JOIN = 6  # drawn runs reach this far into drawn cells, to connect to the existing line
 # OSM ways, in samples along the way:
 CHUNK = 8  # pass counts are evaluated on chunks this long (25-50 m)
+BINS = 8  # track directions are binned by 22.5 deg; a run counts on a way within one bin of its direction
 ALONG = 0.75  # an activity passed along a chunk when its widened cells hold this share of it
 HIDDEN = 0.5  # a chunk this much within a parallel drawn line is a duplicate of it (a parallel path)
 LINKED_M = 40  # ...unless that line is linked to it this close through the network (the same street)
 GAP_M = 150  # undrawn chunks continuing a drawn street on both sides over at most this are drawn
 SMOOTH_M = 150  # the shown pass count is the median along the street this far on both sides
 SPUR_M = 60  # a shorter dangling chunk sticking out of a street at a junction is not drawn
+LOW_SPUR_M = 200  # ...nor a shorter one 4 times less used than the street it leaves
 LEVEL_RUN_M = 200  # along a street, a shorter stretch at another level than both sides takes theirs
 CONTINUES = math.radians(35)  # chunks meeting at this angle from straight continue the same street
 COARSE = 8  # coarse cells (x CELL_M) to skip quickly the ways far from any track
 SPORTS = ("run", "trail_run", "hike")
-VERSION = 15  # bump to invalidate the cache when the algorithm changes
+VERSION = 24  # bump to invalidate the cache when the algorithm changes
 # Cached results are reused only when computed with the very same settings.
 SIGNATURE = (
     f"v{VERSION} cell={CELL_M} sample={SAMPLE_M} smooth={SMOOTH} levels={LEVELS}"
-    f" dedup={DRAWN_CELLS},{SELF_LAG},{MIN_GAP},{MIN_RUN},{JOIN}"
-    f" osm={CHUNK},{ALONG},{HIDDEN},{LINKED_M},{GAP_M},{SMOOTH_M},{SPUR_M},{LEVEL_RUN_M},{CONTINUES:.3f}"
+    f" dedup={DRAWN_CELLS},{SELF_LAG},{MIN_GAP},{MIN_RUN},{JOIN},{OFF_OSM_MIN_M},{OFF_OSM_LOOP_M},{OFF_OSM_NEAR},{SNAP_M}"
+    f" osm={CHUNK},{BINS},{ALONG},{HIDDEN},{LINKED_M},{GAP_M},{SMOOTH_M},{SPUR_M},{LOW_SPUR_M},{LEVEL_RUN_M},{CONTINUES:.3f}"
 )
 
 Line = list[list[float]]  # [[lon, lat], ...]
@@ -263,6 +270,7 @@ class _Chunk:
         self.shown = 0  # pass count shown (smoothed along the street)
         self.fit = fit  # mean count of activities whose GPS points fall right on it
         self.selected = False
+        self.near = 0.0  # share of the chunk close to some track
         self.hidden = False  # a parallel duplicate of a drawn chunk (path beside a street)
         pts = [(lon * grid.kx, lat * EARTH_M_PER_DEG_LAT) for _, _, lon, lat in samples]
         self.length = sum(math.dist(a, b) for a, b in zip(pts, pts[1:]))
@@ -303,8 +311,9 @@ def _split_at_junctions(ways: list[Way]) -> list[Way]:
     return out
 
 
-def _osm_chunks(ways: list[Way], wide: dict, exact: Counter, grid: Grid) -> list[_Chunk]:
-    """The OSM ways near tracks, cut in chunks, with the activities that went along each."""
+def _osm_chunks(ways: list[Way], wide: dict, heading: dict, exact: Counter, grid: Grid) -> list[_Chunk]:
+    """The OSM ways near tracks, cut in chunks, with the activities that went along each: close
+    to most of the chunk, and in its direction (a run along a crossing street does not count)."""
     coarse = widen({(x // COARSE, y // COARSE) for x, y in wide})
     step_m = COARSE * CELL_M / 2
     chunks = []
@@ -326,12 +335,23 @@ def _osm_chunks(ways: list[Way], wide: dict, exact: Counter, grid: Grid) -> list
         bounds = [round(i * (len(samples) - 1) / n_chunks) for i in range(n_chunks + 1)]
         for a, b in zip(bounds, bounds[1:]):
             # Chunks share their end sample, so consecutive ones touch.
-            hits: Counter = Counter()
-            for c in cells[a : b + 1]:
-                hits.update(wide.get(c, ()))
-            along = {act for act, n in hits.items() if n >= ALONG * (b + 1 - a)}
             fit = sum(exact[c] for c in cells[a : b + 1]) / (b + 1 - a)
-            chunks.append(_Chunk(samples[a : b + 1], cells[a : b + 1], key, along, fit, grid))
+            ch = _Chunk(samples[a : b + 1], cells[a : b + 1], key, set(), fit, grid)
+            hits: Counter = Counter()
+            for (x, y), h in zip(ch.cells, ch.headings):
+                b0 = int(h / math.pi * BINS) % BINS
+                ok = {(b0 - 1) % BINS, b0, (b0 + 1) % BINS}
+                hits.update({
+                    code // BINS
+                    for dx in (-1, 0, 1)
+                    for dy in (-1, 0, 1)
+                    for code in heading.get((x + dx, y + dy), ())
+                    if code % BINS in ok
+                })
+            ch.along = {act for act, n in hits.items() if n >= ALONG * len(ch.cells)}
+            ch.passes = len(ch.along)
+            ch.near = sum(c in wide for c in cells[a : b + 1]) / (b + 1 - a)  # share close to a track
+            chunks.append(ch)
     return chunks
 
 
@@ -369,6 +389,33 @@ def _linked(ch: _Chunk, at: dict, within_m: float) -> set[int]:
             if dist + o.length < within_m:
                 frontier.append((o.ends[1 - oe], dist + o.length))
     return seen
+
+
+def _bridge(ch: _Chunk, e: int, at: dict) -> list[_Chunk] | None:
+    """Shortest chain (up to GAP_M) of undrawn chunks near tracks from `ch`'s end `e` to a drawn chunk."""
+    start = ch.ends[e]
+    best = {start: 0.0}
+    prev: dict = {}
+    heap = [(0.0, start)]
+    while heap:
+        dist, point = heapq.heappop(heap)
+        if dist > best[point]:
+            continue
+        if point != start and any(o.selected for o, _ in at[point]):
+            path = []
+            while point != start:
+                g, point = prev[point]
+                path.append(g)
+            return path
+        for g, ge in at[point]:
+            if g.selected or g.hidden or g.near < ALONG:
+                continue
+            nxt, d = g.ends[1 - ge], dist + g.length
+            if d <= GAP_M and d < best.get(nxt, math.inf):
+                best[nxt] = d
+                prev[nxt] = (g, point)
+                heapq.heappush(heap, (d, nxt))
+    return None
 
 
 def _select(chunks: list[_Chunk], grid: Grid) -> None:
@@ -412,6 +459,16 @@ def _select(chunks: list[_Chunk], grid: Grid) -> None:
                     g.selected = True
                     g.along = (ch.along & step[0].along) or (ch.along | step[0].along)
                     g.passes = min(ch.passes, step[0].passes)
+    # ...and, from a line stopping short, the shortest way on to another drawn line through ways a
+    # track went close to (the run turned there, its GPS too far for the way to count).
+    for ch in [c for c in chunks if c.selected]:
+        for e in (0, 1):
+            if any(o.selected for o, _ in at[ch.ends[e]] if o is not ch):
+                continue  # not a free end
+            path = _bridge(ch, e, at)
+            for g in path or ():
+                g.selected = True
+                g.along, g.passes = ch.along, ch.passes
     # 3. Short branches: from a free end to the first junction, under SPUR_M (a side street's first
     # meters, junction bits), or short pieces lying alone (a track merely brushing a way).
     def selected_at(point) -> list:
@@ -424,13 +481,16 @@ def _select(chunks: list[_Chunk], grid: Grid) -> None:
             branch, length, point = [ch], ch.length, ch.ends[1 - e]
             while True:
                 nxt = [(o, oe) for o, oe in selected_at(point) if o is not branch[-1]]
-                if len(nxt) != 1 or length >= SPUR_M:
+                if len(nxt) != 1 or length >= LOW_SPUR_M:
                     break  # a junction (or a free end) reached, or long enough to be a real line
                 o, oe = nxt[0]
                 branch.append(o)
                 length += o.length
                 point = o.ends[1 - oe]
-            if length < SPUR_M:
+            # ...or a little-used dead end off a much busier street: a GPS error, not a path.
+            junction = [o.passes for o, _ in selected_at(point) if o not in branch]
+            stray = len(junction) >= 2 and length < LOW_SPUR_M and 4 * max(b.passes for b in branch) <= max(junction)
+            if length < SPUR_M or stray:
                 for b in branch:
                     b.selected = False
     # 4. Shown count: the median along the street, so the line does not flicker between levels.
@@ -511,6 +571,58 @@ def _merged_lines(chunks: list[_Chunk], at: dict, same_level: bool = True, membe
     return out
 
 
+OSM_AREA_M = 250.0  # cells telling where OSM ways are known (tiles downloaded)
+
+
+def _snap_ends(features: list[dict], grid: Grid) -> list[dict]:
+    """Short connectors from line ends touching nothing to the nearest other line within SNAP_M."""
+    k, ky = grid.kx, EARTH_M_PER_DEG_LAT
+    lines = [[(x * k, y * ky) for x, y in f["geometry"]["coordinates"]] for f in features]
+    index: dict[tuple[int, int], list] = {}
+    for li, line in enumerate(lines):
+        for a, b in zip(line, line[1:]):
+            for gx in range(int(min(a[0], b[0]) // SNAP_M), int(max(a[0], b[0]) // SNAP_M) + 1):
+                for gy in range(int(min(a[1], b[1]) // SNAP_M), int(max(a[1], b[1]) // SNAP_M) + 1):
+                    index.setdefault((gx, gy), []).append((li, a, b))
+
+    def nearest(p, li):
+        best, best_d = None, math.inf
+        gx, gy = int(p[0] // SNAP_M), int(p[1] // SNAP_M)
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for lj, a, b in index.get((gx + dx, gy + dy), ()):
+                    if lj == li:
+                        continue
+                    seg = (b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2 or 1.0
+                    t = max(0.0, min(1.0, ((p[0] - a[0]) * (b[0] - a[0]) + (p[1] - a[1]) * (b[1] - a[1])) / seg))
+                    q = (a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]))
+                    d = math.dist(p, q)
+                    if d < best_d:
+                        best, best_d = q, d
+        return best, best_d
+
+    connectors = []
+    for li, (f, line) in enumerate(zip(features, lines)):
+        for p in (line[0], line[-1]):
+            q, d = nearest(p, li)
+            if q is not None and 1.0 < d <= SNAP_M:
+                connectors.append({
+                    "type": "Feature",
+                    "geometry": {"type": "LineString", "coordinates": [[round(p[0] / k, 6), round(p[1] / ky, 6)], [round(q[0] / k, 6), round(q[1] / ky, 6)]]},
+                    "properties": dict(f["properties"]),
+                })
+    return features + connectors
+
+
+def _length(line: Line, grid: Grid) -> float:
+    return sum(math.hypot((b[0] - a[0]) * grid.kx, (b[1] - a[1]) * EARTH_M_PER_DEG_LAT) for a, b in zip(line, line[1:]))
+
+
+def _in_osm(line: Line, area: set, grid: Grid) -> bool:
+    lon, lat = line[len(line) // 2]
+    return (int(lon * grid.kx // OSM_AREA_M), int(lat * EARTH_M_PER_DEG_LAT // OSM_AREA_M)) in area
+
+
 def frequency_collection(fc: dict, ways: list[Way] | None = None, osm_key: str = "") -> dict:
     """Each street / path once, with its count of distinct activities; busiest drawn last.
 
@@ -523,9 +635,16 @@ def frequency_collection(fc: dict, ways: list[Way] | None = None, osm_key: str =
     counts: Counter = Counter()  # widened cell -> activities
     exact: Counter = Counter()  # cell -> activities whose points fall right in it
     wide: dict[tuple[int, int], list[int]] = {}  # widened cell -> activity indexes
+    heading: dict[tuple[int, int], set[int]] = {}  # cell -> activity * BINS + direction bin there
     for i, f in enumerate(fc["features"]):
-        own = {grid.cell_of(lon, lat) for line in f["geometry"]["coordinates"] for _, _, lon, lat in grid.samples(line)}
-        exact.update(own)
+        own: dict[tuple[int, int], set[int]] = {}
+        for line in f["geometry"]["coordinates"]:
+            samples = grid.samples(line)
+            for (_, _, lon, lat), h in zip(samples, _headings(line, samples, grid) if len(line) > 1 else []):
+                own.setdefault(grid.cell_of(lon, lat), set()).add(int(h / math.pi * BINS) % BINS)
+        exact.update(own.keys())
+        for c, bins in own.items():
+            heading.setdefault(c, set()).update(i * BINS + b for b in bins)
         for c in widen(own):
             wide.setdefault(c, []).append(i)
     counts.update({c: len(acts) for c, acts in wide.items()})
@@ -538,7 +657,8 @@ def frequency_collection(fc: dict, ways: list[Way] | None = None, osm_key: str =
         features.append({"type": "Feature", "geometry": {"type": "LineString", "coordinates": line}, "properties": props})
 
     # 1. OSM ways: each street once (not the path beside it), gaps closed, counts smoothed along it.
-    chunks = _osm_chunks(ways or [], wide, exact, grid)
+    chunks = _osm_chunks(ways or [], wide, heading, exact, grid)
+    osm_near = widen({c for ch in chunks for c in ch.cells}, 2)  # within ~30 m of a known way
     _select(chunks, grid)
     _even_levels(chunks, _network(chunks))
     drawn: Drawn = {}
@@ -551,7 +671,9 @@ def frequency_collection(fc: dict, ways: list[Way] | None = None, osm_key: str =
                 for n in widen([cell]):
                     drawn.setdefault(n, []).append((c.key, h))
 
-    # 2. What no OSM way explains: the tracks themselves, each path once.
+    # 2. What no OSM way explains: the tracks themselves, each path once. Where OSM ways are known
+    # (around them), only long parts: short ones are GPS errors, not unmapped paths.
+    osm_area = widen({(int(lon * grid.kx // OSM_AREA_M), int(lat * EARTH_M_PER_DEG_LAT // OSM_AREA_M)) for way, _ in ways or [] for lon, lat in way}, 2)
     def busyness(line: Line) -> float:
         cells = [grid.cell_of(lon, lat) for _, _, lon, lat in grid.samples(line)]
         return sum(counts[c] for c in cells) / len(cells)
@@ -567,6 +689,14 @@ def frequency_collection(fc: dict, ways: list[Way] | None = None, osm_key: str =
     tracks.sort(key=lambda t: (-busyness(t[1]), -len(t[1])))
     for i, line in tracks:
         for part in undrawn_parts(line, drawn, grid):
+            if _in_osm(part, osm_area, grid):
+                length = _length(part, grid)
+                back = _length([part[0], part[-1]], grid)
+                if length < OFF_OSM_MIN_M or (back < OFF_OSM_MIN_M and length < OFF_OSM_LOOP_M):
+                    continue  # a short excursion off the mapped ways: GPS drift, not a path
+                cells = [grid.cell_of(lon, lat) for _, _, lon, lat in grid.samples(part)]
+                if sum(c in osm_near for c in cells) >= OFF_OSM_NEAR * len(cells):
+                    continue  # amid mapped ways (a town): a GPS error, not an unmapped trail
             for passes, piece in split_by_passes(part, counts, grid):
                 cells = [grid.cell_of(lon, lat) for _, _, lon, lat in grid.samples(piece)]
                 # The activities that went along most of the piece (not just across it).
@@ -574,6 +704,7 @@ def frequency_collection(fc: dict, ways: list[Way] | None = None, osm_key: str =
                 acts = [i] + [a for a, n in hits.most_common() if a != i and n >= ALONG * len(cells)]
                 add(piece, passes, acts, False)
 
+    features = _snap_ends(features, grid)
     features.sort(key=lambda feat: feat["properties"]["passes"])  # busiest drawn last, on top
     return {
         "type": "FeatureCollection",

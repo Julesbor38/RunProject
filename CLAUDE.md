@@ -16,17 +16,18 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   court ou à distance visée), dénivelé (tranche de D+, profil, relief 3D), export GPX,
   bouton « Envoyer vers la montre » (partage du GPX vers l'app COROS, non testé sur téléphone).
 - Prochaine grosse étape : map-matching (étape 2), puis notation des tronçons (étape 3).
-- Tests : 50 OK, 1 ignoré.
+- Tests : 53 OK, 1 ignoré.
 
 ## Architecture
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
   - `app/ingest/` : parsers (FIT/GPX/TCX, archive Strava), clean, dedup, privacy, simplify, pipeline
   - `app/routing/` : moteur d'itinéraires Python (en attendant GraphHopper)
   - `app/frequency.py` : nombre de sorties distinctes par portion de voie OSM (~25–50 m, une sortie
-    compte si sa trace suit 60 % de la portion, tolérance 12–24 m), dessiné sur la voie elle-même ;
+    compte si sa trace suit 75 % de la portion dans le même sens, tolérance 12–24 m), dessiné sur la voie ;
     voies coupées aux carrefours, trottoirs ignorés, choix entre voies parallèles par rue entière,
     trous comblés le long d'une rue, ergots < 60 m retirés, niveau lissé le long de la rue ; repli
-    sur la trace là où aucune voie OSM ne l'explique. Recalculé quand de nouvelles tuiles OSM arrivent
+    sur la trace là où aucune voie OSM ne l'explique (sauf écarts GPS : courts, en boucle, ou en
+    ville) ; extrémités raccordées à < 25 m. Recalculé quand de nouvelles tuiles OSM arrivent
 - frontend/ : TypeScript + Vite + MapLibre GL 6 (PWA à venir), fond OpenFreeMap
   - `main.ts`, `activities.ts` (onglet Mes sorties), `planner.ts` (onglet Itinéraire),
     `profile.ts` (profil altimétrique), `terrain.ts` (relief 3D), `api.ts`, `format.ts`
@@ -36,7 +37,8 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   génération, `Weights`), boucles en triangle, aller simple à distance visée via un détour sur ellipse.
   Critères dérivés des tags OSM (nature, circulation, éclairage estimé, escaliers)
   + "déjà couru" calculé depuis les traces de l'utilisateur.
-  Pré-téléchargement en arrière-plan des tuiles autour des zones courues (161 zones,
+  Pré-téléchargement en arrière-plan des tuiles autour des zones courues et de toutes celles qu'une
+  trace traverse (176 zones,
   GET /api/routing/status), mis en pause quand une génération a besoin de tuiles.
 - Altitude : tuiles DEM Terrarium (AWS, ~±3 m vs IGN RGE ALTI autour de Lyon), z13, cache data/dem/.
   Sert au D+/D- par tronçon et sens, à la tranche de D+ visée (boucles, aller simple à distance) et au relief 3D du front.

@@ -134,8 +134,8 @@ def test_home_tiles_cover_frequent_areas_with_margin():
     often = [[(4.775, 45.765), (4.776, 45.766)]] * 3  # tile (915, 95)
     once = [[(5.5, 45.0)]]
     tiles = home_tiles(often + once)
-    assert len(tiles) == 9 and tiles[0] == (915, 95)
-    assert (900, 110) not in tiles
+    assert len(tiles) == 10 and tiles[0] == (915, 95)
+    assert tiles[-1] == (900, 110)  # crossed once: last, without margin
 
 
 class SlopeDem:
