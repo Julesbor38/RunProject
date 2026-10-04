@@ -56,19 +56,46 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
   https://github.com/Julesbor38/Run-Project-Data.
 - `CLAUDE.md` mis à jour, création de cette feuille de route.
 
+### 2026-10-04 — Nouveau PC, calcul plus rapide, aller simple avec distance, envoi vers la montre
+- Installation sur un nouveau PC : `data/` restauré depuis Run-Project-Data, `.venv` recréé.
+  Node 12 du système trop ancien pour Vite 8 → Node 24 LTS installé dans `~/.local/node`
+  (`export PATH=~/.local/node/bin:$PATH` avant `npm`).
+- Lenteur signalée à Tassin avec « déjà couru » au max : ce curseur n'en était pas la cause.
+  L'attente venait des tuiles OSM pas encore téléchargées et du calcul A* en Python.
+  - Coût des tronçons précalculé une fois par génération (`Weights` : adjacence pondérée,
+    heuristique A* = plus petit coût au mètre du graphe).
+  - Grille de 200 m pour `nearest_node` (avant : parcours de tous les nœuds).
+  - Résultats identiques, 2 à 3× plus rapide : 20 km + tranche de D+ passe de 15 s à 7 s,
+    10 km de 3,3 s à 1,2 s.
+  - Petit changement : la pénalité de réutilisation s'applique après le bonus de montée.
+- Aller simple : choix « Le plus court » ou « Distance visée » (+ tranche de D+).
+  Détour par un point placé sur une ellipse dont A et B sont les foyers (8 angles, taille corrigée
+  une fois), même score que les boucles, jusqu'à 3 propositions. Si la distance visée est plus
+  courte que le trajet direct, on renvoie le direct avec un message.
+  Exemple Tassin → Fourvière (direct 4,2 km) : 12 km visés → 11,9 / 12,9 / 11,9 km, tous dans la tranche.
+- Bouton « ⌚ Envoyer vers la montre » : menu de partage du système avec le GPX (Web Share API),
+  pour l'ouvrir dans l'app COROS. Affiché seulement si le navigateur sait partager un .gpx
+  et en contexte sécurisé (HTTPS ou localhost). Pas encore testé sur téléphone.
+  L'API COROS est réservée aux partenaires, pas d'app COROS pour ordinateur.
+- 31 tests OK, 1 ignoré.
+
 ---
 
 ## État au 2026-10-04
-- Pré-téléchargement OSM : ~54 / 161 zones en cache (il reprend au lancement de l'API).
+- Pré-téléchargement OSM : 65 / 161 zones en cache (il reprend au lancement de l'API).
+  Overpass renvoie souvent des erreurs réseau (« Cannot assign requested address ») sur ce PC.
 - Rien n'utilise encore PostGIS ni GraphHopper.
 
 ## Prochaines tâches
 1. **Corriger les 3 .fit.gz illisibles** (`10708302692`, `10690331142`, `10690331477`) :
    erreur `developer_data_index 0 not defined`, assouplir le parseur FIT.
-2. **Performances en ville** : génération avec tranche de D+ en 4–7 s à Tassin (vs ~1 s à Pollionnay).
+2. **Performances** : encore ~7 s pour 20 km + tranche de D+ (132 recherches A*). Pistes : un seul
+   Dijkstra depuis le départ partagé entre candidats, ou GraphHopper. Regarder les erreurs
+   réseau Overpass (« Cannot assign requested address », IPv6 ?).
 3. **Profil altimétrique des sorties passées** dans « Mes sorties » (seul le D+ montre est affiché).
 4. **Étape 2 — map-matching** des traces sur les tronçons OSM (GraphHopper en Docker ou moteur Python).
 5. **Étape 3 — notation des tronçons** : modèle de données (PostGIS), API, interface de notation.
 6. **Étape 4 — itinéraires pondérés par les notes.**
 7. **Étape 5 — communautaire** : comptes, agrégation, modération.
-8. PWA (installation sur téléphone, hors ligne).
+8. PWA (installation sur téléphone, hors ligne) + accès HTTPS : nécessaire pour tester
+   le bouton « Envoyer vers la montre » sur le téléphone (vérifier qu'Android accepte le partage d'un .gpx).

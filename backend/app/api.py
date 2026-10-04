@@ -115,8 +115,8 @@ class PreferencesIn(BaseModel):
 class RouteRequest(BaseModel):
     start: tuple[float, float]  # (lon, lat)
     end: tuple[float, float] | None = None  # None: loop back to start
-    distance_km: float | None = Field(None, gt=0)
-    ascent_min_m: float | None = Field(None, ge=0)  # wanted D+ range, loops only
+    distance_km: float | None = Field(None, gt=0)  # loop length, or target length A to B (else the best route)
+    ascent_min_m: float | None = Field(None, ge=0)  # wanted D+ range (with distance_km)
     ascent_max_m: float | None = Field(None, ge=0)
     preferences: PreferencesIn = PreferencesIn()
 

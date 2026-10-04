@@ -345,6 +345,12 @@ h2 {
   text-decoration: underline;
 }
 
+.route-card .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
 .field {
   display: flex;
   flex-direction: column;

@@ -2,7 +2,7 @@ import pytest
 
 from app.routing.graph import EARTH_M_PER_DEG_LAT, build_graph, mark_familiar
 from app.routing.osm import OsmData, tiles_for_bbox
-from app.routing.router import Preferences, edge_factor, loop, shortest
+from app.routing.router import Preferences, edge_factor, loop, point_to_point, shortest
 
 LAT0, LON0 = 45.76, 4.78
 STEP = 200 / EARTH_M_PER_DEG_LAT  # 200 m between grid lines
@@ -95,6 +95,32 @@ def test_loop_routes_are_distinct():
     assert len(routes) >= 2
     a, b = ({i for i, _ in r.edges} for r in routes[:2])
     assert a != b
+
+
+def test_one_way_without_distance_is_the_best_route():
+    g = build_graph(grid())
+    routes = point_to_point(g, 303, 707, Preferences())
+    assert len(routes) == 1
+    assert routes[0].stats(g)["distance_m"] == pytest.approx(1600, rel=0.01)  # Manhattan distance
+
+
+def test_one_way_reaches_target_distance_between_both_ends():
+    g = build_graph(grid())
+    routes = point_to_point(g, 303, 707, Preferences(), distance_m=4000)
+    assert len(routes) >= 2
+    for r in routes:
+        coords = r.coords(g)
+        assert coords[0] != coords[-1]
+        assert g.edges[r.edges[0][0]].nodes[-1 if r.edges[0][1] else 0] == 303
+        assert g.edges[r.edges[-1][0]].nodes[0 if r.edges[-1][1] else -1] == 707
+    assert routes[0].stats(g)["distance_m"] == pytest.approx(4000, rel=0.15)
+
+
+def test_one_way_target_shorter_than_direct_route_gives_direct_route():
+    g = build_graph(grid())
+    routes = point_to_point(g, 303, 707, Preferences(), distance_m=1000)
+    assert len(routes) == 1
+    assert routes[0].stats(g)["distance_m"] == pytest.approx(1600, rel=0.01)
 
 
 def test_tiles_cover_bbox():

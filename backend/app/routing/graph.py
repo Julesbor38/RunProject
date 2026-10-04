@@ -13,6 +13,7 @@ from .osm import OsmData
 
 EARTH_M_PER_DEG_LAT = 110_540
 EARTH_M_PER_DEG_LON_EQ = 111_320
+GRID_M = 200.0  # cell size of the junction lookup grid
 
 NATURE_HIGHWAYS = {"path", "track", "bridleway"}
 UNPAVED = {
@@ -61,6 +62,7 @@ class Graph:
     ele: dict[int, float] = field(default_factory=dict)  # node id -> elevation (m), when a DEM was applied
 
     def __post_init__(self) -> None:
+        self._grid: dict[tuple[int, int], list[int]] | None = None  # built on first nearest_node()
         self.m_per_deg_lon = EARTH_M_PER_DEG_LON_EQ * math.cos(math.radians(self.lat0))
 
     def xy(self, node: int) -> tuple[float, float]:
@@ -71,20 +73,30 @@ class Graph:
         return edge.v if edge.u == node else edge.u
 
     def nearest_node(self, lat: float, lon: float, max_m: float = 500.0, penalty=None) -> int | None:
-        """Nearest junction node (brute force: called a few times per request).
+        """Nearest junction node within `max_m`, looked up in a grid of junctions.
 
         `penalty(node) -> meters` is added to the distance, to favour some nodes.
         """
         k = self.m_per_deg_lon
+        if self._grid is None:
+            self._grid = {}
+            for n in self.adj:
+                nlat, nlon = self.coords[n]
+                key = (int(nlon * k // GRID_M), int(nlat * EARTH_M_PER_DEG_LAT // GRID_M))
+                self._grid.setdefault(key, []).append(n)
+        cx, cy = int(lon * k // GRID_M), int(lat * EARTH_M_PER_DEG_LAT // GRID_M)
+        r = int(max_m // GRID_M) + 1
         best, best_d = None, math.inf
-        for n in self.adj:
-            nlat, nlon = self.coords[n]
-            d2 = ((nlat - lat) * EARTH_M_PER_DEG_LAT) ** 2 + ((nlon - lon) * k) ** 2
-            if d2 > max_m**2:
-                continue
-            d = math.sqrt(d2) + (penalty(n) if penalty else 0.0)
-            if d < best_d:
-                best, best_d = n, d
+        for i in range(cx - r, cx + r + 1):
+            for j in range(cy - r, cy + r + 1):
+                for n in self._grid.get((i, j), ()):
+                    nlat, nlon = self.coords[n]
+                    d2 = ((nlat - lat) * EARTH_M_PER_DEG_LAT) ** 2 + ((nlon - lon) * k) ** 2
+                    if d2 > max_m**2:
+                        continue
+                    d = math.sqrt(d2) + (penalty(n) if penalty else 0.0)
+                    if d < best_d:
+                        best, best_d = n, d
         return best
 
 

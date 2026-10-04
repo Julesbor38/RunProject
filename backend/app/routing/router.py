@@ -55,6 +55,9 @@ class Route:
     edges: list[tuple[int, bool]]  # (edge index, reversed)
     cost: float
 
+    def length(self, g: Graph) -> float:
+        return sum(g.edges[i].length_m for i, _ in self.edges)
+
     def coords(self, g: Graph) -> list[list[float]]:
         out: list[list[float]] = []
         for idx, rev in self.edges:
@@ -116,36 +119,56 @@ class Route:
         }
 
 
-def shortest(g: Graph, src: int, dst: int, p: Preferences, penalty: dict[int, float] | None = None) -> Route | None:
+class Weights:
+    """Preference-weighted cost of every edge in both directions, computed once per request.
+
+    `adj[node]` lists (next node, edge index, step cost); `floor` is the lowest cost per
+    meter in the graph, which keeps the A* heuristic admissible and as tight as possible.
+    """
+
+    def __init__(self, g: Graph, p: Preferences):
+        cw = climb_weight(p)
+        self.factor = [edge_factor(e, p) for e in g.edges]
+        self.adj: dict[int, list[tuple[int, int, float]]] = {n: [] for n in g.adj}
+        floor = math.inf
+        for idx, (e, f) in enumerate(zip(g.edges, self.factor)):
+            for a, b, rev in ((e.u, e.v, False), (e.v, e.u, True)):
+                step = e.length_m * f
+                if cw:
+                    step = max(step + cw * e.ascent(rev), MIN_FACTOR * e.length_m)
+                self.adj[a].append((b, idx, step))
+                if e.length_m > 0:
+                    floor = min(floor, step / e.length_m)
+        self.floor = floor if floor < math.inf else MIN_FACTOR
+
+
+def shortest(
+    g: Graph, src: int, dst: int, p: Preferences, penalty: dict[int, float] | None = None, w: Weights | None = None
+) -> Route | None:
     """A* from src to dst with the preference-weighted cost."""
     penalty = penalty or {}
-    cw = climb_weight(p)
-    gx, gy = g.xy(dst)
+    w = w or Weights(g, p)
+    adj, h = w.adj, w.floor
+    k, ky = g.m_per_deg_lon, EARTH_M_PER_DEG_LAT
+    coords = g.coords
+    glat, glon = coords[dst]
+    gx, gy = glon * k, glat * ky
     best = {src: 0.0}
     prev: dict[int, tuple[int, int]] = {}  # node -> (edge index, previous node)
     heap = [(0.0, 0.0, src)]
-    factors: dict[int, float] = {}
     while heap:
         _, cost, node = heapq.heappop(heap)
         if node == dst:
             break
-        if cost > best.get(node, math.inf):
+        if cost > best[node]:
             continue
-        for idx in g.adj.get(node, ()):
-            e = g.edges[idx]
-            f = factors.get(idx)
-            if f is None:
-                f = factors[idx] = edge_factor(e, p)
-            nxt = g.other(e, node)
-            step = e.length_m * f * penalty.get(idx, 1.0)
-            if cw:
-                step = max(step + cw * e.ascent(e.u != node), MIN_FACTOR * e.length_m)
-            c = cost + step
+        for nxt, idx, step in adj[node]:
+            c = cost + (step * penalty[idx] if idx in penalty else step)
             if c < best.get(nxt, math.inf):
                 best[nxt] = c
                 prev[nxt] = (idx, node)
-                x, y = g.xy(nxt)
-                heapq.heappush(heap, (c + MIN_FACTOR * math.hypot(gx - x, gy - y), c, nxt))
+                lat, lon = coords[nxt]
+                heapq.heappush(heap, (c + h * math.hypot(gx - lon * k, gy - lat * ky), c, nxt))
     if dst not in best:
         return None
     edges, node = [], dst
@@ -171,53 +194,119 @@ def loop(
     attempt's length. Best candidates (cost per meter + distance error + distance
     to the wanted ascent range) are returned.
     """
+    lat, lon = g.coords[start]
     candidates: list[tuple[float, Route]] = []
     variants = [(p, EQUILATERAL)]
     if ascent_range is not None and g.ele:
         # The climb weight steers the ascent; another setting and a narrow loop shape widen the
         # spread of ascents (a narrow loop can follow a valley, or climb straight up and back).
-        other = max(-1.0, min(1.0, p.hills + (0.6 if p.hills <= 0.4 else -0.6)))
-        variants += [(Preferences(**{**p.__dict__, "hills": other}), EQUILATERAL), (p, NARROW)]
+        variants += [(_other_hills(p), EQUILATERAL), (p, NARROW)]
+    weights = [Weights(g, prefs) for prefs, _ in variants]
     for b, (vi, (prefs, apex)) in ((b, v) for v in enumerate(variants) for b in range(n_bearings)):
         bearing = 2 * math.pi * (b + vi / len(variants)) / n_bearings  # variants explore offset bearings
+
+        def triangle(side: float) -> Route | None:
+            corners = [_offset(g, lat, lon, side, angle) for angle in (bearing, bearing + apex)]
+            return _route_via(g, start, start, corners, side / 3, prefs, weights[vi])
+
         # Perimeter 2s + 2s.sin(apex/2); roads are ~20 % longer than straight lines.
-        side = distance_m / (1.2 * (2 + 2 * math.sin(apex / 2)))
-        route = None
-        for _ in range(2):
-            route = _triangle(g, start, bearing, side, prefs, apex)
-            if route is None:
-                break
-            length = sum(g.edges[i].length_m for i, _ in route.edges)
-            if abs(length - distance_m) / distance_m < 0.1:
-                break
-            side *= distance_m / max(length, 1.0)
-        if route is None:
-            continue
-        length = sum(g.edges[i].length_m for i, _ in route.edges)
-        error = abs(length - distance_m) / distance_m
-        score = route.cost / length + 3.0 * error + 2.0 * _repeated_length(g, route.edges) / length
-        if ascent_range is not None and g.ele:
-            score += 4.0 * _range_miss(route.ascent(g)[0], ascent_range)
-        candidates.append((score, route))
+        route = _sized(g, triangle, distance_m / (1.2 * (2 + 2 * math.sin(apex / 2))), distance_m)
+        if route is not None:
+            candidates.append((_score(g, route, distance_m, ascent_range), route))
     candidates.sort(key=lambda c: c[0])
     return _diverse([r for _, r in candidates], g, n_results)
 
 
-def point_to_point(g: Graph, src: int, dst: int, p: Preferences) -> list[Route]:
-    route = shortest(g, src, dst, p)
-    return [route] if route else []
+def point_to_point(
+    g: Graph,
+    src: int,
+    dst: int,
+    p: Preferences,
+    distance_m: float | None = None,
+    ascent_range: tuple[float, float] | None = None,
+    n_results: int = 3,
+    n_angles: int = 8,
+) -> list[Route]:
+    """The best route from src to dst or, given `distance_m`, routes of about that length.
+
+    Longer routes go through one waypoint on an ellipse whose foci are src and dst:
+    any point of it makes a src-waypoint-dst path of the same straight-line length.
+    A target shorter than the direct route yields the direct route alone.
+    """
+    weights = Weights(g, p)
+    direct = shortest(g, src, dst, p, w=weights)
+    if direct is None or not distance_m or direct.length(g) >= distance_m * 0.95:
+        return [direct] if direct else []
+    (lat1, lon1), (lat2, lon2) = g.coords[src], g.coords[dst]
+    k = g.m_per_deg_lon
+    dx, dy = (lon2 - lon1) * k, (lat2 - lat1) * EARTH_M_PER_DEG_LAT
+    c = math.hypot(dx, dy) / 2  # half the focal distance
+    axis = math.atan2(dx, dy)  # bearing from src to dst
+    mid_lat, mid_lon = (lat1 + lat2) / 2, (lon1 + lon2) / 2
+    candidates = [(_score(g, direct, distance_m, ascent_range), direct)]
+    variants = [p] + ([_other_hills(p)] if ascent_range is not None and g.ele else [])
+    all_weights = [weights] + [Weights(g, v) for v in variants[1:]]
+    for a, (vi, prefs) in ((a, v) for v in enumerate(variants) for a in range(n_angles)):
+        # Odd multiples of pi/n: never on the src-dst axis, which would mean running past dst and back.
+        theta = math.pi * (2 * a + 1 + vi) / n_angles
+
+        def via(total: float) -> Route | None:
+            semi_major = max(total / 2, c * 1.05)
+            semi_minor = math.sqrt(semi_major**2 - c**2)
+            along, across = semi_major * math.cos(theta), semi_minor * math.sin(theta)
+            dist = math.hypot(along, across)
+            point = _offset(g, mid_lat, mid_lon, dist, axis + math.atan2(across, along))
+            return _route_via(g, src, dst, [point], max(semi_minor, 300.0) / 2, prefs, all_weights[vi])
+
+        route = _sized(g, via, distance_m / 1.2, distance_m)  # roads are ~20 % longer than straight lines
+        if route is not None:
+            candidates.append((_score(g, route, distance_m, ascent_range), route))
+    candidates.sort(key=lambda c: c[0])
+    return _diverse([r for _, r in candidates], g, n_results)
 
 
-def _triangle(g: Graph, start: int, bearing: float, side: float, p: Preferences, apex: float = math.pi / 3) -> Route | None:
-    lat, lon = g.coords[start]
-    waypoints = []
-    radius = side / 3
+def _other_hills(p: Preferences) -> Preferences:
+    """Another climb setting, to widen the spread of ascents among candidates."""
+    other = max(-1.0, min(1.0, p.hills + (0.6 if p.hills <= 0.4 else -0.6)))
+    return Preferences(**{**p.__dict__, "hills": other})
 
-    z0 = g.ele.get(start)
+
+def _offset(g: Graph, lat: float, lon: float, dist: float, bearing: float) -> tuple[float, float]:
+    return lat + dist * math.cos(bearing) / EARTH_M_PER_DEG_LAT, lon + dist * math.sin(bearing) / g.m_per_deg_lon
+
+
+def _sized(g: Graph, build, size: float, distance_m: float) -> Route | None:
+    """`build(size)`, with the size corrected once from the first attempt's length."""
+    route = build(size)
+    if route is not None and abs(route.length(g) - distance_m) / distance_m >= 0.1:
+        route = build(size * distance_m / max(route.length(g), 1.0)) or route
+    return route
+
+
+def _score(g: Graph, route: Route, distance_m: float, ascent_range: tuple[float, float] | None) -> float:
+    """Lower is better: cost per meter + distance error + repeated parts + miss of the D+ range."""
+    length = max(route.length(g), 1.0)
+    score = route.cost / length + 3.0 * abs(length - distance_m) / distance_m + 2.0 * _repeated_length(g, route.edges) / length
+    if ascent_range is not None and g.ele:
+        score += 4.0 * _range_miss(route.ascent(g)[0], ascent_range)
+    return score
+
+
+def _route_via(
+    g: Graph,
+    src: int,
+    dst: int,
+    points: list[tuple[float, float]],
+    radius: float,
+    p: Preferences,
+    weights: Weights,
+) -> Route | None:
+    """src -> junctions near each (lat, lon) point -> dst, discouraging reuse of earlier legs."""
+    z0 = g.ele.get(src)
 
     def penalty(node: int) -> float:
-        # Pull waypoints onto paths the user likes; they shape the whole loop.
-        best = min(edge_factor(g.edges[i], p) for i in g.adj[node])
+        # Pull waypoints onto paths the user likes; they shape the whole route.
+        best = min(weights.factor[i] for i in g.adj[node])
         out = radius * (best - MIN_FACTOR) / 2
         if z0 is not None and p.hills and node in g.ele:
             # Flat: stay near the start's elevation (valleys, contour lines). Hilly: reach for height.
@@ -225,22 +314,21 @@ def _triangle(g: Graph, start: int, bearing: float, side: float, p: Preferences,
             out += -p.hills * WAYPOINT_DZ_WEIGHT * dz
         return out
 
-    for angle in (bearing, bearing + apex):
-        wlat = lat + side * math.cos(angle) / EARTH_M_PER_DEG_LAT
-        wlon = lon + side * math.sin(angle) / g.m_per_deg_lon
-        w = g.nearest_node(wlat, wlon, max_m=radius, penalty=penalty)
+    waypoints = []
+    for lat, lon in points:
+        w = g.nearest_node(lat, lon, max_m=radius, penalty=penalty)
         if w is None:
             return None
         waypoints.append(w)
     edges: list[tuple[int, bool]] = []
-    cost, penalty = 0.0, {}
-    for a, b in zip([start, *waypoints], [*waypoints, start]):
-        leg = shortest(g, a, b, p, penalty)
+    cost, reuse = 0.0, {}
+    for a, b in zip([src, *waypoints], [*waypoints, dst]):
+        leg = shortest(g, a, b, p, reuse, weights)
         if leg is None:
             return None
         edges += leg.edges
         cost += leg.cost
-        penalty.update((idx, REUSE_PENALTY) for idx, _ in leg.edges)
+        reuse.update((idx, REUSE_PENALTY) for idx, _ in leg.edges)
     return Route(edges, cost)
 
 

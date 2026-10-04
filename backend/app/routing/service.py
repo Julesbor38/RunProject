@@ -78,7 +78,8 @@ class RoutingService:
         end: tuple[float, float] | None = None,
         ascent_range: tuple[float, float] | None = None,
     ) -> dict:
-        """`start`/`end` are (lon, lat). A loop when `end` is None, else a point-to-point route."""
+        """`start`/`end` are (lon, lat). A loop when `end` is None, else a point-to-point route
+        (the best one, or routes of about `distance_m` when given)."""
         if end is None and not distance_m:
             raise RoutingError("distance requise pour une boucle")
         if distance_m and distance_m > MAX_DISTANCE_M:
@@ -93,7 +94,7 @@ class RoutingService:
             dst = g.nearest_node(end[1], end[0])
             if dst is None:
                 raise RoutingError("aucun chemin à moins de 500 m de l'arrivée")
-            routes = point_to_point(g, src, dst, prefs)
+            routes = point_to_point(g, src, dst, prefs, distance_m, ascent_range)
         if not routes:
             raise RoutingError("aucun itinéraire trouvé dans cette zone")
         features = [_feature(r, g, i, ascent_range) for i, r in enumerate(routes)]
@@ -104,7 +105,12 @@ class RoutingService:
         if end is not None:
             lons.append(end[0])
             lats.append(end[1])
-        margin_m = (distance_m / 3 if end is None else 1500) + 1000
+        # Loops reach ~distance/3 from the start; a one-way detour stays within its ellipse
+        # (semi-major axis ~distance/2.4) around the midpoint, so within that from either end.
+        if end is None:
+            margin_m = distance_m / 3 + 1000
+        else:
+            margin_m = max(1500, (distance_m or 0) / 2.4) + 1000
         dlat = margin_m / EARTH_M_PER_DEG_LAT
         dlon = margin_m / (111_320 * math.cos(math.radians(start[1])))
         tiles = tuple(tiles_for_bbox(min(lats) - dlat, min(lons) - dlon, max(lats) + dlat, max(lons) + dlon))

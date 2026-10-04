@@ -11,10 +11,11 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 ## État actuel (2026-10-04)
 - Étape 1 (import) : fonctionnelle. 254 activités (course, trail, randonnée), doublons Strava/Coros fusionnés.
   Reste : 3 .fit.gz Strava illisibles (`developer_data_index 0 not defined`).
-- Carte web : traces, filtres, fiches, générateur d'itinéraires (boucle / aller simple),
-  dénivelé (tranche de D+, profil, relief 3D), export GPX.
+- Carte web : traces, filtres, fiches, générateur d'itinéraires (boucle / aller simple le plus
+  court ou à distance visée), dénivelé (tranche de D+, profil, relief 3D), export GPX,
+  bouton « Envoyer vers la montre » (partage du GPX vers l'app COROS, non testé sur téléphone).
 - Prochaine grosse étape : map-matching (étape 2), puis notation des tronçons (étape 3).
-- Tests : 28 OK, 1 ignoré.
+- Tests : 31 OK, 1 ignoré.
 
 ## Architecture
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
@@ -25,13 +26,14 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
     `profile.ts` (profil altimétrique), `terrain.ts` (relief 3D), `api.ts`, `format.ts`
   - Vite ne pré-empaquette pas MapLibre (sinon le worker est perdu et la carte ne charge pas)
 - Routage actuel : graphe OSM via Overpass (tuiles 0,05° en cache dans data/osm/, plusieurs
-  instances Overpass en secours), A* pondéré par les préférences, boucles en triangle.
+  instances Overpass en secours), A* pondéré par les préférences (coûts précalculés par
+  génération, `Weights`), boucles en triangle, aller simple à distance visée via un détour sur ellipse.
   Critères dérivés des tags OSM (nature, circulation, éclairage estimé, escaliers)
   + "déjà couru" calculé depuis les traces de l'utilisateur.
   Pré-téléchargement en arrière-plan des tuiles autour des zones courues (161 zones,
   GET /api/routing/status), mis en pause quand une génération a besoin de tuiles.
 - Altitude : tuiles DEM Terrarium (AWS, ~±3 m vs IGN RGE ALTI autour de Lyon), z13, cache data/dem/.
-  Sert au D+/D- par tronçon et sens, à la tranche de D+ visée (boucles) et au relief 3D du front.
+  Sert au D+/D- par tronçon et sens, à la tranche de D+ visée (boucles, aller simple à distance) et au relief 3D du front.
 - Cible : routage + map-matching via GraphHopper auto-hébergé (Docker).
 - Les notes seront attachées à des tronçons OSM (après map-matching), pas aux traces brutes.
 
@@ -75,6 +77,8 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 - pytest
 - API : cd backend && uvicorn app.api:app --reload  (port 8000, lit data/raw, cache data/cache/)
 - Front : cd frontend && npm install && npm run dev  (http://localhost:5173, proxy /api -> 8000)
+  Vite 8 demande Node >= 20 ; si le Node système est trop vieux : Node LTS dans ~/.local/node
+  et `export PATH=~/.local/node/bin:$PATH`
 - docker compose up -d db  (PostGIS, pas encore utilisé par l'API)
 
 ## Données

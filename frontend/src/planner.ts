@@ -3,7 +3,7 @@ import type { Map, MapMouseEvent } from "maplibre-gl";
 import { fetchRoutes } from "./api";
 import type { LngLat, Preferences, RouteCollection, RouteFeature } from "./api";
 import { fitTo } from "./activities";
-import { download, km, pct, toGpx } from "./format";
+import { download, km, pct, shareableGpx, shareFile, toGpx } from "./format";
 import { pointAt, renderProfile } from "./profile";
 
 const ROUTE_COLORS = ["#2563eb", "#ea580c", "#db2777"];
@@ -52,6 +52,7 @@ interface Saved {
   prefs: BasePrefs;
   start: LngLat | null;
   ascent?: { mode: AscentMode; min: number; max: number };
+  onewayTarget?: boolean;
 }
 
 /** The "Itinéraire" tab: start/end points, preferences, generated routes. */
@@ -59,6 +60,7 @@ export class Planner {
   active = true;
   private mode: Mode = "loop";
   private distance = 10;
+  private onewayTarget = false; // one-way: aim for `distance` instead of the best direct route
   private prefs: BasePrefs = { ...PRESETS[0].prefs };
   private ascentMode: AscentMode = "any";
   private customAscent: [number, number] = [150, 350];
@@ -77,6 +79,7 @@ export class Planner {
     this.restore();
     this.addLayers();
     this.renderMode();
+    this.renderOnewayLength();
     this.renderDistance();
     this.renderAscent();
     this.renderPresets();
@@ -227,21 +230,24 @@ export class Planner {
     this.updateButton();
     this.status("Calcul en cours… (dans une zone encore jamais utilisée, les chemins OSM sont téléchargés d'abord : jusqu'à une minute)");
     try {
-      const range = this.mode === "loop" ? this.ascentRange() : null;
+      const range = this.withDistance ? this.ascentRange() : null;
       const fc = await fetchRoutes({
         start,
         end,
-        distance_km: this.mode === "loop" ? this.distance : undefined,
+        distance_km: this.withDistance ? this.distance : undefined,
         ascent_min_m: range?.[0],
         ascent_max_m: range && Number.isFinite(range[1]) ? range[1] : undefined,
         preferences: { ...this.prefs, hills: this.hills() },
       });
       this.showRoutes(fc);
       const missed = range && fc.features.every((f) => f.properties.in_ascent_range === false);
+      const direct = this.mode === "oneway" && this.onewayTarget && fc.features.length === 1 ? fc.features[0].properties.distance_m : null;
       this.status(
-        missed
-          ? `Aucune boucle de ${this.distance} km dans la tranche ${rangeText(range)} depuis ce départ : voici les plus proches.`
-          : null,
+        direct !== null
+          ? `Le trajet le plus direct fait déjà ${km(direct)}, au moins les ${this.distance} km visés : voici ce trajet.`
+          : missed
+            ? `Aucun${this.mode === "loop" ? "e boucle" : " itinéraire"} de ${this.distance} km dans la tranche ${rangeText(range)} : voici les plus proches.`
+            : null,
         false,
       );
     } catch (e) {
@@ -295,7 +301,26 @@ export class Planner {
       };
     });
     document.getElementById("end-row")!.hidden = this.mode !== "oneway";
-    document.getElementById("distance-field")!.hidden = this.mode !== "loop";
+    document.getElementById("oneway-length-field")!.hidden = this.mode !== "oneway";
+    document.getElementById("distance-field")!.hidden = !this.withDistance;
+  }
+
+  /** Loops always have a target distance; one-way routes only when asked. */
+  private get withDistance() {
+    return this.mode === "loop" || this.onewayTarget;
+  }
+
+  private renderOnewayLength() {
+    document.querySelectorAll<HTMLButtonElement>("#oneway-length button").forEach((b) => {
+      b.classList.toggle("on", (b.dataset.length === "target") === this.onewayTarget);
+      b.onclick = () => {
+        this.onewayTarget = b.dataset.length === "target";
+        this.renderOnewayLength();
+        this.renderMode();
+        this.renderAscent();
+        this.save();
+      };
+    });
   }
 
   private renderDistance() {
@@ -347,9 +372,9 @@ export class Planner {
     });
     const range = this.ascentRange();
     document.getElementById("ascent-value")!.textContent =
-      this.mode === "oneway" ? (this.ascentMode === "any" ? "Indifférent" : `${ASCENT[this.ascentMode === "custom" ? "rolling" : this.ascentMode].label}`) : range ? rangeText(range) : "Indifférent";
+      !this.withDistance ? (this.ascentMode === "any" ? "Indifférent" : `${ASCENT[this.ascentMode === "custom" ? "rolling" : this.ascentMode].label}`) : range ? rangeText(range) : "Indifférent";
     const custom = document.getElementById("ascent-custom")!;
-    custom.hidden = this.ascentMode !== "custom" || this.mode === "oneway";
+    custom.hidden = this.ascentMode !== "custom" || !this.withDistance;
     const [minInput, maxInput] = ["ascent-min", "ascent-max"].map((id) => document.getElementById(id) as HTMLInputElement);
     minInput.value = String(this.customAscent[0]);
     maxInput.value = String(this.customAscent[1]);
@@ -423,7 +448,7 @@ export class Planner {
       card.innerHTML = `
         <header>
           <span class="swatch"></span>
-          <strong>${this.mode === "loop" ? `Boucle ${String.fromCharCode(65 + r.id)}` : "Itinéraire"}</strong>
+          <strong>${this.mode === "loop" ? "Boucle" : "Itinéraire"}${this.mode === "loop" || this.routes.length > 1 ? ` ${String.fromCharCode(65 + r.id)}` : ""}</strong>
           <span class="dist">${km(p.distance_m)}</span>
         </header>
         <p class="climb">
@@ -439,17 +464,29 @@ export class Planner {
           ${bar("Déjà couru", p.familiar)}
           ${bar("Routes passantes", p.busy_roads, true)}
         </div>
-        <button class="link-btn gpx">⤓ Exporter en GPX</button>`;
+        <div class="actions">
+          <button class="link-btn gpx">⤓ Exporter en GPX</button>
+          <button class="link-btn watch" hidden title="Ouvrir le parcours dans l'app COROS (ou une autre app)">⌚ Envoyer vers la montre</button>
+        </div>`;
       card.addEventListener("click", () => this.select(r.id));
       const profileBox = card.querySelector(".profile") as HTMLElement | null;
       if (profileBox) {
         profileBox.addEventListener("click", (e) => e.stopPropagation());
         renderProfile(profileBox, p.profile, ROUTE_COLORS[r.id] ?? ROUTE_COLORS[2], (d) => this.showHoverPoint(r, d));
       }
+      const name = `Trail Map ${this.mode === "loop" ? "boucle" : "itinéraire"} ${km(p.distance_m)}`;
+      const filename = `${name.replace(/[ ,]+/g, "_")}.gpx`;
       card.querySelector(".gpx")!.addEventListener("click", (e) => {
         e.stopPropagation();
-        const name = `Trail Map ${this.mode === "loop" ? "boucle" : "itinéraire"} ${km(p.distance_m)}`;
-        download(`${name.replace(/[ ,]+/g, "_")}.gpx`, toGpx(name, r.geometry.coordinates));
+        download(filename, toGpx(name, r.geometry.coordinates));
+      });
+      // Share sheet (mobile): pick the COROS app, which imports the route and syncs it to the watch.
+      const file = shareableGpx(filename, toGpx(name, r.geometry.coordinates));
+      const watch = card.querySelector(".watch") as HTMLButtonElement;
+      watch.hidden = !file;
+      watch.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (file) shareFile(file, name).catch(() => download(filename, toGpx(name, r.geometry.coordinates)));
       });
       box.appendChild(card);
     });
@@ -494,6 +531,7 @@ export class Planner {
       this.saved = JSON.parse(raw) as Saved;
       this.mode = this.saved.mode === "oneway" ? "oneway" : "loop";
       this.distance = this.saved.distance ?? this.distance;
+      this.onewayTarget = this.saved.onewayTarget ?? false;
       this.prefs = { ...this.prefs, ...this.saved.prefs };
       if (this.saved.ascent) {
         this.ascentMode = this.saved.ascent.mode;
@@ -512,6 +550,7 @@ export class Planner {
         prefs: this.prefs,
         start: this.start ? (this.start.getLngLat().toArray() as LngLat) : null,
         ascent: { mode: this.ascentMode, min: this.customAscent[0], max: this.customAscent[1] },
+        onewayTarget: this.onewayTarget,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch {

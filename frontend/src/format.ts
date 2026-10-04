@@ -38,3 +38,20 @@ export function download(filename: string, content: string, type = "application/
   a.click();
   URL.revokeObjectURL(url);
 }
+
+/** A GPX file the system share sheet accepts (to open it in the COROS app), or null when unsupported. */
+export function shareableGpx(filename: string, content: string): File | null {
+  const file = new File([content], filename, { type: "application/gpx+xml" });
+  return navigator.canShare?.({ files: [file] }) ? file : null;
+}
+
+/** Opens the system share sheet; resolves false when the user cancels. */
+export async function shareFile(file: File, title: string): Promise<boolean> {
+  try {
+    await navigator.share({ files: [file], title });
+    return true;
+  } catch (e) {
+    if ((e as DOMException).name === "AbortError") return false;
+    throw e;
+  }
+}
