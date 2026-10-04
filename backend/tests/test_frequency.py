@@ -195,3 +195,30 @@ def test_tracks_off_any_osm_way_are_drawn_themselves():
     fc = frequency_collection({"features": [activity(0, path(1000, north_m=3))]}, [(street, ("Rue A", "residential"))])
     assert drawn_m(fc) == pytest.approx(1000, abs=80)
     assert max(c[0] for f in fc["features"] for c in f["geometry"]["coordinates"]) == pytest.approx(path(1000)[-1][0], abs=1e-5)
+
+
+def test_gap_where_the_gps_left_the_street_is_filled():
+    """The runs drift 40 m off the street for 80 m: the street is still drawn whole."""
+    def drifting(i):
+        return [[LON0 + x / GRID.kx, LAT0 + ((40 if 460 <= x <= 540 else 0) + i) / EARTH_M_PER_DEG_LAT] for x in range(0, 1001, 20)]
+    runs = [activity(i, drifting(i)) for i in range(3)]
+    fc = frequency_collection({"features": runs}, [(way(), ("Rue A", "residential"))])
+    on_street = [f for f in fc["features"] if all(abs(n) < 0.5 for n in north_of(f))]
+    assert sum(math.hypot((b[0] - a[0]) * GRID.kx, (b[1] - a[1]) * EARTH_M_PER_DEG_LAT)
+               for f in on_street for a, b in zip(f["geometry"]["coordinates"], f["geometry"]["coordinates"][1:])) == pytest.approx(1000, abs=30)
+
+
+def test_shown_level_does_not_flicker_along_a_street():
+    """10 runs along the whole street, an 11th... and a few on alternate 100 m stretches."""
+    runs = [activity(i, path()) for i in range(9)]
+    runs += [activity(9 + k, path(100, east_m=200 * k)) for k in range(5)]  # 10 passes on every other stretch
+    fc = frequency_collection({"features": runs}, [(way(), ("Rue A", "residential"))])
+    assert len({level(f["properties"]["passes"]) for f in fc["features"]}) == 1
+    assert len(fc["features"]) == 1  # one continuous line
+
+
+def test_side_street_start_is_not_drawn():
+    main = way()
+    side = [[LON0 + 500 / GRID.kx, LAT0 + i * 30 / EARTH_M_PER_DEG_LAT] for i in range(11)]
+    fc = frequency_collection({"features": [activity(0, path(north_m=3))]}, [(main, ("Rue A", "residential")), (side, ("Rue B", "residential"))])
+    assert all(abs(n) < 0.5 for f in fc["features"] for n in north_of(f))

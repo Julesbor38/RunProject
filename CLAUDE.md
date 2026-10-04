@@ -16,7 +16,7 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   court ou à distance visée), dénivelé (tranche de D+, profil, relief 3D), export GPX,
   bouton « Envoyer vers la montre » (partage du GPX vers l'app COROS, non testé sur téléphone).
 - Prochaine grosse étape : map-matching (étape 2), puis notation des tronçons (étape 3).
-- Tests : 47 OK, 1 ignoré.
+- Tests : 50 OK, 1 ignoré.
 
 ## Architecture
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
@@ -24,8 +24,9 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   - `app/routing/` : moteur d'itinéraires Python (en attendant GraphHopper)
   - `app/frequency.py` : nombre de sorties distinctes par portion de voie OSM (~25–50 m, une sortie
     compte si sa trace suit 60 % de la portion, tolérance 12–24 m), dessiné sur la voie elle-même ;
-    trottoirs/passages piétons ignorés, seules les voies parallèles se masquent ; repli sur la
-    trace là où aucune voie OSM ne l'explique. Recalculé quand de nouvelles tuiles OSM arrivent
+    voies coupées aux carrefours, trottoirs ignorés, choix entre voies parallèles par rue entière,
+    trous comblés le long d'une rue, ergots < 60 m retirés, niveau lissé le long de la rue ; repli
+    sur la trace là où aucune voie OSM ne l'explique. Recalculé quand de nouvelles tuiles OSM arrivent
 - frontend/ : TypeScript + Vite + MapLibre GL 6 (PWA à venir), fond OpenFreeMap
   - `main.ts`, `activities.ts` (onglet Mes sorties), `planner.ts` (onglet Itinéraire),
     `profile.ts` (profil altimétrique), `terrain.ts` (relief 3D), `api.ts`, `format.ts`

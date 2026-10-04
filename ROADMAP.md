@@ -125,6 +125,25 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 - Traits plus larges aux zooms rapprochés pour couvrir la largeur de la rue.
 - 47 tests OK, 1 ignoré (5 nouveaux sur le dessin OSM).
 
+### 2026-10-04 — Fréquentation : traits continus et lissés
+- Il restait des pointillés et des coupures sur la plupart des parcours fréquentés, et l'épaisseur
+  changeait tous les 50 m. Diagnostic chiffré (extrémités de traits qui s'arrêtent près d'un autre) :
+  2 388 coupures au départ, surtout des portions de rue masquées à tort comme « doublon parallèle »
+  par la portion voisine de la même rue.
+- L'étape OSM raisonne maintenant sur le réseau :
+  - voies coupées à chaque carrefour ; portions de 25–50 m dessinées entières ou pas du tout ;
+  - choix entre voies parallèles fait sur toute la rue (pas portion par portion), jamais contre les
+    portions reliées à moins de 40 m, ni pour les bouts de moins de 24 m ;
+  - trous comblés le long d'une rue (jusqu'à 150 m, en suivant la rue d'une voie OSM à l'autre) ;
+  - branches de moins de 60 m jusqu'au premier carrefour retirées (ergots aux carrefours) ;
+  - niveau affiché = médiane sur 150 m de part et d'autre, puis une section de moins de 200 m à un
+    autre niveau que ses voisines prend le leur : couleur et épaisseur stables le long d'une rue ;
+  - passages piétons (`footway=crossing`) de nouveau pris en compte : ils relient un chemin de part et
+    d'autre d'une route (seuls les trottoirs sont ignorés).
+- Résultat : 253 coupures (contre 2 388), 560 km dessinés sur les rues (contre 397), 88 km d'après les
+  traces (surtout des zones dont les tuiles OSM ne sont pas encore téléchargées). ~9 s de calcul.
+- 50 tests OK, 1 ignoré.
+
 ---
 
 ## État au 2026-10-04
@@ -138,9 +157,9 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 2. **Performances** : encore ~7 s pour 20 km + tranche de D+ (132 recherches A*). Pistes : un seul
    Dijkstra depuis le départ partagé entre candidats, ou GraphHopper. Regarder les erreurs
    réseau Overpass (« Cannot assign requested address », IPv6 ?).
-3. **Fréquentation** : quelques coupures courtes subsistent dans les carrefours complexes ; deux voies
-   parallèles de noms différents à moins de ~20 m ne sont dessinées qu'une fois. À reprendre avec le
-   vrai map-matching (étape 2), qui pourra réutiliser le comptage par portion de voie OSM.
+3. **Fréquentation** : quelques petits artefacts dans les carrefours complexes ; les chemins qui
+   aboutissent sur un trottoir cartographié s'arrêtent à quelques mètres de la route. À reprendre avec
+   le vrai map-matching (étape 2), qui pourra réutiliser le comptage par portion de voie OSM.
 4. **Profil altimétrique des sorties passées** dans « Mes sorties » (seul le D+ montre est affiché).
 5. **Étape 2 — map-matching** des traces sur les tronçons OSM (GraphHopper en Docker ou moteur Python).
 6. **Étape 3 — notation des tronçons** : modèle de données (PostGIS), API, interface de notation.
