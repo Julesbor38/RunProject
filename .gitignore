@@ -1,0 +1,11 @@
+data/
+*.fit
+*.fit.gz
+*.gpx
+*.gpx.gz
+*.tcx
+*.tcx.gz
+__pycache__/
+.venv/
+*.egg-info/
+.pytest_cache/
