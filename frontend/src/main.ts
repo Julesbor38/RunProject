@@ -2,7 +2,7 @@ import { Map, NavigationControl, ScaleControl, GeolocateControl } from "maplibre
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./style.css";
 import { ActivitiesView } from "./activities";
-import { fetchActivities, fetchRoutingStatus } from "./api";
+import { fetchActivities, fetchFrequency, fetchRoutingStatus } from "./api";
 import { Planner } from "./planner";
 import { addTerrain } from "./terrain";
 
@@ -23,12 +23,13 @@ map.addControl(new GeolocateControl({ positionOptions: { enableHighAccuracy: tru
 map.addControl(new ScaleControl({ unit: "metric" }), "bottom-right");
 
 const data = fetchActivities();
+const frequency = fetchFrequency().catch(() => null); // optional: tracks by sport without it
 
 map.on("load", async () => {
   addTerrain(map);
   let activities: ActivitiesView | null = null;
   try {
-    activities = new ActivitiesView(map, await data, (text) => (summary.textContent = text));
+    activities = new ActivitiesView(map, await data, (text) => (summary.textContent = text), await frequency);
   } catch (e) {
     summary.textContent = `API injoignable (${(e as Error).message}) : le backend tourne-t-il sur :8000 ?`;
   }

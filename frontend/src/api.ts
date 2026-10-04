@@ -57,6 +57,24 @@ export interface RouteCollection {
   elevation: boolean;
 }
 
+/** Pieces of the tracks with the number of distinct activities that went along them. */
+export interface FrequencyCollection {
+  type: "FeatureCollection";
+  features: {
+    type: "Feature";
+    geometry: { type: "LineString"; coordinates: LngLat[] };
+    properties: { activity: number; sport: Sport | null; passes: number };
+  }[];
+  max_passes: number;
+  levels: number[]; // lower bounds of the pass levels
+}
+
+export async function fetchFrequency(): Promise<FrequencyCollection> {
+  const r = await fetch("/api/frequency");
+  if (!r.ok) throw new Error(`API ${r.status}`);
+  return r.json();
+}
+
 export async function fetchActivities(): Promise<ActivityCollection> {
   const r = await fetch("/api/activities");
   if (!r.ok) throw new Error(`API ${r.status}`);

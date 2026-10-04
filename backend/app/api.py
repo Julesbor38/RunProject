@@ -15,6 +15,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from . import frequency
 from .ingest import load_zones, mask
 from .ingest.models import TrackPoint
 from .ingest.pipeline import ingest
@@ -73,6 +74,20 @@ def load_cached(data_dir: Path, force: bool = False) -> dict:
     return fc
 
 
+def load_frequency(data_dir: Path, fc: dict, force: bool = False) -> dict:
+    """Pass counts of the tracks, cached in data/cache/ until the activities cache changes."""
+    activities = data_dir / "cache" / "activities.geojson"
+    cache = data_dir / "cache" / "frequency.geojson"
+    if not force and cache.exists() and activities.exists() and cache.stat().st_mtime >= activities.stat().st_mtime:
+        cached = json.loads(cache.read_text())
+        if cached.get("signature") == frequency.SIGNATURE:
+            return cached
+    out = frequency.frequency_collection(fc)
+    cache.parent.mkdir(exist_ok=True)
+    cache.write_text(json.dumps(out))
+    return out
+
+
 def routing_service(fc: dict) -> RoutingService:
     tracks = [line for f in fc["features"] for line in f["geometry"]["coordinates"]]
     return RoutingService(DATA_DIR / "osm", tracks, Dem(DATA_DIR / "dem"))
@@ -81,6 +96,7 @@ def routing_service(fc: dict) -> RoutingService:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     state["activities"] = load_cached(DATA_DIR)
+    state["frequency"] = load_frequency(DATA_DIR, state["activities"])
     state["routing"] = routing_service(state["activities"])
     if PREFETCH_OSM:
         state["routing"].start_prefetch()
@@ -96,9 +112,16 @@ def activities() -> dict:
     return state["activities"]
 
 
+@app.get("/api/frequency")
+def frequency_map() -> dict:
+    """Track pieces with the number of distinct activities that went along them."""
+    return state["frequency"]
+
+
 @app.post("/api/reload")
 def reload() -> dict:
     state["activities"] = load_cached(DATA_DIR, force=True)
+    state["frequency"] = load_frequency(DATA_DIR, state["activities"], force=True)
     state["routing"] = routing_service(state["activities"])
     return state["activities"]["stats"]
 

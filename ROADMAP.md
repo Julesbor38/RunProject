@@ -79,6 +79,22 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
   L'API COROS est réservée aux partenaires, pas d'app COROS pour ordinateur.
 - 31 tests OK, 1 ignoré.
 
+### 2026-10-04 — Carte « Mes sorties » : rendu par fréquentation
+- Les traces superposées devenaient illisibles là où je cours souvent. Nouveau mode « Fréquentation »
+  (par défaut) : chaque chemin est plus foncé et plus épais selon le nombre de sorties distinctes
+  passées dessus (7 niveaux : 1, 2, 3–4, 5–9, 10–19, 20–49, 50+), avec une légende sur la carte.
+  Sélecteur « Fréquentation / Par type » pour revenir à l'affichage par sport.
+- Backend `app/frequency.py`, sans map-matching : grille de cellules de 12 m. Chaque sortie compte
+  une fois par cellule (aller-retour = 1 passage), et ses cellules sont élargies aux 8 voisines
+  pour absorber le GPS (deux passages décalés de ~10 m s'additionnent). Les traces masquées de
+  `/api/activities` sont redécoupées en tronçons de niveau constant (médiane glissante de ~60–125 m
+  pour qu'un croisement ne fasse pas de tache sombre).
+- `GET /api/frequency`, cache `data/cache/frequency.geojson` (1,3 Mo, 1,3 s de calcul),
+  recalculé quand le cache des activités change ou quand les réglages de l'algorithme changent.
+  Maximum actuel : 54 sorties au même endroit.
+- Le calque par sport reste au-dessus (transparent) : survol, clic et fiche de sortie inchangés.
+- 40 tests OK, 1 ignoré (9 nouveaux pour le comptage et le cache).
+
 ---
 
 ## État au 2026-10-04
@@ -92,10 +108,13 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 2. **Performances** : encore ~7 s pour 20 km + tranche de D+ (132 recherches A*). Pistes : un seul
    Dijkstra depuis le départ partagé entre candidats, ou GraphHopper. Regarder les erreurs
    réseau Overpass (« Cannot assign requested address », IPv6 ?).
-3. **Profil altimétrique des sorties passées** dans « Mes sorties » (seul le D+ montre est affiché).
-4. **Étape 2 — map-matching** des traces sur les tronçons OSM (GraphHopper en Docker ou moteur Python).
-5. **Étape 3 — notation des tronçons** : modèle de données (PostGIS), API, interface de notation.
-6. **Étape 4 — itinéraires pondérés par les notes.**
-7. **Étape 5 — communautaire** : comptes, agrégation, modération.
-8. PWA (installation sur téléphone, hors ligne) + accès HTTPS : nécessaire pour tester
+3. **Fréquentation** : à refaire sur les tronçons OSM après le map-matching (étape 2), pour
+   des chemins nets au lieu de traces parallèles légèrement décalées ; deux chemins parallèles
+   à moins de ~20 m peuvent aujourd'hui être comptés ensemble.
+4. **Profil altimétrique des sorties passées** dans « Mes sorties » (seul le D+ montre est affiché).
+5. **Étape 2 — map-matching** des traces sur les tronçons OSM (GraphHopper en Docker ou moteur Python).
+6. **Étape 3 — notation des tronçons** : modèle de données (PostGIS), API, interface de notation.
+7. **Étape 4 — itinéraires pondérés par les notes.**
+8. **Étape 5 — communautaire** : comptes, agrégation, modération.
+9. PWA (installation sur téléphone, hors ligne) + accès HTTPS : nécessaire pour tester
    le bouton « Envoyer vers la montre » sur le téléphone (vérifier qu'Android accepte le partage d'un .gpx).

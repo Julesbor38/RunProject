@@ -11,16 +11,19 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 ## État actuel (2026-10-04)
 - Étape 1 (import) : fonctionnelle. 254 activités (course, trail, randonnée), doublons Strava/Coros fusionnés.
   Reste : 3 .fit.gz Strava illisibles (`developer_data_index 0 not defined`).
-- Carte web : traces, filtres, fiches, générateur d'itinéraires (boucle / aller simple le plus
+- Carte web : traces (rendu « Fréquentation » plus foncé selon le nombre de sorties distinctes,
+  ou « Par type »), filtres, fiches, générateur d'itinéraires (boucle / aller simple le plus
   court ou à distance visée), dénivelé (tranche de D+, profil, relief 3D), export GPX,
   bouton « Envoyer vers la montre » (partage du GPX vers l'app COROS, non testé sur téléphone).
 - Prochaine grosse étape : map-matching (étape 2), puis notation des tronçons (étape 3).
-- Tests : 31 OK, 1 ignoré.
+- Tests : 40 OK, 1 ignoré.
 
 ## Architecture
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
   - `app/ingest/` : parsers (FIT/GPX/TCX, archive Strava), clean, dedup, privacy, simplify, pipeline
   - `app/routing/` : moteur d'itinéraires Python (en attendant GraphHopper)
+  - `app/frequency.py` : nombre de sorties distinctes par endroit (grille 12 m élargie aux voisines,
+    sans map-matching), traces redécoupées par niveau de passages
 - frontend/ : TypeScript + Vite + MapLibre GL 6 (PWA à venir), fond OpenFreeMap
   - `main.ts`, `activities.ts` (onglet Mes sorties), `planner.ts` (onglet Itinéraire),
     `profile.ts` (profil altimétrique), `terrain.ts` (relief 3D), `api.ts`, `format.ts`
@@ -39,6 +42,7 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 
 ## API
 - GET  /api/activities : traces masquées + simplifiées (~700 Ko), cache data/cache/
+- GET  /api/frequency : tronçons des traces masquées avec leur nombre de passages, cache data/cache/
 - POST /api/reload : relit data/raw
 - GET  /api/routing/status : avancement du pré-téléchargement OSM
 - POST /api/routes : génère des itinéraires (boucle / aller simple, préférences, tranche de D+)

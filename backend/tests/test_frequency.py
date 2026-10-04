@@ -1,0 +1,117 @@
+import json
+import os
+
+import pytest
+
+from app import api, frequency
+from app.frequency import Grid, frequency_collection, level, pass_counts, split_by_passes
+from app.routing.graph import EARTH_M_PER_DEG_LAT
+
+LAT0, LON0 = 45.76, 4.78
+GRID = Grid(LAT0)
+
+
+def path(length_m: float = 1000, north_m: float = 0.0, east_m: float = 0.0, step_m: float = 20.0):
+    """A straight west-east track, shifted by the given offsets (meters)."""
+    n = int(length_m / step_m)
+    lat = LAT0 + north_m / EARTH_M_PER_DEG_LAT
+    return [[LON0 + (east_m + i * step_m) / GRID.kx, lat] for i in range(n + 1)]
+
+
+def activity(fid: int, *lines, sport="run") -> dict:
+    return {
+        "type": "Feature",
+        "id": fid,
+        "geometry": {"type": "MultiLineString", "coordinates": list(lines)},
+        "properties": {"sport": sport},
+    }
+
+
+def passes_of(fc: dict, fid: int) -> set[int]:
+    return {f["properties"]["passes"] for f in fc["features"] if f["properties"]["activity"] == fid}
+
+
+def test_out_and_back_in_one_activity_is_one_pass():
+    there = path()
+    back = [list(p) for p in reversed(path(north_m=6))]  # the way back, a few meters aside
+    counts = pass_counts([[there + back]], GRID)
+    assert max(counts.values()) == 1
+    fc = frequency_collection({"features": [activity(0, there + back)]})
+    assert passes_of(fc, 0) == {1}
+
+
+def test_two_activities_on_same_path_with_gps_offset_are_two_passes():
+    fc = frequency_collection({"features": [activity(0, path()), activity(1, path(north_m=9))]})
+    assert passes_of(fc, 0) == {2}
+    assert passes_of(fc, 1) == {2}
+
+
+def test_parallel_paths_far_apart_are_counted_apart():
+    fc = frequency_collection({"features": [activity(0, path()), activity(1, path(north_m=100))]})
+    assert passes_of(fc, 0) == passes_of(fc, 1) == {1}
+
+
+def test_track_is_split_where_the_pass_count_changes():
+    long, half = path(1000), path(500)
+    counts = pass_counts([[long], [half], [half]], GRID)
+    pieces = split_by_passes(long, counts, GRID)
+    assert [p for p, _ in pieces] == [3, 1]
+    (_, first), (_, second) = pieces
+    assert first[-1] == second[0]  # contiguous: no gap where the level changes
+    assert first[0] == [round(c, 6) for c in long[0]] and second[-1] == [round(c, 6) for c in long[-1]]
+    split_east_m = (first[-1][0] - LON0) * GRID.kx
+    assert split_east_m == pytest.approx(500, abs=3 * frequency.CELL_M)
+
+
+def test_crossing_path_does_not_darken_the_track():
+    """A run crossing another one at right angles shares a few cells only: no darker blip."""
+    north_south = [[LON0 + 500 / GRID.kx, LAT0 + (i * 20 - 500) / EARTH_M_PER_DEG_LAT] for i in range(51)]
+    counts = pass_counts([[path()], [north_south]], GRID)
+    assert [p for p, _ in split_by_passes(path(), counts, GRID)] == [1]
+
+
+def test_levels_bucket_counts():
+    assert [level(n) for n in (1, 2, 4, 7, 12, 30, 400)] == [1, 2, 3, 5, 10, 20, 50]
+
+
+def test_collection_keeps_activity_and_sport_and_draws_busiest_last():
+    fc = frequency_collection({"features": [
+        activity(0, path(), sport="trail_run"),
+        activity(1, path(north_m=4)),
+        activity(2, path(north_m=300), sport="hike"),
+    ]})
+    passes = [f["properties"]["passes"] for f in fc["features"]]
+    assert passes == sorted(passes)
+    assert fc["max_passes"] == 2
+    assert {(f["properties"]["activity"], f["properties"]["sport"]) for f in fc["features"]} == {
+        (0, "trail_run"), (1, "run"), (2, "hike"),
+    }
+
+
+def test_frequency_cache_is_reused_until_activities_change(tmp_path, monkeypatch):
+    (tmp_path / "cache").mkdir()
+    fc = {"type": "FeatureCollection", "features": [activity(0, path())]}
+    activities = tmp_path / "cache" / "activities.geojson"
+    activities.write_text(json.dumps(fc))
+    first = api.load_frequency(tmp_path, fc)
+    assert (tmp_path / "cache" / "frequency.geojson").exists()
+
+    def boom(_):
+        raise AssertionError("recomputed although activities did not change")
+
+    monkeypatch.setattr(frequency, "frequency_collection", boom)
+    assert api.load_frequency(tmp_path, fc) == first
+
+    later = (tmp_path / "cache" / "frequency.geojson").stat().st_mtime + 10
+    os.utime(activities, (later, later))
+    with pytest.raises(AssertionError, match="recomputed"):
+        api.load_frequency(tmp_path, fc)
+
+
+def test_frequency_cache_is_recomputed_when_settings_change(tmp_path, monkeypatch):
+    (tmp_path / "cache").mkdir()
+    fc = {"type": "FeatureCollection", "features": [activity(0, path())]}
+    (tmp_path / "cache" / "activities.geojson").write_text(json.dumps(fc))
+    api.load_frequency(tmp_path, fc)
+    monkeypatch.setattr(frequency, "SIGNATURE", "other settings")
+    assert api.load_frequency(tmp_path, fc)["signature"] == "other settings"

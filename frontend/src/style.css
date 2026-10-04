@@ -634,6 +634,40 @@ input[type="range"] {
 
 /* --- activities tab --- */
 
+.tracks-mode {
+  padding: 0 16px 10px;
+}
+
+.freq-legend {
+  padding: 8px 10px;
+  background: var(--bg);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.freq-legend[hidden] {
+  display: none !important;
+}
+
+.freq-legend strong {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 11px;
+}
+
+.freq-legend .row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 3px;
+}
+
+.freq-legend .swatch {
+  width: 26px;
+  border-radius: 3px;
+  background: var(--c);
+}
+
 #filters {
   display: flex;
   flex-wrap: wrap;
