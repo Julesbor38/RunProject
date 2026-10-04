@@ -63,7 +63,8 @@ export interface FrequencyCollection {
   features: {
     type: "Feature";
     geometry: { type: "LineString"; coordinates: LngLat[] };
-    properties: { activity: number; sport: Sport | null; passes: number };
+    // `activity`: one activity that went there; per sport: whether activities of that sport did.
+    properties: { activity: number; passes: number } & Record<Sport, boolean>;
   }[];
   max_passes: number;
   levels: number[]; // lower bounds of the pass levels

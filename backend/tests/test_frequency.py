@@ -1,4 +1,5 @@
 import json
+import math
 import os
 
 import pytest
@@ -31,6 +32,15 @@ def passes_of(fc: dict, fid: int) -> set[int]:
     return {f["properties"]["passes"] for f in fc["features"] if f["properties"]["activity"] == fid}
 
 
+def drawn_m(fc: dict) -> float:
+    """Total length of the drawn lines."""
+    return sum(
+        math.hypot((b[0] - a[0]) * GRID.kx, (b[1] - a[1]) * EARTH_M_PER_DEG_LAT)
+        for f in fc["features"]
+        for a, b in zip(f["geometry"]["coordinates"], f["geometry"]["coordinates"][1:])
+    )
+
+
 def test_out_and_back_in_one_activity_is_one_pass():
     there = path()
     back = [list(p) for p in reversed(path(north_m=6))]  # the way back, a few meters aside
@@ -38,12 +48,29 @@ def test_out_and_back_in_one_activity_is_one_pass():
     assert max(counts.values()) == 1
     fc = frequency_collection({"features": [activity(0, there + back)]})
     assert passes_of(fc, 0) == {1}
+    assert drawn_m(fc) == pytest.approx(1000, abs=60)  # the way back is not drawn beside the way out
 
 
 def test_two_activities_on_same_path_with_gps_offset_are_two_passes():
     fc = frequency_collection({"features": [activity(0, path()), activity(1, path(north_m=9))]})
-    assert passes_of(fc, 0) == {2}
-    assert passes_of(fc, 1) == {2}
+    assert {f["properties"]["passes"] for f in fc["features"]} == {2}
+    assert drawn_m(fc) == pytest.approx(1000, abs=60)  # one line, not two side by side
+
+
+def test_many_offset_runs_on_one_path_draw_a_single_line():
+    runs = [activity(i, path(north_m=(i % 5 - 2) * 4, east_m=i % 3)) for i in range(12)]
+    fc = frequency_collection({"features": runs})
+    assert {f["properties"]["passes"] for f in fc["features"]} == {12}
+    assert drawn_m(fc) == pytest.approx(1000, abs=60)
+
+
+def test_branch_leaving_a_shared_path_is_drawn_and_joined():
+    shared = path(500)
+    branch = shared + [[shared[-1][0], shared[-1][1] + i * 20 / EARTH_M_PER_DEG_LAT] for i in range(1, 26)]
+    fc = frequency_collection({"features": [activity(0, path(1000)), activity(1, branch)]})
+    assert drawn_m(fc) == pytest.approx(1000 + 500, abs=80)
+    tip = [round(c, 6) for c in branch[-1]]
+    assert any(f["geometry"]["coordinates"][-1] == tip for f in fc["features"])
 
 
 def test_parallel_paths_far_apart_are_counted_apart():
@@ -74,7 +101,7 @@ def test_levels_bucket_counts():
     assert [level(n) for n in (1, 2, 4, 7, 12, 30, 400)] == [1, 2, 3, 5, 10, 20, 50]
 
 
-def test_collection_keeps_activity_and_sport_and_draws_busiest_last():
+def test_collection_flags_sports_and_draws_busiest_last():
     fc = frequency_collection({"features": [
         activity(0, path(), sport="trail_run"),
         activity(1, path(north_m=4)),
@@ -83,9 +110,10 @@ def test_collection_keeps_activity_and_sport_and_draws_busiest_last():
     passes = [f["properties"]["passes"] for f in fc["features"]]
     assert passes == sorted(passes)
     assert fc["max_passes"] == 2
-    assert {(f["properties"]["activity"], f["properties"]["sport"]) for f in fc["features"]} == {
-        (0, "trail_run"), (1, "run"), (2, "hike"),
-    }
+    shared = [f["properties"] for f in fc["features"] if f["properties"]["passes"] == 2]
+    hike = [f["properties"] for f in fc["features"] if f["properties"]["activity"] == 2]
+    assert shared and all(p["run"] and p["trail_run"] and not p["hike"] for p in shared)
+    assert hike and all(p["hike"] and not p["run"] and not p["trail_run"] for p in hike)
 
 
 def test_frequency_cache_is_reused_until_activities_change(tmp_path, monkeypatch):

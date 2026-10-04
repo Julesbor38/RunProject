@@ -95,6 +95,17 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 - Le calque par sport reste au-dessus (transparent) : survol, clic et fiche de sortie inchangés.
 - 40 tests OK, 1 ignoré (9 nouveaux pour le comptage et le cache).
 
+### 2026-10-04 — Fréquentation : un seul trait par chemin
+- Les légers décalages GPS laissaient plusieurs traits côte à côte sur un même passage (effet gribouillage).
+- Le réseau dessiné est construit une seule fois : les traces sont posées des plus représentatives
+  (le long des chemins les plus fréquentés) aux autres, et on ne garde d'une trace que ce qui est
+  à plus de ~30 m de ce qui est déjà dessiné. Ce réseau est ensuite découpé par niveau de passages.
+  Un aller-retour n'est dessiné qu'une fois ; un croisement ne coupe pas le trait ; un petit écart
+  GPS (< ~60 m de long) n'est pas dessiné ; les bifurcations sont raccordées au trait existant.
+- Filtres par sport : chaque tronçon indique les sports passés par là (affiché si l'un est coché).
+- Résultat sur les vraies données : 817 tronçons, 0,3 Mo (contre 3 950 et 1,3 Mo), 2,7 s de calcul.
+- 42 tests OK, 1 ignoré.
+
 ---
 
 ## État au 2026-10-04
@@ -108,9 +119,9 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 2. **Performances** : encore ~7 s pour 20 km + tranche de D+ (132 recherches A*). Pistes : un seul
    Dijkstra depuis le départ partagé entre candidats, ou GraphHopper. Regarder les erreurs
    réseau Overpass (« Cannot assign requested address », IPv6 ?).
-3. **Fréquentation** : à refaire sur les tronçons OSM après le map-matching (étape 2), pour
-   des chemins nets au lieu de traces parallèles légèrement décalées ; deux chemins parallèles
-   à moins de ~20 m peuvent aujourd'hui être comptés ensemble.
+3. **Fréquentation** : à refaire sur les tronçons OSM après le map-matching (étape 2) : le trait
+   suit aujourd'hui une trace GPS (pas l'axe exact du chemin), quelques coupures subsistent aux
+   carrefours, et deux chemins parallèles à moins de ~30 m sont fusionnés en un seul trait.
 4. **Profil altimétrique des sorties passées** dans « Mes sorties » (seul le D+ montre est affiché).
 5. **Étape 2 — map-matching** des traces sur les tronçons OSM (GraphHopper en Docker ou moteur Python).
 6. **Étape 3 — notation des tronçons** : modèle de données (PostGIS), API, interface de notation.

@@ -16,14 +16,15 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   court ou à distance visée), dénivelé (tranche de D+, profil, relief 3D), export GPX,
   bouton « Envoyer vers la montre » (partage du GPX vers l'app COROS, non testé sur téléphone).
 - Prochaine grosse étape : map-matching (étape 2), puis notation des tronçons (étape 3).
-- Tests : 40 OK, 1 ignoré.
+- Tests : 42 OK, 1 ignoré.
 
 ## Architecture
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
   - `app/ingest/` : parsers (FIT/GPX/TCX, archive Strava), clean, dedup, privacy, simplify, pipeline
   - `app/routing/` : moteur d'itinéraires Python (en attendant GraphHopper)
   - `app/frequency.py` : nombre de sorties distinctes par endroit (grille 12 m élargie aux voisines,
-    sans map-matching), traces redécoupées par niveau de passages
+    sans map-matching) ; chaque chemin dessiné une seule fois (traces à moins de ~30 m d'un trait
+    déjà posé ignorées), puis découpé par niveau de passages
 - frontend/ : TypeScript + Vite + MapLibre GL 6 (PWA à venir), fond OpenFreeMap
   - `main.ts`, `activities.ts` (onglet Mes sorties), `planner.ts` (onglet Itinéraire),
     `profile.ts` (profil altimétrique), `terrain.ts` (relief 3D), `api.ts`, `format.ts`

@@ -205,9 +205,9 @@ export class ActivitiesView {
       label.innerHTML = `<input type="checkbox" checked> <span class="dot"></span>${SPORTS[sport].label} <small>${counts.get(sport) ?? 0}</small>`;
       label.querySelector("input")!.addEventListener("change", (e) => {
         (e.target as HTMLInputElement).checked ? this.enabled.add(sport) : this.enabled.delete(sport);
-        const filter = ["in", ["get", "sport"], ["literal", [...this.enabled]]] as never;
-        this.map.setFilter(SOURCE, filter);
-        if (this.map.getLayer(FREQ)) this.map.setFilter(FREQ, filter);
+        this.map.setFilter(SOURCE, ["in", ["get", "sport"], ["literal", [...this.enabled]]]);
+        // Each path is drawn once for all sports: shown when any enabled sport went there.
+        if (this.map.getLayer(FREQ)) this.map.setFilter(FREQ, ["any", ...[...this.enabled].map((s) => ["==", ["get", s], true])] as never);
         this.renderList();
         this.onSummary(this.summary());
       });
