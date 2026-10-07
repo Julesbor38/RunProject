@@ -5,6 +5,7 @@ export default defineConfig({
   optimizeDeps: { exclude: ["maplibre-gl"] },
   server: {
     host: true, // reachable from Windows when WSL localhost forwarding is off
+    allowedHosts: [".ts.net"], // the phone, through `tailscale serve` on the PC (tailnet only)
     proxy: { "/api": "http://localhost:8000" },
   },
 });

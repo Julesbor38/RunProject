@@ -188,11 +188,20 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 - `backend/Run-Project-Data/` (clone du dépôt privé) ajouté au `.gitignore`.
 - 62 tests OK, 1 ignoré.
 
+### 2026-10-07 — Accès depuis le téléphone via Tailscale
+- Vite accepte les hôtes `.ts.net` (`allowedHosts`, pas `true`) ; `tailscale serve --bg 5173` côté
+  Windows sert l'app en HTTPS sur https://jules-laptop.tailf52fab.ts.net, sur le tailnet seulement.
+- Vérifié en simulant l'hôte .ts.net : page, `/api` et génération d'itinéraire OK, autre hôte refusé (403).
+  Le front n'appelle que des chemins relatifs `/api` (pas de cookies, pas d'URL localhost).
+- HTTPS : géolocalisation et « Envoyer vers la montre » deviennent testables sur le téléphone.
+- Ne jamais utiliser `tailscale funnel` (rendrait l'app publique).
+
 ---
 
 ## État au 2026-10-07
 - Tuiles OSM : toute la région Rhône-Alpes en local (extrait Geofabrik du 2026-10-07, à rafraîchir
   avec `--force`) ; Overpass seulement en bordure et hors région, souvent saturé.
+- Accès téléphone via Tailscale configuré côté projet ; à tester réellement depuis le téléphone.
 - Rien n'utilise encore PostGIS ni GraphHopper.
 
 ## Prochaines tâches
@@ -209,5 +218,5 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 6. **Étape 3 — notation des tronçons** : modèle de données (PostGIS), API, interface de notation.
 7. **Étape 4 — itinéraires pondérés par les notes.**
 8. **Étape 5 — communautaire** : comptes, agrégation, modération.
-9. PWA (installation sur téléphone, hors ligne) + accès HTTPS : nécessaire pour tester
-   le bouton « Envoyer vers la montre » sur le téléphone (vérifier qu'Android accepte le partage d'un .gpx).
+9. **Tester sur le téléphone via Tailscale** : bouton « Envoyer vers la montre » (Android accepte-t-il
+   le partage d'un .gpx ?), géolocalisation. Puis PWA (installation, hors ligne).

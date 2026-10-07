@@ -16,7 +16,7 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   court ou à distance visée), dénivelé (tranche de D+, profil, relief 3D), export GPX,
   bouton « Envoyer vers la montre » (partage du GPX vers l'app COROS, non testé sur téléphone).
 - Génération d'itinéraires annulable, avec avancement ; tuiles OSM de Rhône-Alpes en local
-  (plus de dépendance à Overpass dans la région).
+  (plus de dépendance à Overpass dans la région). Accès téléphone via Tailscale (HTTPS, tailnet).
 - Prochaine grosse étape : map-matching (étape 2), puis notation des tronçons (étape 3).
 - Tests : 62 OK, 1 ignoré.
 
@@ -100,6 +100,13 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 - Front : cd frontend && npm install && npm run dev  (http://localhost:5173, proxy /api -> 8000)
   Vite 8 demande Node >= 20 ; si le Node système est trop vieux : Node LTS dans ~/.local/node
   et `export PATH=~/.local/node/bin:$PATH`
+- Accès depuis le téléphone (Tailscale) : https://jules-laptop.tailf52fab.ts.net
+  - Côté Windows, dans PowerShell : `tailscale serve --bg 5173` (relaie le tailnet en HTTPS vers Vite ;
+    `tailscale serve status` pour vérifier, `tailscale serve --https=443 off` pour arrêter)
+  - Vite n'accepte que les hôtes `.ts.net` en plus de localhost (`allowedHosts` dans vite.config.ts,
+    jamais `allowedHosts: true`) ; le front n'appelle que des chemins relatifs /api, relayés au backend.
+  - En HTTPS, la géolocalisation fonctionne aussi sur le téléphone.
+  - ⚠️ Ne JAMAIS utiliser `tailscale funnel` : il rendrait l'app (et les traces) publique sur Internet.
 - Tuiles OSM hors-ligne (Rhône-Alpes, ~530 Mo, à rafraîchir de temps en temps avec --force) :
   curl -L -o data/osm/rhone-alpes-latest.osm.pbf https://download.geofabrik.de/europe/france/rhone-alpes-latest.osm.pbf
   curl -L -o data/osm/rhone-alpes.poly https://download.geofabrik.de/europe/france/rhone-alpes.poly
