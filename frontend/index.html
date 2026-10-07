@@ -27,6 +27,11 @@
         <symbol id="i-peak" viewBox="0 0 24 24"><path d="M3 20l6.5-11 4 6 2.5-3.5L21 20z"/></symbol>
         <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4M7 8.5l5-5 5 5M5 20h14"/></symbol>
         <symbol id="i-logout" viewBox="0 0 24 24"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H4"/></symbol>
+        <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+        <symbol id="i-drop" viewBox="0 0 24 24"><path d="M12 3c-3.5 5-6 8-6 11a6 6 0 0 0 12 0c0-3-2.5-6-6-11z"/></symbol>
+        <symbol id="i-castle" viewBox="0 0 24 24"><path d="M4 21V8h3v2h2V8h2v2h2V8h2v2h2V8h3v13zM10 21v-5h4v5"/></symbol>
+        <symbol id="i-waves" viewBox="0 0 24 24"><path d="M2 9c3-2 5 2 8 0s5 2 8 0 3-1 4-1M2 15c3-2 5 2 8 0s5 2 8 0 3-1 4-1"/></symbol>
+        <symbol id="i-town" viewBox="0 0 24 24"><path d="M3 21h18M5 21V10l5-4 5 4v11M15 21v-7h4v7M9 21v-4h2v4"/></symbol>
         <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
       </defs>
     </svg>
@@ -67,6 +72,9 @@
         </p>
       </form>
     </div>
+
+    <!-- Milestone or badge just reached (after an import) -->
+    <div id="achievement-toast" hidden></div>
 
     <!-- Sheet of a notable place (phone; a map bubble on a computer) -->
     <dialog id="poi-dialog">
@@ -123,6 +131,7 @@
       <nav class="tabs" role="tablist">
         <button role="tab" data-tab="route" aria-selected="true">Itinéraire</button>
         <button role="tab" data-tab="activities" aria-selected="false">Mes sorties</button>
+        <button role="tab" data-tab="explore" aria-selected="false">Exploration</button>
       </nav>
 
       <section id="tab-route" class="tab-body">
@@ -227,6 +236,21 @@
         <div id="new-banner" hidden></div>
         <div id="filters"></div>
         <ul id="list"></ul>
+      </section>
+
+      <section id="tab-explore" class="tab-body" hidden>
+        <p id="explore-status" class="status" hidden></p>
+        <div id="explore-totals" class="explore-totals"></div>
+        <label class="switch fog-switch"><input type="checkbox" id="fog-toggle" /><span class="knob"></span>Brouillard sur la carte</label>
+        <p id="fog-hint" class="muted small" hidden>Zoomez sur la carte pour voir vos chemins éclairés dans le brouillard.</p>
+        <div id="explore-suggestions"></div>
+        <h2>Mes communes</h2>
+        <ul id="explore-towns"></ul>
+        <h2>Badges</h2>
+        <div id="explore-badges"></div>
+        <p class="muted small note">Seules vos sorties horodatées (course, trail, rando) comptent, hors zones de confidentialité et
+          portions à plus de 25 km/h. Un chemin est découvert quand vous l'avez suivi sur au moins 80 % de sa longueur ; un lieu,
+          quand vous êtes passé à moins de 30 m. Ces données ne sont visibles que par vous.</p>
       </section>
 
       <footer class="panel-foot">

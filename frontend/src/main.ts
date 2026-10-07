@@ -10,6 +10,7 @@ import { ensureServer } from "./native";
 import { openImporter, setupImporter, takeNewActivities } from "./importer";
 import { Planner } from "./planner";
 import { PoiLayer } from "./pois";
+import { ExploreView } from "./explore";
 import { Ratings } from "./ratings";
 import { addTerrain } from "./terrain";
 
@@ -17,7 +18,7 @@ import { addTerrain } from "./terrain";
 // (In dev, MapLibre isn't pre-bundled and finds its worker next to itself.)
 if (import.meta.env.PROD) setWorkerUrl(maplibreWorkerUrl);
 
-type Tab = "route" | "activities";
+type Tab = "route" | "activities" | "explore";
 
 const panel = document.getElementById("panel")!;
 const summary = document.getElementById("summary")!;
@@ -67,11 +68,22 @@ map.on("load", async () => {
   const pois = new PoiLayer(map, (at, name) => planner.addVia(at, name));
   planner.pois = pois;
   planner.renderPoiFilters();
+  // Exploration: « Explorer » opens the generator on that zone, in Découverte mode.
+  const explore = new ExploreView(
+    map,
+    (at) => {
+      showTab("route");
+      planner.discover(at);
+    },
+    (visible) => activities?.setVisible(visible && (document.getElementById("show-tracks") as HTMLInputElement).checked),
+  );
 
   const showTab = (tab: Tab) => {
     document.querySelectorAll<HTMLButtonElement>(".tabs [role=tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
     document.getElementById("tab-route")!.hidden = tab !== "route";
     document.getElementById("tab-activities")!.hidden = tab !== "activities";
+    document.getElementById("tab-explore")!.hidden = tab !== "explore";
+    if (tab === "explore") explore.refresh();
     planner.setActive(tab === "route");
     // Tracks open their sheet (and rating) on click in both tabs, unless the planner needs that click.
     if (activities) activities.clickable = (point) => (tab === "activities" ? !pois.hitAt(point) : !planner.claimsClick(point));

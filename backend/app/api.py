@@ -36,6 +36,8 @@ from .routing import Preferences, RoutingError, RoutingService
 from .routing.elevation import Dem
 from .routing.job import Cancelled, Job
 from .workspace import Workspace, user_dir
+from .explore.explorer import Explorer
+from .explore.store import ExploreStore
 from .pois.catalog import CATEGORIES
 from .pois.overpass import OverpassZones, ZONE_DEG
 from .pois.store import PoiStore
@@ -147,6 +149,46 @@ def _zone_in_france(zone: tuple[int, int]) -> bool:
     return all((i, j) in tiles for i in range(i0, i0 + per) for j in range(j0, j0 + per))
 
 
+# --- exploration: per user (each query asks for the logged-in user only), communes shared ---
+
+_explore: dict = {}
+
+
+def explorer() -> Explorer:
+    path = DATA_DIR / "explore" / "explore.sqlite"
+    if _explore.get("path") != path:
+        _explore.update(path=path, explorer=Explorer(ExploreStore(path), DATA_DIR / "osm", pois_store()), suggestions={})
+    return _explore["explorer"]
+
+
+def explore_in_background(ws: Workspace) -> None:
+    """Match the user's new activities, then refresh the suggestions (after login and after each import)."""
+    ex = explorer()
+
+    def run() -> None:
+        try:
+            ex.process(ws.user, ws.dir, activity_key)
+            _explore["suggestions"][ws.user] = ex.suggestions(ws.user, home_of(ws.activities))
+        except Exception:  # noqa: BLE001 - logged; the map works without it
+            logging.getLogger("app").exception("exploration")
+
+    threading.Thread(target=run, name=f"explore-{ws.user}", daemon=True).start()
+
+
+def home_of(fc: dict) -> tuple[float, float] | None:
+    """(lat, lon) of the ~5 km cell where most activities start (like the map's home view)."""
+    cells: dict = {}
+    for f in fc["features"]:
+        first = f["geometry"]["coordinates"][0][0] if f["geometry"]["coordinates"] else None
+        if first:
+            key = (round(first[0] / 0.05), round(first[1] / 0.05))
+            cells.setdefault(key, []).append(first)
+    if not cells:
+        return None
+    best = max(cells.values(), key=len)
+    return sum(p[1] for p in best) / len(best), sum(p[0] for p in best) / len(best)
+
+
 def places_along(coords: list, within_m: float = 50.0) -> list[dict]:
     try:
         found = pois_store().along(coords, within_m)
@@ -168,6 +210,7 @@ def workspace(request: Request) -> Workspace:
             ws = Workspace(user, folder, fc, routing_service(fc))
             if PREFETCH_OSM:
                 ws.routing.start_prefetch()  # the user's running areas (abroad: Overpass)
+                explore_in_background(ws)
             _workspaces[user] = ws
     return ws
 
@@ -340,6 +383,7 @@ def _run_import(ws: Workspace, before: set[str]) -> None:
         _reload(ws)
         new = [f["properties"]["key"] for f in ws.activities["features"] if f["properties"]["key"] not in before]
         ws.import_status = {**ws.import_status, "state": "done", "new": new, "activities": ws.activities["stats"]["activities"]}
+        explore_in_background(ws)  # the new activities' paths, places and milestones
     except Exception as e:  # noqa: BLE001 - reported to the user
         logging.getLogger("app").exception("import failed")
         ws.import_status = {**ws.import_status, "state": "error", "message": str(e)}
@@ -539,6 +583,82 @@ def _wikipedia_url(tag: str | None) -> str | None:
         return None
     lang, title = tag.split(":", 1)
     return f"https://{lang}.wikipedia.org/wiki/{title.replace(' ', '_')}" if lang.isalpha() and len(lang) <= 3 else None
+
+
+@app.get("/api/explore")
+def explore_summary(ws: Workspace = Depends(workspace)) -> dict:
+    """My communes (% of their paths run), places discovered, milestones and badges, suggestions."""
+    ex = explorer()
+    out = ex.summary(ws.user)
+    suggestions = _explore["suggestions"]
+    if ws.user not in suggestions and out["status"].get("state") != "running":
+        suggestions[ws.user] = None  # being computed (a few seconds): the tab asks again
+
+        def compute() -> None:
+            try:
+                suggestions[ws.user] = ex.suggestions(ws.user, home_of(ws.activities))
+            except Exception:  # noqa: BLE001
+                logging.getLogger("app").exception("suggestions")
+                suggestions[ws.user] = []
+
+        threading.Thread(target=compute, daemon=True).start()
+    out["suggestions"] = suggestions.get(ws.user) or []
+    out["suggestions_pending"] = suggestions.get(ws.user) is None
+    return out
+
+
+class SeenIn(BaseModel):
+    ids: list[str] = Field(max_length=500)
+
+
+@app.post("/api/explore/seen")
+def explore_seen(body: SeenIn, ws: Workspace = Depends(workspace)) -> dict:
+    """Milestones and badges already announced (not again after the next import)."""
+    explorer().store.mark_seen(ws.user, body.ids)
+    return {"ok": True}
+
+
+def _bbox(bbox: str, max_area: float) -> list[float]:
+    try:
+        box = [float(v) for v in bbox.split(",")]
+        assert len(box) == 4 and box[0] < box[2] and box[1] < box[3]
+    except (ValueError, AssertionError) as e:
+        raise HTTPException(422, "bbox = min_lon,min_lat,max_lon,max_lat") from e
+    if (box[2] - box[0]) * (box[3] - box[1]) > max_area:
+        raise HTTPException(422, "zone trop grande : zoomez")
+    return box
+
+
+@app.get("/api/explore/fog")
+def explore_fog(bbox: str, ws: Workspace = Depends(workspace)) -> dict:
+    """« Brouillard » of the visible area: the walkable paths, each marked run (with its first date) or not."""
+    box = _bbox(bbox, 0.02)  # ~ zoom 13 and closer
+    ex = explorer()
+    done = {s.seg: s for s in ex.store.segments_in(ws.user, box)}
+    features = [
+        {"type": "Feature", "geometry": {"type": "LineString", "coordinates": s.coords}, "properties": {"done": True, "date": s.first_date}}
+        for s in done.values()
+    ]
+    graph = ex.graph_of_bbox(box)
+    if graph is not None:
+        from .explore.matching import explorable, segment_key
+
+        for e in graph.edges:
+            pts = [graph.coords[n] for n in e.nodes]
+            if not explorable(e) or segment_key(e.nodes) in done or not any(box[1] <= la <= box[3] and box[0] <= lo <= box[2] for la, lo in pts):
+                continue
+            features.append({"type": "Feature", "geometry": {"type": "LineString", "coordinates": [[round(lo, 6), round(la, 6)] for la, lo in pts]},
+                             "properties": {"done": False}})
+    return {"type": "FeatureCollection", "features": features}
+
+
+@app.get("/api/explore/communes/{commune_id}")
+def explore_commune(commune_id: str = PathParam(pattern="^[0-9A-Za-z]{1,16}$"), ws: Workspace = Depends(workspace)) -> dict:
+    c = explorer().store.commune(commune_id)
+    if c is None:
+        raise HTTPException(404, "commune inconnue")
+    return {"type": "Feature", "geometry": {"type": "MultiPolygon", "coordinates": c.polygons},
+            "properties": {"id": c.id, "name": c.name}, "bbox": list(c.bbox)}
 
 
 class GpxRequest(BaseModel):

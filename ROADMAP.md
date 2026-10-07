@@ -564,6 +564,38 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
   lecture Overpass, API, points de passage).
 - Extraction France lancée le 2026-10-07 au soir (lente sur les chemins et surfaces : index des nœuds sur disque).
 
+### 2026-10-07 — Exploration : chemins découverts, progression par commune, badges
+- **Map-matching** (première version, `app/explore/matching.py`) : un tronçon = une arête du graphe de routage
+  (voie OSM praticable entre deux carrefours), clé stable tirée de ses nœuds OSM (servira aux notes de l'étape 3).
+  Trace rééchantillonnée tous les 5 m, chaque point accroché au tronçon à moins de 20 m dont la direction
+  concorde (45°), continuité préférée (pas de saut vers la rue parallèle) ; un tronçon est parcouru quand
+  80 % de sa longueur est couverte (traverser une rue ou toucher son bout ne compte pas, un aller-retour compte
+  une fois). Trottoirs, passages piétons, allées privées et de parking ignorés (une rue ne compte qu'une fois).
+- Ne comptent que : les sorties horodatées course / trail / rando, les parties visibles (200 m masqués aux
+  extrémités, zones de confidentialité) et les portions à moins de 25 km/h (vélo, voiture, sauts GPS exclus).
+- Stockage `data/explore/explore.sqlite` (SQLite + R-tree) : tronçons parcourus par compte (1re date et sortie),
+  sorties traitées (version du calcul : retraitement si l'algorithme change), lieux découverts (lieux notables à
+  moins de 30 m), réglages par compte prêts pour un futur classement (**participation désactivée par défaut**,
+  pseudonyme ; rien n'est montré aux autres), communes.
+- **Communes** (OSM `boundary=administrative`, `admin_level=8`, extraites une fois de l'extrait France :
+  `python -m app.explore.communes ../data/osm/france-latest.osm.pbf`) : longueur totale des chemins praticables
+  (calculée à la première visite, puis gardée) vs parcourue -> pourcentage.
+- Calcul **incrémental** en arrière-plan : au démarrage pour chaque compte, puis après chaque import (seules les
+  nouvelles sorties sont traitées). Historique réel : 254 sorties en ~3 min, 545 km de chemins, 397 lieux.
+- API : `GET /api/explore` (résumé, paliers, suggestions), `POST /api/explore/seen`, `GET /api/explore/fog?bbox=`
+  (zone visible, zoom ≥ 13), `GET /api/explore/communes/{id}` (contour).
+- Onglet **« Exploration »** : km découverts, communes triées par % (anneau, km faits / total, lieux, dernière
+  date ; clic -> contour sur la carte), mode **« Brouillard »** (voile sur la carte, chemins courus en jaune, les
+  autres en gris), **paliers** 10/25/50/75/90 % par commune et **badges** (communes, sommets, cascades, points de
+  vue, monuments, lacs ; icônes SVG) avec une courte animation discrète (respecte « réduire les animations ») pour
+  ce qui est franchi depuis la dernière visite ; le premier passage sur l'historique est enregistré sans fête.
+- **Suggestions** « X km de chemins jamais courus à Y km d'ici » (carrés de 1 km à moins de 8 km du départ
+  habituel, pondérés par la distance, espacés de 2 km) ; « Explorer » ouvre le générateur en mode Découverte avec
+  le départ placé dans la zone.
+- 96 tests OK (rue parcourue vs rues voisines, toucher sans parcourir, aller-retour, vélo ignoré, zone de
+  confidentialité, sorties sans heure, % de commune, lieu à 30 m mais pas à 60 m, paliers et badges, trottoirs,
+  premier passage silencieux, API par compte).
+
 ---
 
 ## État au 2026-10-07
@@ -582,7 +614,8 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 3. (Rendu « Fréquentation » abandonné le 2026-10-07 ; son comptage par portion de voie OSM, dans
    l'historique git, peut resservir d'idée pour le map-matching de l'étape 2.)
 4. **Profil altimétrique des sorties passées** dans « Mes sorties » (seul le D+ montre est affiché).
-5. **Étape 2 — map-matching** des traces sur les tronçons OSM (GraphHopper en Docker ou moteur Python).
+5. **Étape 2 — map-matching** : première version en place (Exploration, moteur Python) ; à affiner (GPS en
+   ville dense, chemins absents d'OSM) ou à remplacer par GraphHopper.
 6. **Étape 3 — notation des tronçons** : reporter les évaluations des sorties sur les tronçons OSM parcourus
    (après map-matching), puis noter directement un tronçon.
 7. **Étape 4 — itinéraires pondérés par les notes.**

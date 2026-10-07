@@ -211,6 +211,19 @@ export class Planner {
     this.pointsChanged();
   }
 
+  /** « Explorer » (Exploration tab): a loop from that zone, in Découverte mode (paths never run). */
+  discover(at: LngLat) {
+    this.mode = "loop";
+    this.prefs = { ...(PRESETS.find((p) => p.label === "Découverte") ?? PRESETS[0]).prefs };
+    this.renderMode();
+    this.renderPresets();
+    this.renderPrefs();
+    this.setStart(at);
+    this.map.easeTo({ center: at, zoom: 14 });
+    this.save();
+    this.status("Mode Découverte : départ placé dans la zone, générez l'itinéraire.");
+  }
+
   /** « Passer par ici » (sheet of a notable place): the next routes go through it. */
   addVia(at: LngLat, name: string) {
     if (this.vias.length >= MAX_VIA) {

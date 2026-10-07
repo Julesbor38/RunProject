@@ -36,7 +36,13 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   servi sous /app/), WSL gardé allumé par la tâche Windows « WSL keep-alive (Trail Map) », alimentation sur secteur
   réglée, `tailscale serve --bg http://localhost:8000`. Mise à jour : `./deploy-local.sh` ; logs :
   `journalctl -u trailmap -f` ; dev : `sudo systemctl stop trailmap` d'abord (même port 8000).
-- Prochaine grosse étape : map-matching (étape 2), puis notation des tronçons (étape 3).
+- **Exploration** (`app/explore/`, `src/explore.ts`, onglet « Exploration ») : map-matching des sorties horodatées
+  sur les tronçons OSM praticables (arêtes du graphe, ≤ 20 m, direction, 80 % couverts, trottoirs ignorés,
+  portions à plus de 25 km/h et zones de confidentialité exclus), stocké par compte dans data/explore/explore.sqlite, calcul
+  incrémental en arrière-plan (démarrage + après import) ; % par commune (OSM admin_level=8), lieux découverts
+  (≤ 30 m), paliers 10–90 % et badges, mode « Brouillard », suggestions de zones jamais courues -> générateur en
+  mode Découverte. Tables prêtes pour un classement (opt-in désactivé par défaut), rien d'exposé aux autres.
+- Prochaine grosse étape : notation des tronçons (étape 3) sur les tronçons de l'Exploration.
 - **Lieux notables** (`app/pois/`, `src/pois.ts`) : extraits de l'extrait OSM France dans data/pois/pois.sqlite
   (commun à tous), Overpass hors de France, Wikidata (photo créditée) ; fiche + « Passer par ici » (points de
   passage du générateur, 3 max) ; lieux à ~50 m listés sous chaque itinéraire.
@@ -49,12 +55,14 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   import en arrière-plan, bandeau des nouvelles sorties) ; évaluation de chaque sortie de 1 à 5 sur
   8 critères (sécurité, éclairage, beauté du paysage, plaisir, entretien, abri, tranquillité,
   peu de circulation) + commentaire, en attendant de les reporter sur les tronçons (étape 3).
-- Tests : 84 OK, 1 ignoré.
+- Tests : 96 OK, 1 ignoré.
 
 ## Architecture
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
   - `app/ingest/` : parsers (FIT/GPX/TCX, archive Strava), clean, dedup, privacy, simplify, pipeline
   - `app/routing/` : moteur d'itinéraires Python (en attendant GraphHopper)
+  - `app/explore/` : matching (map-matching, `explorable`, `segment_key`), store (SQLite), communes
+    (extraction + total praticable), explorer (traitement incrémental, résumé, paliers, suggestions)
   - `app/auth.py` : comptes (scrypt), sessions (cookie HttpOnly/Secure/SameSite=Strict, seul le SHA-256
     du jeton est stocké), blocage après 5 échecs ; middleware dans `api.py` : toute route /api exige une
     session sauf PUBLIC_API (health, login, logout) ; tests : marqueur `auth`, sinon session simulée (conftest)
@@ -69,7 +77,7 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   - `main.ts`, `share.ts` (GPX sur téléphone : partage, repli /dl ; app native : Filesystem + Share),
     `native.ts` (app native : adresse du serveur, jeton de session, `apiUrl()`), `debug.ts` (panneau de debug),
     `auth.ts` (écran de connexion), `importer.ts` (mise à jour des données), `ratings.ts`
-    (fiche d'évaluation), `activities.ts` (onglet Mes sorties), `planner.ts` (onglet Itinéraire),
+    (fiche d'évaluation), `activities.ts` (onglet Mes sorties), `explore.ts` (onglet Exploration, brouillard), `planner.ts` (onglet Itinéraire),
     `profile.ts` (profil altimétrique), `terrain.ts` (relief 3D), `api.ts`, `format.ts`
   - Vite ne pré-empaquette pas MapLibre (sinon le worker est perdu et la carte ne charge pas) ;
     en build de production, le worker est empaqueté à part et donné à `setWorkerUrl`
@@ -108,6 +116,9 @@ Chaque route ne lit et n'écrit que les données du compte connecté (data/users
   ({scores: {critère: 1..5}, comment}) ; `key` = clé stable de la sortie (`strava:<id>` ou `file:<nom>`)
 - GET  /api/health : état (comptes chargés, générations en cours, front construit), rien sur les données d'un compte
 - GET  /api/pois?bbox=&zoom=&categories= : lieux notables de la zone ; GET /api/pois/<id> : fiche (Wikidata)
+- GET  /api/explore : résumé (totaux, communes avec %, paliers / badges, `new` = franchis non vus, suggestions) ;
+  POST /api/explore/seen {ids} ; GET /api/explore/fog?bbox= (tronçons faits / à faire, petite zone sinon 422) ;
+  GET /api/explore/communes/{id} : contour (GeoJSON + bbox)
 - POST /api/routes accepte `via` : [[lon, lat], …] (3 max), points de passage
 - GET  /api/activities : traces masquées + simplifiées (~700 Ko), cache data/cache/
 - POST /api/reload : relit data/raw
@@ -195,5 +206,7 @@ Chaque route ne lit et n'écrit que les données du compte connecté (data/users
     (à sauvegarder !) ; privacy.json : zones de confidentialité (optionnel)
 - data/auth/ : comptes (users.json, mots de passe hachés) et sessions (sessions.json), droits 600
 - data/pois/pois.sqlite : lieux notables (extraits de l'OSM France, + Overpass hors France, + cache Wikidata)
+- data/explore/explore.sqlite : Exploration (tronçons parcourus et lieux découverts par compte : **à sauvegarder**,
+  + contours des communes, recalculables avec `python -m app.explore.communes ../data/osm/france-latest.osm.pbf`)
 - data/osm/ : tuiles OSM (cache, communes), data/dem/ : tuiles d'altitude (communes)
 - Types importés : course, trail, randonnée (sport normalisé run / trail_run / hike)
