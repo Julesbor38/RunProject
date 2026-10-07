@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from app.explore.area import cell_area, cell_center, corridor_cells, in_polygons, polygons_area
 from app.explore.communes import walkable_total
 from app.explore.explorer import Explorer
 from app.explore.matching import EdgeIndex, moving_parts, segment_key, traversed_edges
@@ -126,6 +127,11 @@ def test_commune_percentage(tmp_path, g):
     # 2 km along row 2, minus the 200 m masked at each end
     assert town["name"] == "Testville" and town["done_m"] == pytest.approx(1600, rel=0.02)
     assert town["pct"] == pytest.approx(100 * 1600 / total, abs=0.2)
+    # area: a 40 m wide corridor along the 1600 m run, with round ends
+    assert town["area_done_m2"] == pytest.approx(1600 * 40 + math.pi * 20**2, rel=0.03)
+    assert town["area_m2"] == pytest.approx(polygons_area([[ring]]))
+    assert town["area_pct"] == pytest.approx(100 * town["area_done_m2"] / town["area_m2"], abs=0.05)
+    assert ex.store.totals("jules")["area_m2"] == town["area_done_m2"]
 
 
 def test_place_discovered_within_30_m(tmp_path, g):
@@ -170,6 +176,17 @@ def test_sidewalks_do_not_count_and_snap_to_their_street():
     assert walkable_total(Commune("x", "X", None, [[[[3.9, 44.9], [4.1, 44.9], [4.1, 45.1], [3.9, 45.1]]]], None, (3.9, 44.9, 4.1, 45.1)), Path("."), graph=g2) == pytest.approx(400, rel=0.01)
 
 
+def test_catching_up_is_quiet(tmp_path, g):
+    """Communes extracted after the history was processed: their milestones are not news."""
+    ex = explorer(tmp_path, g)
+    ex.process("jules", tmp_path, lambda s: s, [Activity("strava:10", "run", "r", T0, track([(2, 0), (2, 10)]))])
+    ring = [[LON0 - 0.001, LAT0 - 0.001], [LON0 + 10 * LON_STEP + 0.001, LAT0 - 0.001], [LON0 + 10 * LON_STEP + 0.001, LAT0 + 2.5 * STEP], [LON0 - 0.001, LAT0 + 2.5 * STEP]]
+    ex.store.add_communes([Commune("69998", "Petiteville", None, [[ring]], 5000, (ring[0][0], ring[0][1], ring[2][0], ring[2][1]))])
+    ex.process("jules", tmp_path, lambda s: s, [])
+    s = ex.summary("jules")
+    assert any(a["id"] == "commune:69998:25" and a["achieved"] for a in s["achievements"]) and s["new"] == []
+
+
 def test_history_is_quiet_then_new_milestones_are_announced(tmp_path, g):
     pois = PoiStore(tmp_path / "pois.sqlite")
     lat, lon = node(8, 2)
@@ -178,7 +195,7 @@ def test_history_is_quiet_then_new_milestones_are_announced(tmp_path, g):
     ex.process("jules", tmp_path, lambda s: s, [Activity("strava:6", "run", "r", T0, track([(2, 0), (2, 5)]))])
     assert ex.summary("jules")["new"] == []  # the history: recorded, not celebrated
     later = T0 + timedelta(days=2)
-    ex.process("jules", tmp_path, lambda s: s, [Activity("strava:7", "run", "r", later, track([(8, 0), (8, 5)], start=later))])
+    ex.process("jules", tmp_path, lambda s: s, [Activity("strava:7", "run", "r", later, track([(8, 0), (8, 5)], start=later))], announce=True)
     assert [a["id"] for a in ex.summary("jules")["new"]] == ["badge:peaks:1"]
     ex.store.mark_seen("jules", ["badge:peaks:1"])
     assert ex.summary("jules")["new"] == []
@@ -204,3 +221,46 @@ def test_explore_api_is_per_user(tmp_path, monkeypatch):
         assert c.post("/api/explore/seen", json={"ids": ["badge:peaks:1"]}).json() == {"ok": True}
     assert ex.store.settings("tester")["seen"] == ["badge:peaks:1"] and ex.store.settings("marie")["seen"] == []
     assert ex.store.discovered("marie") == [] and ex.store.settings("marie")["leaderboard_opt_in"] is False
+
+
+def area_of(cells):
+    return sum(cell_area(cy) for _, cy in cells)
+
+
+def test_area_is_a_corridor_20_m_each_side():
+    cells = corridor_cells([track([(5, 0), (5, 5)])])  # 1 km
+    assert area_of(cells) == pytest.approx(1000 * 40 + math.pi * 20**2, rel=0.03)
+    lat, lon = node(5, 2)
+    centers = {(round(la, 5), round(lo, 5)) for la, lo in (cell_center(*c) for c in cells)}
+    def near(dy_m):  # is there a discovered cell centre ~dy_m north of the street?
+        return any(abs(la - (lat + dy_m / 111_320)) < 6 / 111_320 and abs(lo - lon) < 6 / 78_000 for la, lo in centers)
+    assert near(0) and near(15) and not near(30)
+
+
+def test_area_out_and_back_counts_once():
+    one_way = corridor_cells([track([(5, 0), (5, 3)])])
+    there_and_back = corridor_cells([track([(5, 0), (5, 3), (5, 0)])])
+    assert there_and_back == one_way
+
+
+def test_area_is_added_only_once_across_activities(tmp_path, g):
+    ex = explorer(tmp_path, g)
+    a1 = Activity("strava:8", "run", "r", T0, track([(2, 0), (2, 6)]))
+    a2 = Activity("strava:9", "run", "r", T0 + timedelta(days=1), track([(2, 0), (2, 6)], start=T0 + timedelta(days=1)))
+    ex.process("jules", tmp_path, lambda s: s, [a1])
+    once = ex.store.totals("jules")["area_m2"]
+    ex.process("jules", tmp_path, lambda s: s, [a1, a2])
+    assert once > 0 and ex.store.totals("jules")["area_m2"] == once
+    assert ex.store.totals("marie")["area_m2"] == 0
+
+
+def test_polygon_area_and_holes():
+    import numpy as np
+
+    k = 111_320 * math.cos(math.radians(45))
+    sq = lambda lon, lat, m: [[lon, lat], [lon + m / k, lat], [lon + m / k, lat + m / 111_320], [lon, lat + m / 111_320]]
+    poly = [[sq(4.0, 45.0, 1000), sq(4.0 + 400 / k, 45.0 + 400 / 111_320, 200)]]
+    assert polygons_area(poly) == pytest.approx(1000**2 - 200**2, rel=0.01)
+    lats = np.array([45.0 + 100 / 111_320, 45.0 + 500 / 111_320, 45.0 + 2000 / 111_320])
+    lons = np.array([4.0 + 100 / k, 4.0 + 500 / k, 4.0 + 100 / k])
+    assert in_polygons(lats, lons, poly).tolist() == [True, False, False]  # inside, in the hole, outside

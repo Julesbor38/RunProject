@@ -1,4 +1,5 @@
-"""Exploration of one user: their activities matched onto the OSM paths, per commune progress, places
+"""Exploration of one user: their activities matched onto the OSM paths, the area discovered around them
+(20 m each side), per commune progress (paths and area), places
 discovered, milestones and badges, suggestions of unexplored paths nearby. Run in the background, only for
 the activities not processed yet (a new import only costs its new activities)."""
 from __future__ import annotations
@@ -7,8 +8,10 @@ import logging
 import math
 import threading
 from collections import Counter, OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
+
+import numpy as np
 
 from ..ingest import load_zones, mask
 from ..ingest.models import Activity
@@ -16,6 +19,7 @@ from ..ingest.pipeline import ingest
 from ..ingest.privacy import DEFAULT_TRIM_M
 from ..routing.graph import EARTH_M_PER_DEG_LAT, Graph, build_graph
 from ..routing.osm import TILE_DEG, load_cached_tiles, tile_path
+from .area import cell_area, cell_center, corridor_cells, in_polygons, polygons_area
 from .communes import walkable_total
 from .matching import EdgeIndex, edge_midpoint, explorable, moving_parts, segment_key, traversed_edges
 from .store import ExploreStore, Segment
@@ -42,8 +46,13 @@ class Explorer:
 
     # --- processing ---
 
-    def process(self, user: str, folder: Path, activity_key: Callable[[str], str], activities: list[Activity] | None = None) -> int:
-        """Match the activities not processed yet. Returns how many were processed."""
+    def process(self, user: str, folder: Path, activity_key: Callable[[str], str], activities: list[Activity] | None = None,
+                announce: bool = False) -> int:
+        """Match the activities not processed yet. Returns how many were processed.
+
+        Only a run after an import of new activities (`announce`) celebrates the milestones it crosses; the
+        others (the history at start-up, a new version of the matching, communes extracted later) catch up
+        quietly: what they unlock is marked as seen."""
         with self._lock:
             if self.status.get(user, {}).get("state") == "running":
                 return 0
@@ -55,14 +64,17 @@ class Explorer:
             zones = load_zones(zones_file) if zones_file.exists() else []
             self.place_in_communes()
             done = self.store.processed(user)
+            known = self.store.cells(user)  # area already discovered: a new activity only adds its new cells
             todo = [a for a in activities if activity_key(a.source) not in done]
             todo.sort(key=lambda a: (_region(a) or (0, 0), a.start.isoformat() if a.start else ""))
             self.status[user]["total"] = len(todo)
             touched: set[str] = set()
             for i, act in enumerate(todo):
-                touched |= self._activity(user, act, activity_key(act.source), zones)
+                touched |= self._activity(user, act, activity_key(act.source), zones, known)
                 self.status[user]["done"] = i + 1
             self._totals(touched)
+            if not announce:
+                self.store.mark_seen(user, [a["id"] for a in self._achievements(user) if a["achieved"]] or ["-"])
             return len(todo)
         except Exception:
             log.exception("exploration of %s", user)
@@ -85,15 +97,24 @@ class Explorer:
             if c is not None:
                 self.store.set_commune("seg" if kind == "seg" else "poi", rowid, c.id)
                 touched.add(c.id)
+        rows = self.store.cells_without_commune()
+        if rows:
+            placed = self._cells_communes([(cx, cy) for _, cx, cy in rows])
+            self.store.set_cells_commune((c, user, cx, cy) for (user, _, _), (cx, cy, c, _) in zip(rows, placed) if c is not None)
+            touched |= {c for _, _, c, _ in placed if c is not None}
         self._totals(touched)
 
-    def _activity(self, user: str, act: Activity, key: str, zones) -> set[str]:
-        """Match one activity; returns the communes it touched."""
+    def _activity(self, user: str, act: Activity, key: str, zones, known: set | None = None) -> set[str]:
+        """Match one activity and add the area around it; returns the communes it touched."""
         timed = sum(1 for p in act.points if p.time) / max(len(act.points), 1)
         parts = moving_parts(mask(act, zones, DEFAULT_TRIM_M)) if timed >= TIMED_SHARE else []
         if not parts:
             self.store.add_activity(user, key, [], [])
             return set()
+        known = known if known is not None else self.store.cells(user)
+        new_cells = corridor_cells(parts) - known
+        known |= new_cells
+        cells = self._cells_communes(new_cells)
         graph = self._graph_for(parts)
         segments, communes = [], set()
         date = act.start.isoformat() if act.start else None
@@ -114,8 +135,22 @@ class Explorer:
                 c = self.store.commune_at(poi.lat, poi.lon)
                 pois.append({"poi": poi.id, "name": poi.name, "category": poi.category, "kind": poi.kind,
                              "commune": c.id if c else None, "first_date": date})
-        self.store.add_activity(user, key, segments, pois)
-        return communes
+        self.store.add_activity(user, key, segments, pois, cells)
+        return communes | {c for _, _, c, _ in cells if c is not None}
+
+    def _cells_communes(self, cells: Iterable[tuple[int, int]]) -> list[tuple[int, int, str | None, float]]:
+        """(cx, cy, commune of its centre, m²) of each cell."""
+        cells = list(cells)
+        if not cells:
+            return []
+        centers = np.array([cell_center(cx, cy) for cx, cy in cells])
+        lats, lons = centers[:, 0], centers[:, 1]
+        found = np.full(len(cells), None, dtype=object)
+        for c in self.store.communes_in((lons.min(), lats.min(), lons.max(), lats.max())):
+            todo = np.flatnonzero((found == None) & (lons >= c.bbox[0]) & (lons <= c.bbox[2]) & (lats >= c.bbox[1]) & (lats <= c.bbox[3]))  # noqa: E711
+            if len(todo):
+                found[todo[in_polygons(lats[todo], lons[todo], c.polygons)]] = c.id
+        return [(cx, cy, found[i], round(cell_area(cy), 2)) for i, (cx, cy) in enumerate(cells)]
 
     def _graph_for(self, parts) -> tuple[Graph, EdgeIndex] | None:
         with self._graphs_lock:
@@ -174,23 +209,13 @@ class Explorer:
 
     # --- what the user sees ---
 
+    def _achievements(self, user: str) -> list[dict]:
+        return self.achievements(self._communes(user), self.store.discovered(user))
+
     def summary(self, user: str) -> dict:
-        communes = []
-        for row in self.store.per_commune(user):
-            c = self.store.commune(row["commune"])
-            if c is None:
-                continue
-            pct = min(100.0, 100 * row["done_m"] / c.total_m) if c.total_m else None
-            communes.append({"id": c.id, "name": c.name, "pct": round(pct, 1) if pct is not None else None,
-                             "done_m": row["done_m"], "total_m": c.total_m, "pois": row["pois"], "last": row["last"]})
-        communes.sort(key=lambda c: (-(c["pct"] or 0), -c["done_m"]))
+        communes = self._communes(user)
         achievements = self.achievements(communes, self.store.discovered(user))
-        settings = self.store.settings(user)
-        seen = set(settings["seen"])
-        if not settings["seen"] and self.status.get(user, {}).get("state") == "done":
-            # The first full pass over the history: recorded quietly, celebrations are for what comes next.
-            self.store.mark_seen(user, [a["id"] for a in achievements if a["achieved"]] or ["-"])
-            seen = {a["id"] for a in achievements}
+        seen = set(self.store.settings(user)["seen"])
         return {
             "status": self.status.get(user, {"state": "idle"}),
             "totals": self.store.totals(user),
@@ -200,6 +225,26 @@ class Explorer:
             "discovered": len(self.store.discovered(user)),
         }
 
+    def _communes(self, user: str) -> list[dict]:
+        communes = []
+        for row in self.store.per_commune(user):
+            c = self.store.commune(row["commune"])
+            if c is None:
+                continue
+            pct = min(100.0, 100 * row["done_m"] / c.total_m) if c.total_m else None
+            area = c.area_m2
+            if area is None:
+                area = round(polygons_area(c.polygons))
+                self.store.set_area(c.id, area)
+            area_pct = min(100.0, 100 * row["area_m2"] / area) if area else None
+            communes.append({"id": c.id, "name": c.name, "pct": round(pct, 1) if pct is not None else None,
+                             "done_m": row["done_m"], "total_m": c.total_m,
+                             "area_pct": round(area_pct, 1) if area_pct is not None else None,
+                             "area_done_m2": row["area_m2"], "area_m2": area,
+                             "pois": row["pois"], "last": row["last"]})
+        communes.sort(key=lambda c: (-(c["area_pct"] or 0), -c["done_m"]))
+        return communes
+
     @staticmethod
     def achievements(communes: list[dict], discovered: list[dict]) -> list[dict]:
         """Milestones per commune (10/25/50/75/90 %) and badges (communes, summits, waterfalls…)."""
@@ -207,7 +252,7 @@ class Explorer:
         for c in communes:
             for m in MILESTONES:
                 if c["pct"] is not None and c["pct"] >= m:
-                    out.append({"id": f"commune:{c['id']}:{m}", "kind": "milestone", "title": f"{c['name']} : {m} %",
+                    out.append({"id": f"commune:{c['id']}:{m}", "kind": "milestone", "title": f"{c['name']} : {m} % des chemins",
                                 "detail": f"{m} % des chemins de {c['name']} parcourus", "achieved": True})
         kinds = Counter(p["kind"] for p in discovered)
         heritage = sum(1 for p in discovered if p["category"] == "heritage")

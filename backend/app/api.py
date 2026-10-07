@@ -46,6 +46,7 @@ from .pois.wikidata import Wikidata
 DATA_DIR = Path(os.environ.get("TRAILMAP_DATA", Path(__file__).parents[2] / "data"))
 SIMPLIFY_TOLERANCE_M = 5.0
 PREFETCH_OSM = os.environ.get("TRAILMAP_PREFETCH", "1") != "0"
+EXPLORE_AUTO = os.environ.get("TRAILMAP_EXPLORE", "1") != "0"  # match each user's activities in the background
 # Generated routes kept for GET /api/routes/{route_id}/gpx (the newest ones only).
 MAX_SAVED_ROUTES = 300
 DL_LINK_TTL_S = 3600  # signed /dl/ links to a route's GPX
@@ -161,13 +162,14 @@ def explorer() -> Explorer:
     return _explore["explorer"]
 
 
-def explore_in_background(ws: Workspace) -> None:
-    """Match the user's new activities, then refresh the suggestions (after login and after each import)."""
+def explore_in_background(ws: Workspace, announce: bool = False) -> None:
+    """Match the user's new activities, then refresh the suggestions (after login and after each import:
+    only then, `announce`, are the milestones crossed celebrated)."""
     ex = explorer()
 
     def run() -> None:
         try:
-            ex.process(ws.user, ws.dir, activity_key)
+            ex.process(ws.user, ws.dir, activity_key, announce=announce)
             _explore["suggestions"][ws.user] = ex.suggestions(ws.user, home_of(ws.activities))
         except Exception:  # noqa: BLE001 - logged; the map works without it
             logging.getLogger("app").exception("exploration")
@@ -210,6 +212,7 @@ def workspace(request: Request) -> Workspace:
             ws = Workspace(user, folder, fc, routing_service(fc))
             if PREFETCH_OSM:
                 ws.routing.start_prefetch()  # the user's running areas (abroad: Overpass)
+            if EXPLORE_AUTO:
                 explore_in_background(ws)
             _workspaces[user] = ws
     return ws
@@ -383,7 +386,8 @@ def _run_import(ws: Workspace, before: set[str]) -> None:
         _reload(ws)
         new = [f["properties"]["key"] for f in ws.activities["features"] if f["properties"]["key"] not in before]
         ws.import_status = {**ws.import_status, "state": "done", "new": new, "activities": ws.activities["stats"]["activities"]}
-        explore_in_background(ws)  # the new activities' paths, places and milestones
+        if EXPLORE_AUTO:
+            explore_in_background(ws, announce=True)  # the new activities' paths, places and milestones
     except Exception as e:  # noqa: BLE001 - reported to the user
         logging.getLogger("app").exception("import failed")
         ws.import_status = {**ws.import_status, "state": "error", "message": str(e)}

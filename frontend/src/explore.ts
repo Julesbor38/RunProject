@@ -1,5 +1,6 @@
 /**
- * « Exploration » tab (like Zenly / Wandrer): my communes with the share of their paths I have run, places
+ * « Exploration » tab (like Zenly / Wandrer): my communes with the share of their area I have discovered (20 m
+ * each side of the paths run) and of their paths I have run, places
  * discovered, milestones and badges, suggestions of paths never run nearby; on the map, the « Brouillard »:
  * the paths I ran lit up, the others greyed, the selected commune's boundary. Only the visible area is loaded.
  */
@@ -14,6 +15,9 @@ interface Town {
   pct: number | null;
   done_m: number;
   total_m: number | null;
+  area_pct: number | null;
+  area_done_m2: number;
+  area_m2: number | null;
   pois: number;
   last: string | null;
 }
@@ -31,7 +35,7 @@ interface Achievement {
 
 interface Summary {
   status: { state: string; done?: number; total?: number };
-  totals: { done_m: number; segments: number; activities: number };
+  totals: { done_m: number; segments: number; activities: number; area_m2: number };
   communes: Town[];
   achievements: Achievement[];
   new: Achievement[];
@@ -110,6 +114,7 @@ export class ExploreView {
     const km = (m: number) => (m / 1000).toLocaleString("fr-FR", { maximumFractionDigits: 1 });
     document.getElementById("explore-totals")!.innerHTML = `
       <div><strong>${km(s.totals.done_m)}</strong><span>km de chemins découverts</span></div>
+      <div><strong>${km2(s.totals.area_m2)}</strong><span>km² découverts</span></div>
       <div><strong>${s.communes.length}</strong><span>commune${s.communes.length > 1 ? "s" : ""}</span></div>
       <div><strong>${s.discovered}</strong><span>lieu${s.discovered > 1 ? "x" : ""} découvert${s.discovered > 1 ? "s" : ""}</span></div>`;
 
@@ -132,9 +137,10 @@ export class ExploreView {
       ? s.communes
           .map(
             (t) => `<li data-id="${escape(t.id)}" class="${t.id === this.townId ? "selected" : ""}">
-            ${ring(t.pct)}
+            ${ring(t.area_pct)}
             <div><span class="name">${escape(t.name)}</span>
-            <span class="meta">${km(t.done_m)}${t.total_m ? ` / ${km(t.total_m)}` : ""} km · ${t.pois} lieu${t.pois > 1 ? "x" : ""}${t.last ? ` · ${formatDate(t.last)}` : ""}</span></div></li>`,
+            <span class="meta">${km2(t.area_done_m2)}${t.area_m2 ? ` / ${km2(t.area_m2)}` : ""} km² de la superficie</span>
+            <span class="meta">${t.pct !== null ? `${pct(t.pct)} % des chemins · ` : ""}${km(t.done_m)}${t.total_m ? ` / ${km(t.total_m)}` : ""} km · ${t.pois} lieu${t.pois > 1 ? "x" : ""}${t.last ? ` · ${formatDate(t.last)}` : ""}</span></div></li>`,
           )
           .join("")
       : `<li class="empty">Rien encore : la carte se remplit avec vos sorties (horodatées) dès qu'elles sont analysées.</li>`;
@@ -224,17 +230,26 @@ export class ExploreView {
   }
 }
 
+/** km² with two decimals while small (a commune's corridor is often a fraction of a km²). */
+function km2(m2: number): string {
+  return (m2 / 1e6).toLocaleString("fr-FR", { maximumFractionDigits: m2 < 10e6 ? 2 : 1 });
+}
+
+function pct(p: number): string {
+  return p < 10 ? p.toFixed(1).replace(".", ",") : String(Math.round(p));
+}
+
 function empty() {
   return { type: "FeatureCollection" as const, features: [] };
 }
 
 /** Progress ring (SVG) with the percentage in the middle. */
-function ring(pct: number | null): string {
+function ring(value: number | null): string {
   const r = 17;
   const c = 2 * Math.PI * r;
-  const p = Math.max(0, Math.min(100, pct ?? 0));
-  return `<svg class="ring" viewBox="0 0 44 44" aria-label="${pct === null ? "en calcul" : `${p} %`}">
+  const p = Math.max(0, Math.min(100, value ?? 0));
+  return `<svg class="ring" viewBox="0 0 44 44" aria-label="${value === null ? "en calcul" : `${p} % de la superficie`}">
     <circle cx="22" cy="22" r="${r}" class="ring-bg"/>
     <circle cx="22" cy="22" r="${r}" class="ring-fg" stroke-dasharray="${((p / 100) * c).toFixed(1)} ${c.toFixed(1)}"/>
-    <text x="22" y="26" text-anchor="middle">${pct === null ? "…" : p < 10 ? p.toFixed(1).replace(".", ",") : Math.round(p)}</text></svg>`;
+    <text x="22" y="26" text-anchor="middle">${value === null ? "…" : pct(p)}</text></svg>`;
 }

@@ -7,6 +7,7 @@ from app import api
 def no_osm_prefetch(monkeypatch):
     """The API must never reach Overpass during tests."""
     monkeypatch.setattr(api, "PREFETCH_OSM", False)
+    monkeypatch.setattr(api, "EXPLORE_AUTO", False)
 
 
 @pytest.fixture(autouse=True)

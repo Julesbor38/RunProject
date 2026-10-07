@@ -1,9 +1,10 @@
 """Exploration data in SQLite (data/explore/explore.sqlite).
 
 Per user (every row has its user, and every query asks for one user only: nothing is shown to others yet):
-segments traversed (with the date and activity of their first discovery), places discovered, activities
+segments traversed (with the date and activity of their first discovery), area cells discovered (a 20 m
+corridor each side of the paths run, see area.py), places discovered, activities
 already processed, and settings ready for leaderboards (opt-in off by default, pseudonym). Shared, public:
-the communes (OSM boundaries) and their total length of walkable paths.
+the communes (OSM boundaries), their area and their total length of walkable paths.
 """
 from __future__ import annotations
 
@@ -15,7 +16,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-VERSION = 1  # of the matching: a new version re-processes the activities
+VERSION = 2  # of the matching (2: area discovered): a new version re-processes the activities
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS traversed (
@@ -30,6 +31,11 @@ CREATE TABLE IF NOT EXISTS processed (
   user TEXT NOT NULL, activity TEXT NOT NULL, version INTEGER NOT NULL, segments INTEGER NOT NULL,
   PRIMARY KEY (user, activity)
 );
+CREATE TABLE IF NOT EXISTS area_cells (
+  user TEXT NOT NULL, cx INTEGER NOT NULL, cy INTEGER NOT NULL, commune TEXT, area_m2 REAL NOT NULL,
+  PRIMARY KEY (user, cx, cy)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS area_cells_user_commune ON area_cells(user, commune);
 CREATE TABLE IF NOT EXISTS discovered_pois (
   user TEXT NOT NULL, poi TEXT NOT NULL, name TEXT NOT NULL, category TEXT NOT NULL, kind TEXT NOT NULL,
   commune TEXT, first_date TEXT, activity TEXT NOT NULL,
@@ -44,7 +50,8 @@ CREATE TABLE IF NOT EXISTS settings (
 CREATE TABLE IF NOT EXISTS communes (
   rid INTEGER PRIMARY KEY, id TEXT UNIQUE NOT NULL, name TEXT NOT NULL, insee TEXT,
   polygons TEXT NOT NULL,                         -- [[outer ring, hole, …], …] of [lon, lat]
-  total_m REAL                                    -- walkable paths inside, computed when first needed
+  total_m REAL,                                   -- walkable paths inside, computed when first needed
+  area_m2 REAL                                    -- computed when first needed
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS communes_rtree USING rtree(rid, min_lon, max_lon, min_lat, max_lat);
 """
@@ -70,6 +77,7 @@ class Commune:
     polygons: list
     total_m: float | None
     bbox: tuple[float, float, float, float]
+    area_m2: float | None = None
 
     def contains(self, lat: float, lon: float) -> bool:
         return any(_in_ring(lon, lat, poly[0]) and not any(_in_ring(lon, lat, h) for h in poly[1:]) for poly in self.polygons)
@@ -82,6 +90,8 @@ class ExploreStore:
         self._lock = threading.RLock()
         self._db = sqlite3.connect(path, check_same_thread=False)
         self._db.executescript(SCHEMA)
+        if "area_m2" not in {r[1] for r in self._db.execute("PRAGMA table_info(communes)")}:
+            self._db.execute("ALTER TABLE communes ADD COLUMN area_m2 REAL")  # databases of version 1
 
     # --- activities and segments ---
 
@@ -90,10 +100,13 @@ class ExploreStore:
             rows = self._db.execute("SELECT activity FROM processed WHERE user = ? AND version = ?", (user, VERSION)).fetchall()
         return {r[0] for r in rows}
 
-    def add_activity(self, user: str, activity: str, segments: Iterable[Segment], pois: Iterable[dict]) -> int:
-        """Record an activity's segments and places (an earlier discovery keeps its date). Returns new segments."""
+    def add_activity(self, user: str, activity: str, segments: Iterable[Segment], pois: Iterable[dict],
+                     cells: Iterable[tuple[int, int, str | None, float]] = ()) -> int:
+        """Record an activity's segments, area cells (cx, cy, commune, m²) and places (an earlier discovery keeps
+        its date). Returns new segments."""
         new = 0
         with self._lock, self._db:
+            self._db.executemany("INSERT OR IGNORE INTO area_cells VALUES (?,?,?,?,?)", ((user, *c) for c in cells))
             for s in segments:
                 cur = self._db.execute(
                     "INSERT OR IGNORE INTO traversed (user, seg, length_m, lat, lon, commune, first_date, activity, coords)"
@@ -130,27 +143,45 @@ class ExploreStore:
             ).fetchall()
         return [Segment(*r[:7], json.loads(r[7])) for r in rows]
 
+    def cells(self, user: str) -> set[tuple[int, int]]:
+        with self._lock:
+            return set(self._db.execute("SELECT cx, cy FROM area_cells WHERE user = ?", (user,)))
+
+    def cells_without_commune(self, limit: int = 200_000) -> list[tuple[str, int, int]]:
+        with self._lock:
+            return self._db.execute("SELECT user, cx, cy FROM area_cells WHERE commune IS NULL LIMIT ?", (limit,)).fetchall()
+
+    def set_cells_commune(self, rows: Iterable[tuple[str, str, int, int]]) -> None:
+        """rows: (commune, user, cx, cy)."""
+        with self._lock, self._db:
+            self._db.executemany("UPDATE area_cells SET commune = ? WHERE user = ? AND cx = ? AND cy = ?", rows)
+
     def segment_keys(self, user: str) -> set[str]:
         with self._lock:
             return {r[0] for r in self._db.execute("SELECT seg FROM traversed WHERE user = ?", (user,))}
 
     def per_commune(self, user: str) -> list[dict]:
-        """For each commune the user went through: km done, places discovered, last discovery."""
+        """For each commune the user went through: km done, area discovered, places discovered, last discovery."""
         with self._lock:
-            rows = self._db.execute(
+            rows = {c: (m, d) for c, m, d in self._db.execute(
                 "SELECT commune, sum(length_m), max(first_date) FROM traversed WHERE user = ? AND commune IS NOT NULL GROUP BY commune",
                 (user,),
-            ).fetchall()
+            )}
+            area = dict(self._db.execute(
+                "SELECT commune, sum(area_m2) FROM area_cells WHERE user = ? AND commune IS NOT NULL GROUP BY commune", (user,)
+            ).fetchall())
             pois = dict(self._db.execute(
                 "SELECT commune, count(*) FROM discovered_pois WHERE user = ? AND commune IS NOT NULL GROUP BY commune", (user,)
             ).fetchall())
             last_poi = dict(self._db.execute(
                 "SELECT commune, max(first_date) FROM discovered_pois WHERE user = ? AND commune IS NOT NULL GROUP BY commune", (user,)
             ).fetchall())
-        return [
-            {"commune": c, "done_m": round(m), "pois": pois.get(c, 0), "last": max(filter(None, [d, last_poi.get(c)]), default=None)}
-            for c, m, d in rows
-        ]
+        out = []
+        for c in rows.keys() | area.keys():
+            m, d = rows.get(c, (0.0, None))
+            out.append({"commune": c, "done_m": round(m), "area_m2": round(area.get(c, 0.0)), "pois": pois.get(c, 0),
+                        "last": max(filter(None, [d, last_poi.get(c)]), default=None)})
+        return out
 
     def discovered(self, user: str) -> list[dict]:
         with self._lock:
@@ -163,7 +194,8 @@ class ExploreStore:
         with self._lock:
             m, n = self._db.execute("SELECT coalesce(sum(length_m), 0), count(*) FROM traversed WHERE user = ?", (user,)).fetchone()
             a = self._db.execute("SELECT count(*) FROM processed WHERE user = ? AND version = ?", (user, VERSION)).fetchone()[0]
-        return {"done_m": round(m), "segments": n, "activities": a}
+            area = self._db.execute("SELECT coalesce(sum(area_m2), 0) FROM area_cells WHERE user = ?", (user,)).fetchone()[0]
+        return {"done_m": round(m), "segments": n, "activities": a, "area_m2": round(area)}
 
     def without_commune(self, limit: int = 50000) -> list[tuple[int, float, float, str]]:
         """(rowid, lat, lon, kind) of segments ('seg') and places ('poi') not yet placed in a commune."""
@@ -219,6 +251,10 @@ class ExploreStore:
                 return c
         return None
 
+    def communes_in(self, bbox: Sequence[float]) -> list[Commune]:
+        min_lon, min_lat, max_lon, max_lat = bbox
+        return self._communes_where("r.max_lon >= ? AND r.min_lon <= ? AND r.max_lat >= ? AND r.min_lat <= ?", (min_lon, max_lon, min_lat, max_lat))
+
     def commune(self, commune_id: str) -> Commune | None:
         found = self._communes_where("c.id = ?", (commune_id,))
         return found[0] if found else None
@@ -227,14 +263,18 @@ class ExploreStore:
         with self._lock, self._db:
             self._db.execute("UPDATE communes SET total_m = ? WHERE id = ?", (total_m, commune_id))
 
+    def set_area(self, commune_id: str, area_m2: float) -> None:
+        with self._lock, self._db:
+            self._db.execute("UPDATE communes SET area_m2 = ? WHERE id = ?", (area_m2, commune_id))
+
     def _communes_where(self, where: str, args: tuple) -> list[Commune]:
         with self._lock:
             rows = self._db.execute(
-                "SELECT c.id, c.name, c.insee, c.polygons, c.total_m, r.min_lon, r.min_lat, r.max_lon, r.max_lat"
+                "SELECT c.id, c.name, c.insee, c.polygons, c.total_m, r.min_lon, r.min_lat, r.max_lon, r.max_lat, c.area_m2"
                 f" FROM communes c JOIN communes_rtree r ON r.rid = c.rid WHERE {where}",
                 args,
             ).fetchall()
-        return [Commune(r[0], r[1], r[2], json.loads(r[3]), r[4], (r[5], r[6], r[7], r[8])) for r in rows]
+        return [Commune(r[0], r[1], r[2], json.loads(r[3]), r[4], (r[5], r[6], r[7], r[8]), r[9]) for r in rows]
 
 
 def _in_ring(lon: float, lat: float, ring: list) -> bool:

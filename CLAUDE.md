@@ -39,8 +39,10 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 - **Exploration** (`app/explore/`, `src/explore.ts`, onglet « Exploration ») : map-matching des sorties horodatées
   sur les tronçons OSM praticables (arêtes du graphe, ≤ 20 m, direction, 80 % couverts, trottoirs ignorés,
   portions à plus de 25 km/h et zones de confidentialité exclus), stocké par compte dans data/explore/explore.sqlite, calcul
-  incrémental en arrière-plan (démarrage + après import) ; % par commune (OSM admin_level=8), lieux découverts
-  (≤ 30 m), paliers 10–90 % et badges, mode « Brouillard », suggestions de zones jamais courues -> générateur en
+  incrémental en arrière-plan (démarrage + après import ; `TRAILMAP_EXPLORE=0` pour le couper) ; par commune
+  (OSM admin_level=8, 34 770 extraites) : % de la **superficie** découverte (bande de 20 m de chaque côté des
+  passages, cellules de ~10 m, `area.py`) et % des chemins ; lieux découverts (≤ 30 m), paliers 10–90 % des chemins
+  et badges (annoncés seulement après un import, les rattrapages sont silencieux), mode « Brouillard », suggestions de zones jamais courues -> générateur en
   mode Découverte. Tables prêtes pour un classement (opt-in désactivé par défaut), rien d'exposé aux autres.
 - Prochaine grosse étape : notation des tronçons (étape 3) sur les tronçons de l'Exploration.
 - **Lieux notables** (`app/pois/`, `src/pois.ts`) : extraits de l'extrait OSM France dans data/pois/pois.sqlite
@@ -55,13 +57,14 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   import en arrière-plan, bandeau des nouvelles sorties) ; évaluation de chaque sortie de 1 à 5 sur
   8 critères (sécurité, éclairage, beauté du paysage, plaisir, entretien, abri, tranquillité,
   peu de circulation) + commentaire, en attendant de les reporter sur les tronçons (étape 3).
-- Tests : 96 OK, 1 ignoré.
+- Tests : 101 OK, 1 ignoré.
 
 ## Architecture
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
   - `app/ingest/` : parsers (FIT/GPX/TCX, archive Strava), clean, dedup, privacy, simplify, pipeline
   - `app/routing/` : moteur d'itinéraires Python (en attendant GraphHopper)
-  - `app/explore/` : matching (map-matching, `explorable`, `segment_key`), store (SQLite), communes
+  - `app/explore/` : matching (map-matching, `explorable`, `segment_key`), area (bande de 20 m sur grille
+    de ~10 m, point dans polygone vectorisé), store (SQLite), communes
     (extraction + total praticable), explorer (traitement incrémental, résumé, paliers, suggestions)
   - `app/auth.py` : comptes (scrypt), sessions (cookie HttpOnly/Secure/SameSite=Strict, seul le SHA-256
     du jeton est stocké), blocage après 5 échecs ; middleware dans `api.py` : toute route /api exige une
@@ -116,7 +119,7 @@ Chaque route ne lit et n'écrit que les données du compte connecté (data/users
   ({scores: {critère: 1..5}, comment}) ; `key` = clé stable de la sortie (`strava:<id>` ou `file:<nom>`)
 - GET  /api/health : état (comptes chargés, générations en cours, front construit), rien sur les données d'un compte
 - GET  /api/pois?bbox=&zoom=&categories= : lieux notables de la zone ; GET /api/pois/<id> : fiche (Wikidata)
-- GET  /api/explore : résumé (totaux, communes avec %, paliers / badges, `new` = franchis non vus, suggestions) ;
+- GET  /api/explore : résumé (totaux dont km², communes avec % des chemins et `area_pct` de la superficie, paliers / badges, `new` = franchis non vus, suggestions) ;
   POST /api/explore/seen {ids} ; GET /api/explore/fog?bbox= (tronçons faits / à faire, petite zone sinon 422) ;
   GET /api/explore/communes/{id} : contour (GeoJSON + bbox)
 - POST /api/routes accepte `via` : [[lon, lat], …] (3 max), points de passage

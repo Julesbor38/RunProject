@@ -596,6 +596,25 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
   confidentialité, sorties sans heure, % de commune, lieu à 30 m mais pas à 60 m, paliers et badges, trottoirs,
   premier passage silencieux, API par compte).
 
+### 2026-10-08 — Exploration : superficie découverte de chaque commune
+- Extractions France terminées : 479 026 lieux notables (1 h, 6,3 Go de mémoire au plus) puis 34 770 communes
+  (11 min) dans data/explore/explore.sqlite ; service redémarré.
+- À la demande : chaque passage découvre une **bande de 20 m de chaque côté** du chemin emprunté (la trace
+  masquée et à moins de 25 km/h, échantillonnée tous les 5 m) sur une grille fixe de cellules de ~10 m
+  (`app/explore/area.py`, calcul vectorisé numpy) ; une cellule appartient à la commune de son centre. Superficie
+  des communes calculée depuis leur contour. Une nouvelle sortie n'ajoute que ses cellules nouvelles.
+- Onglet : l'anneau de chaque commune montre maintenant le **% de la superficie découverte** (km² découverts /
+  km² de la commune), avec en dessous le % des chemins parcourus ; communes triées par superficie ; total
+  « km² découverts ». Les paliers 10–90 % restent sur les chemins (« Tassin : 25 % des chemins »).
+- Version du calcul passée à 2 : tout l'historique est retraité une fois (~4 min pour 254 sorties).
+  Historique réel : 24,1 km² découverts, 81 communes ; Tassin-la-Demi-Lune 23 % de sa superficie (1,85 / 7,97 km²)
+  et 40 % de ses chemins, Lyon 7,1 % (3,4 / 48 km²).
+- Correction : les rattrapages (démarrage, nouvelle version du calcul, communes ajoutées après coup) enregistrent
+  les paliers sans les fêter ; seul le calcul qui suit un import de nouvelles sorties les annonce (21 paliers
+  annoncés d'un coup sinon). Le calcul de l'Exploration a son propre réglage `TRAILMAP_EXPLORE` (indépendant du
+  pré-téléchargement des tuiles).
+- 101 tests OK (bande de 20 m, aller-retour, cellules comptées une fois, superficie et trous, rattrapage silencieux).
+
 ---
 
 ## État au 2026-10-07
