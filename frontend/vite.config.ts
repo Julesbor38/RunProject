@@ -26,6 +26,9 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: true, // reachable from Windows when WSL localhost forwarding is off
     allowedHosts: [".ts.net"], // the phone, through `tailscale serve` on the PC (tailnet only)
+    // CORS is the API's business (only capacitor://localhost, the native app): Vite must not answer the
+    // preflights of /api itself (it did, without the allowed origin), but pass them to the proxy.
+    cors: false,
     proxy: { "/api": "http://localhost:8000", "/dl": "http://localhost:8000" },
   },
 }));

@@ -510,6 +510,9 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
   « Active Tailscale », connexion par jeton sans aucun cookie, relance directe ; web et PWA inchangés ;
   71 tests OK (jeton, CORS). Les plugins natifs et la compilation se vérifient sur GitHub puis sur l'iPhone.
 - Documentation : IOS-ALTSTORE.md (compiler, récupérer le .ipa, AltStore, limites).
+- Premier run GitHub « iOS (AltStore) » réussi (run 1 : `RunProject-ipa-0.1.0-1`, 1,3 Mo, vérification « aucune
+  donnée personnelle » passée). Correctif : en dev, Vite répondait lui-même aux pré-requêtes CORS de /api (sans
+  l'origine autorisée) : `server.cors: false`, c'est l'API qui répond (capacitor://localhost seulement).
 
 ---
 
