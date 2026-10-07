@@ -84,12 +84,15 @@ def test_api_serves_built_front_with_spa_fallback(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(api, "DATA_DIR", make_data(tmp_path))
     monkeypatch.setattr(api, "FRONTEND_DIST", dist)
     with TestClient(api.app) as client:
+        root = client.get("/", follow_redirects=False)
+        assert root.status_code == 307 and root.headers["location"] == "/app/"  # the front lives under /app/
         assert client.get("/").text == "<html>app</html>"
-        assert client.head("/").status_code == 200
-        asset = client.get("/assets/main-abc.js")
+        assert client.head("/app/").status_code == 200
+        asset = client.get("/app/assets/main-abc.js")
         assert asset.text == "console.log(1)" and "immutable" in asset.headers["cache-control"]
-        assert client.get("/itineraire/42").text == "<html>app</html>"  # front route
-        assert client.get("/..%2Fsecret.txt").text == "<html>app</html>"  # no escape from dist
+        assert client.get("/app/itineraire/42").text == "<html>app</html>"  # front route
+        assert client.get("/app/..%2Fsecret.txt").text == "<html>app</html>"  # no escape from dist
+        assert client.get("/assets/main-abc.js").status_code == 404  # nothing of the front outside /app/
         assert client.get("/api/nope").status_code == 404  # unknown API path: never index.html
         assert client.get("/api/health").json()["frontend"] is True
 
@@ -98,5 +101,5 @@ def test_api_without_built_front_serves_only_the_api(tmp_path: Path, monkeypatch
     monkeypatch.setattr(api, "DATA_DIR", make_data(tmp_path))
     monkeypatch.setattr(api, "FRONTEND_DIST", tmp_path / "no-dist")
     with TestClient(api.app) as client:
-        assert client.get("/").status_code == 404
+        assert client.get("/app/").status_code == 404
         assert client.get("/api/activities").status_code == 200

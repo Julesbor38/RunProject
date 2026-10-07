@@ -99,3 +99,51 @@ def test_adopt_legacy_data(tmp_path):
     (tmp_path / "ratings.json").write_text("{}")
     with pytest.raises(FileExistsError):
         adopt_legacy(tmp_path, "jules")  # never overwrites
+
+
+def _route(client_, monkeypatch, user):
+    """Generate (fake) one route for the logged-in user and return its id."""
+    client_.get("/api/activities")
+    fake = {"type": "FeatureCollection", "features": [
+        {"type": "Feature", "id": 0, "geometry": {"type": "LineString", "coordinates": [[4.8, 45.7, 200.0], [4.81, 45.71, 210.0]]}, "properties": {"distance_m": 1500}}
+    ]}
+    monkeypatch.setattr(api._workspaces[user].routing, "generate", lambda *x, **k: fake)
+    return client_.post("/api/routes", json={"start": [4.8, 45.7], "distance_km": 2}).json()["features"][0]["properties"]["route_id"]
+
+
+def test_dl_link_headers_and_scope(data, monkeypatch):
+    with client() as a:
+        a.post("/api/auth/login", json={"username": "tester", "password": "tester password"})
+        route_id = _route(a, monkeypatch, "tester")
+        link = a.post(f"/api/routes/{route_id}/link").json()["url"]
+        assert link.startswith(f"/dl/{route_id}.gpx?")  # outside the PWA scope (/app/)
+        assert a.post(f"/api/routes/{'0' * 32}/link").status_code == 404
+    with client() as window:  # no session: an out-of-scope window may not carry the app's cookies
+        r = window.get(link)
+        assert r.status_code == 200 and r.headers["content-type"] == "application/gpx+xml"
+        assert r.headers["content-disposition"] == 'attachment; filename="trail-map-boucle-1-5-km.gpx"'
+        assert "<trkpt" in r.text and "<ele>" in r.text
+        assert window.get("/api/activities").status_code == 401  # only that file is open
+
+
+def test_dl_link_expires(data, monkeypatch):
+    with client() as a:
+        a.post("/api/auth/login", json={"username": "tester", "password": "tester password"})
+        link = a.post(f"/api/routes/{_route(a, monkeypatch, 'tester')}/link").json()["url"]
+        monkeypatch.setattr(api.time, "time", lambda: 4_000_000_000)
+        assert a.get(link).status_code == 403
+        assert "expiré" in a.get(link).json()["detail"]
+
+
+def test_dl_link_refused_for_another_user(data, monkeypatch):
+    with client() as a, client() as b:
+        a.post("/api/auth/login", json={"username": "tester", "password": "tester password"})
+        b.post("/api/auth/signup", json={"username": "marie", "password": "long enough pw"})
+        tester_route = _route(a, monkeypatch, "tester")
+        marie_route = _route(b, monkeypatch, "marie")
+        link = a.post(f"/api/routes/{tester_route}/link").json()["url"]
+        assert b.post(f"/api/routes/{tester_route}/link").status_code == 404  # not her route
+        assert b.get(link.replace("user=tester", "user=marie")).status_code == 403  # the link is bound to its account
+        assert b.get(link.replace(tester_route, marie_route)).status_code == 403  # and to its route
+        assert b.get(link.replace("sig=", "sig=0")).status_code == 403  # tampered
+        assert b.get(link.replace("user=tester", "user=../tester")).status_code == 403

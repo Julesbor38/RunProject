@@ -15,9 +15,11 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   (couche invisible large ; fiche avec « Évaluer cette sortie ») (le rendu « Fréquentation » unifié
   sur les voies OSM a été retiré le 2026-10-07 : trop complexe, voir l'historique git), filtres, fiches, générateur d'itinéraires (boucle / aller simple le plus
   court ou à distance visée), dénivelé (tranche de D+, profil, relief 3D), export GPX,
-  bouton « Envoyer vers la montre » (téléphone : télécharge le GPX, puis Fichiers → Partager → COROS ; dans l'app
-  d'écran d'accueil iOS, l'aperçu du fichier la remplace sans retour : il faut la relancer, accepté pour l'instant.
-  Déjà essayé et écarté : feuille de partage (COROS jamais proposé), page par-dessus l'app, envoi vers Safari).
+  bouton « Envoyer vers la montre » (téléphone, `src/share.ts` : feuille de partage avec le GPX préparé à l'avance,
+  appel synchrone dans le tap, 1er type MIME accepté ; repli : lien signé /dl/<id>.gpx hors scope PWA, ouvert
+  par-dessus l'app ; jamais de navigation de la page de l'app vers un fichier ; COROS ne prend un GPX que depuis
+  Fichiers). Panneau de debug : ?debug=1 ou appui long sur le titre.
+- Front servi sous **/app/** (scope de la PWA ; / redirige vers /app/) : /api et /dl restent hors scope.
 - Interface : identité « trail » (logo `frontend/public/logo.svg`, palette forêt / braise, Barlow Condensed),
   icônes SVG, réglages fins repliables, bouton Générer collant, panneau du bas compact sur téléphone,
   icônes d'écran d'accueil + manifest.
@@ -37,7 +39,7 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   import en arrière-plan, bandeau des nouvelles sorties) ; évaluation de chaque sortie de 1 à 5 sur
   8 critères (sécurité, éclairage, beauté du paysage, plaisir, entretien, abri, tranquillité,
   peu de circulation) + commentaire, en attendant de les reporter sur les tronçons (étape 3).
-- Tests : 66 OK, 1 ignoré.
+- Tests : 69 OK, 1 ignoré.
 
 ## Architecture
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
@@ -54,7 +56,8 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 - frontend/ : TypeScript + Vite + MapLibre GL 6 (PWA à venir), fond OpenFreeMap
   - `index.html` (structure + sprite d'icônes SVG `#i-…`), `src/style.css` (variables de couleurs en tête),
     `public/` (logo, icônes PNG, manifest ; copiés tels quels dans dist/)
-  - `main.ts`, `auth.ts` (écran de connexion), `importer.ts` (mise à jour des données), `ratings.ts`
+  - `main.ts`, `share.ts` (GPX sur téléphone : partage, repli /dl), `debug.ts` (panneau de debug),
+    `auth.ts` (écran de connexion), `importer.ts` (mise à jour des données), `ratings.ts`
     (fiche d'évaluation), `activities.ts` (onglet Mes sorties), `planner.ts` (onglet Itinéraire),
     `profile.ts` (profil altimétrique), `terrain.ts` (relief 3D), `api.ts`, `format.ts`
   - Vite ne pré-empaquette pas MapLibre (sinon le worker est perdu et la carte ne charge pas) ;
@@ -98,6 +101,8 @@ Chaque route ne lit et n'écrit que les données du compte connecté (data/users
   `request_id` optionnel pour suivre / annuler ; `warning` si des tuiles OSM manquent
   Chaque itinéraire reçoit `route_id`, `name`, `gpx_filename` et est gardé dans data/routes/ (300 derniers)
 - GET  /api/routes/{route_id}/gpx : GPX 1.1 (application/gpx+xml, attachment, nom ASCII .gpx)
+- POST /api/routes/{route_id}/link : lien signé (1 h, lié au compte et à l'itinéraire) -> GET /dl/<id>.gpx?user=…&expires=…&sig=…
+  (sans session, hors /api et hors scope PWA : repli du partage sur iPhone)
 - POST /api/routes/gpx : GPX d'un itinéraire envoyé par le client ({name, coordinates})
 - GET  /api/routes/{request_id}/progress : étape (download_ends, download, graph, routes) et avancement
 - POST /api/routes/{request_id}/cancel : annule la génération
@@ -143,7 +148,7 @@ Chaque route ne lit et n'écrit que les données du compte connecté (data/users
 - python -m app.ingest <fichier|dossier|archive_strava_dézippée>
 - pytest
 - API : cd backend && uvicorn app.api:app --reload  (port 8000, lit data/raw, cache data/cache/)
-- Front : cd frontend && npm install && npm run dev  (http://localhost:5173, proxy /api -> 8000)
+- Front : cd frontend && npm install && npm run dev  (http://localhost:5173/app/, proxy /api et /dl -> 8000)
   Vite 8 demande Node >= 20 ; si le Node système est trop vieux : Node LTS dans ~/.local/node
   et `export PATH=~/.local/node/bin:$PATH`
 - Production (voir SELF-HOST.md) : `./deploy-local.sh` (pull, dépendances, build, tests, redémarrage du

@@ -20,7 +20,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, HTTPException, Path as PathParam, Request, Response, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -42,6 +42,8 @@ SIMPLIFY_TOLERANCE_M = 5.0
 PREFETCH_OSM = os.environ.get("TRAILMAP_PREFETCH", "1") != "0"
 # Generated routes kept for GET /api/routes/{route_id}/gpx (the newest ones only).
 MAX_SAVED_ROUTES = 300
+DL_LINK_TTL_S = 3600  # signed /dl/ links to a route's GPX
+APP_PATH = "/app/"  # the front (and the PWA scope): /dl/ stays outside it, see shared_gpx
 # Built front (npm run build); served by the API when present, so production needs a single port.
 FRONTEND_DIST = Path(os.environ.get("TRAILMAP_FRONTEND_DIST", Path(__file__).parents[2] / "frontend" / "dist"))
 
@@ -391,6 +393,30 @@ def route_gpx(route_id: str = PathParam(pattern="^[0-9a-f]{32}$"), ws: Workspace
     return gpx.response(saved["name"], saved["coordinates"])
 
 
+@app.post("/api/routes/{route_id}/link")
+def route_link(route_id: str = PathParam(pattern="^[0-9a-f]{32}$"), ws: Workspace = Depends(workspace)) -> dict:
+    """A signed, expiring link to one of the user's routes as GPX, usable without the session (see shared_gpx)."""
+    if not (ws.dir / "routes" / f"{route_id}.json").is_file():
+        raise HTTPException(404, "itinéraire inconnu ou expiré, régénérez-le")
+    expires = int(time.time()) + DL_LINK_TTL_S
+    sig = auth.sign_link(DATA_DIR, "dl", ws.user, route_id, expires)
+    return {"url": f"/dl/{route_id}.gpx?user={ws.user}&expires={expires}&sig={sig}", "expires": expires}
+
+
+@app.get("/dl/{route_id}.gpx")
+def shared_gpx(route_id: str = PathParam(pattern="^[0-9a-f]{32}$"), user: str = "", expires: int = 0, sig: str = ""):
+    """GPX through a signed link, outside the PWA scope (APP_PATH): opened from the iOS home-screen app, iOS
+    shows it in a window over the app (with its own « OK » / ✕), never in place of the app. Fallback only:
+    the app shares the file itself when the system share sheet accepts it."""
+    if not auth.USERNAME.match(user) or not auth.check_link(DATA_DIR, sig, expires, "dl", user, route_id):
+        raise HTTPException(403, "lien expiré ou invalide : relancez « Envoyer vers la montre » depuis l'app")
+    file = user_dir(DATA_DIR, user) / "routes" / f"{route_id}.json"
+    if not file.is_file():
+        raise HTTPException(404, "itinéraire inconnu ou expiré, régénérez-le")
+    saved = json.loads(file.read_text())
+    return gpx.response(saved["name"], saved["coordinates"])
+
+
 class GpxRequest(BaseModel):
     name: str = Field("Trail Map", min_length=1, max_length=100)
     # [lon, lat] or [lon, lat, ele]
@@ -429,17 +455,24 @@ def _ascent_range(req: RouteRequest) -> tuple[float, float] | None:
     return lo, hi
 
 
-# Production front: registered last so that every /api route above wins.
+# Production front, under APP_PATH: registered last so that every /api and /dl route above wins.
 @app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)  # HEAD: `curl -I` checks
-def frontend(path: str) -> FileResponse:
-    """Files of the built front, and index.html for any other page so the front handles its own routes."""
+def frontend(path: str):
+    """Files of the built front under /app/, and its index.html for any other page there; / goes to /app/
+    (also for home-screen apps installed when the front was at the root)."""
     if path == "api" or path.startswith("api/"):
+        raise HTTPException(404, "Not Found")
+    prefix = APP_PATH.strip("/")
+    if path != prefix and not path.startswith(prefix + "/"):
+        if path in ("", "index.html"):
+            return RedirectResponse(APP_PATH)
         raise HTTPException(404, "Not Found")
     root = FRONTEND_DIST.resolve()
     if not (root / "index.html").is_file():
         raise HTTPException(404, "front non construit (cd frontend && npm run build), ou utiliser Vite en dev")
-    file = (root / path).resolve()
-    if path and file.is_relative_to(root) and file.is_file():
+    rel = path[len(prefix) + 1 :]
+    file = (root / rel).resolve()
+    if rel and file.is_relative_to(root) and file.is_file():
         # Vite fingerprints everything under assets/: it never changes under the same name.
         immutable = file.is_relative_to(root / "assets")
         return FileResponse(file, headers={"Cache-Control": "public, max-age=31536000, immutable" if immutable else "no-cache"})

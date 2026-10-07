@@ -151,7 +151,7 @@ sudo systemctl stop trailmap              # arrêter (ex. pour travailler en dev
 Depuis Windows (PowerShell) :
 
 ```powershell
-curl.exe -I http://localhost:8000                  # HTTP/1.1 200 OK (le front)
+curl.exe -I http://localhost:8000/app/             # HTTP/1.1 200 OK (le front, sous /app/ ; / y redirige)
 curl.exe http://localhost:8000/api/health
 curl.exe -I https://jules-laptop.tailf52fab.ts.net  # via Tailscale
 ```

@@ -5,6 +5,7 @@ import "./style.css";
 import { ActivitiesView } from "./activities";
 import { fetchActivities, fetchRoutingStatus } from "./api";
 import { ensureLoggedIn, signOut } from "./auth";
+import { setupDebug } from "./debug";
 import { openImporter, setupImporter, takeNewActivities } from "./importer";
 import { Planner } from "./planner";
 import { Ratings } from "./ratings";
@@ -30,6 +31,8 @@ if (import.meta.env.DEV) Object.assign(window, { map }); // handy from the brows
 map.addControl(new NavigationControl(), "top-right");
 map.addControl(new GeolocateControl({ positionOptions: { enableHighAccuracy: true } }), "top-right");
 map.addControl(new ScaleControl({ unit: "metric" }), "bottom-right");
+
+setupDebug(); // ?debug=1 or a long press on the title
 
 // Nothing of the user's data is requested before login (the base map is public).
 const loggedIn = ensureLoggedIn();

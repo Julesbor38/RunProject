@@ -4,6 +4,7 @@ import { cancelRoute, fetchRouteProgress, fetchRoutes, gpxUrl } from "./api";
 import type { LngLat, Preferences, RouteCollection, RouteFeature, RouteProgress } from "./api";
 import { fitTo } from "./activities";
 import { isMobile, km, pct } from "./format";
+import { openLink, prepareGpx, sendGpx } from "./share";
 import { pointAt, renderProfile } from "./profile";
 
 const ROUTE_COLORS = ["#2563eb", "#ea580c", "#db2777"];
@@ -516,7 +517,7 @@ export class Planner {
         </div>
         <div class="actions">
           <a class="action gpx" href="${gpxUrl(p.route_id)}" download="${p.gpx_filename}"><svg class="i"><use href="#i-download"/></svg>GPX</a>
-          <button class="action watch" hidden title="Télécharger le GPX, puis l'ouvrir avec l'app COROS depuis Fichiers"><svg class="i"><use href="#i-watch"/></svg>Envoyer vers la montre</button>
+          <button class="action watch" hidden title="Enregistrer le GPX dans Fichiers, puis l'ouvrir avec l'app COROS"><svg class="i"><use href="#i-watch"/></svg>Envoyer vers la montre</button>
         </div>`;
       card.addEventListener("click", () => this.select(r.id));
       const profileBox = card.querySelector(".profile") as HTMLElement | null;
@@ -524,15 +525,27 @@ export class Planner {
         profileBox.addEventListener("click", (e) => e.stopPropagation());
         renderProfile(profileBox, p.profile, ROUTE_COLORS[r.id] ?? ROUTE_COLORS[2], (d) => this.showHoverPoint(r, d));
       }
-      // Phone: the GPX is downloaded, then Fichiers -> Partager -> COROS (the only way COROS takes a GPX: it is
-      // never offered in a web share sheet). Chosen for now (2026-10-07): in the app added to the iOS home screen,
-      // the download replaces the app with iOS's file preview, which has no way back: the app has to be relaunched.
-      // Tried and dropped: share sheet + « Enregistrer dans Fichiers », page opened over the app, sending to Safari.
+      // Phone: share the GPX from the system share sheet, over the app (see share.ts): the app's page is never
+      // left or replaced. Then « Enregistrer dans Fichiers », and Fichiers -> Partager -> COROS (COROS only takes
+      // a GPX from Fichiers). Desktop: the link downloads the file.
       const watch = card.querySelector(".watch") as HTMLButtonElement;
       watch.hidden = !isMobile();
+      const gpx = isMobile() ? prepareGpx(p.route_id, p.gpx_filename) : null;
       const send = (e: Event) => {
         e.stopPropagation();
-        if (e.currentTarget === watch) location.href = gpxUrl(p.route_id);
+        if (!gpx) return;
+        e.preventDefault();
+        const outcome = sendGpx(gpx, {
+          shared: () => this.status("Dans le menu : « Enregistrer dans Fichiers », puis Fichiers → le fichier → Partager ⬆ → COROS."),
+          failed: (error) =>
+            this.status(`Partage impossible (${error}).`, true, {
+              label: "Ouvrir le fichier",
+              run: () => openLink(gpx) || this.status("Lien indisponible : réessayez dans un instant.", true),
+            }),
+        });
+        if (outcome === "opened") this.status("Le GPX s'ouvre par-dessus l'app : « OK » pour revenir. Puis Fichiers → Partager ⬆ → COROS.");
+        else if (outcome === "not-ready") this.status("GPX en préparation : réessayez dans un instant.");
+        else if (outcome === "unavailable") this.status(gpx.failed ? `GPX indisponible (${gpx.failed}) : régénérez l'itinéraire.` : "Lien en préparation : réessayez dans un instant.", !!gpx.failed);
       };
       watch.addEventListener("click", send);
       card.querySelector(".gpx")!.addEventListener("click", send);

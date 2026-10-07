@@ -439,6 +439,33 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 - Pistes pour un vrai envoi en un geste : service synchronisé par COROS (Komoot, Ride with GPS…), ou petite
   app iOS native qui enveloppe Trail Map (« Ouvrir dans COROS » natif).
 
+### 2026-10-07 — iOS PWA : partager le GPX sans quitter l'app
+- Objectif : récupérer le GPX sans jamais quitter ni remplacer la page de l'app (dans l'app d'écran d'accueil iOS,
+  un téléchargement la remplace par un aperçu plein écran sans retour).
+- **Panneau de debug** (sans Mac ni inspecteur) : `?debug=1` ou appui long sur le titre « Trail Map ». Mode écran
+  d'accueil (`navigator.standalone`, `display-mode`), version d'iOS et user agent, présence de `navigator.share` /
+  `canShare`, résultat de `canShare({files})` pour chaque type MIME (fichier test et dernier GPX préparé), type
+  retenu, journal des derniers partages (erreurs : name + message), gardé dans le stockage local pour être lu
+  même après avoir relancé l'app ; bouton « Tester le partage ».
+- **Feuille de partage d'abord** (`src/share.ts`) : le GPX et son objet File sont prêts dès l'affichage d'un
+  itinéraire ; le tap appelle `navigator.share` de façon synchrone (aucun await ni fetch avant). Types essayés
+  dans l'ordre : application/gpx+xml, application/xml, text/xml, application/octet-stream ; le premier accepté
+  par `canShare` est utilisé. AbortError = silence ; autre erreur = journal + bouton « Ouvrir le fichier » (repli).
+- **Repli** : lien signé, expirant (1 h), lié au compte et à l'itinéraire, **hors du scope de la PWA** :
+  `GET /dl/<id>.gpx?user=…&expires=…&sig=…` (application/gpx+xml, attachment), ouvert en nouvelle fenêtre ; iOS
+  l'affiche par-dessus l'app avec son « OK », jamais à la place. `POST /api/routes/{id}/link` le fournit (tous les
+  itinéraires générés sont gardés côté serveur, donc accessibles). Pour que /dl soit hors scope, **l'app passe
+  sous `/app/`** : manifest `scope`/`start_url`/`id` = /app/, Vite `base: "/app/"`, FastAPI sert le front sous /app/
+  et redirige / vers /app/ (Vite fait de même en dev et relaie /dl).
+- Ordinateur : téléchargement classique inchangé.
+- Vérifié en simulation iPhone (avec la règle de Safari : partage seulement dans le geste) : 1er type accepté
+  utilisé (application/xml quand seul lui passe), annulation silencieuse, refus -> bouton de repli -> /dl (GPX en
+  pièce jointe sans session), aucun partage de fichiers -> /dl directement, page de l'app jamais quittée ;
+  ordinateur : lien GPX classique. Tests /dl : en-têtes, expiration, refus pour un autre compte / itinéraire /
+  signature modifiée. 69 tests OK, 1 ignoré.
+- ⚠️ L'app d'écran d'accueil déjà installée garde l'ancien scope (/) : la supprimer et la rajouter depuis Safari
+  (https://jules-laptop.tailf52fab.ts.net/app/) pour que /dl soit bien hors scope.
+
 ---
 
 ## État au 2026-10-07
