@@ -31,9 +31,10 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 - Génération d'itinéraires annulable, avec avancement ; tuiles OSM de **toute la France** en local
   (extrait Geofabrik France, 36 349 tuiles, 7,5 Go) : plus de dépendance à Overpass en France
   (~4 s pour une première génération dans une zone jamais utilisée). Accès téléphone via Tailscale (HTTPS, tailnet).
-- Auto-hébergement (`SELF-HOST.md`) : en production FastAPI sert aussi le front construit sur un seul port
-  (8000, 127.0.0.1), service systemd `trailmap` dans WSL, WSL gardé allumé par une tâche planifiée Windows,
-  `tailscale serve --bg http://localhost:8000`. Mise à jour : `./deploy-local.sh`. État : `GET /api/health`.
+- Auto-hébergement (`SELF-HOST.md`) **en place** : service systemd `trailmap` (uvicorn 127.0.0.1:8000, front construit
+  servi sous /app/), WSL gardé allumé par la tâche Windows « WSL keep-alive (Trail Map) », alimentation sur secteur
+  réglée, `tailscale serve --bg http://localhost:8000`. Mise à jour : `./deploy-local.sh` ; logs :
+  `journalctl -u trailmap -f` ; dev : `sudo systemctl stop trailmap` d'abord (même port 8000).
 - Prochaine grosse étape : map-matching (étape 2), puis notation des tronçons (étape 3).
 - Dénivelé : « Le plus plat » minimise le D+ (grande boucle, pétales de 2–5 km ou aller-retour, `flat: true`) ;
   Vallonné / Montagne / Personnalisé gardent une tranche de D+.

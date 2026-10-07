@@ -514,13 +514,25 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
   donnée personnelle » passée). Correctif : en dev, Vite répondait lui-même aux pré-requêtes CORS de /api (sans
   l'origine autorisée) : `server.cors: false`, c'est l'API qui répond (capacitor://localhost seulement).
 
+### 2026-10-07 — Service permanent installé sur le PC
+- Service systemd `trailmap` installé (`./deploy-local.sh --no-pull`) : uvicorn sans --reload sur 127.0.0.1:8000, actif
+  et lancé au démarrage de WSL ; test de plantage (kill -9) : relancé tout seul en quelques secondes.
+- Tâche planifiée Windows « WSL keep-alive (Trail Map) » créée et lancée (WSL gardé allumé dès l'ouverture de
+  session, sans terminal). Alimentation sur secteur : capot fermé = ne rien faire, jamais de veille / veille
+  prolongée (batterie inchangée).
+- Tailscale : `tailscale serve --bg http://localhost:8000` (tailnet only, pas de funnel). Vérifié depuis Windows via
+  https://jules-laptop.tailf52fab.ts.net : / -> /app/ (307), /app/ 200, /api/health 200, /api/activities 401 sans
+  session, pré-requête CORS de l'app native acceptée.
+- Le mode dev (Vite + --reload) n'est plus lancé : pour développer, `sudo systemctl stop trailmap` puis le relancer,
+  et `./deploy-local.sh --no-pull` pour mettre le service à jour.
+
 ---
 
 ## État au 2026-10-07
 - Tuiles OSM : toute la France en local (extrait Geofabrik du 2026-10-07, à rafraîchir avec `--force`) ;
   Overpass seulement hors de France.
-- Auto-hébergement prêt côté code (service systemd, `deploy-local.sh`, `SELF-HOST.md`). Côté Windows à faire
-  à la main : tâche planifiée « WSL keep-alive », `tailscale serve --bg http://localhost:8000`, alimentation.
+- Auto-hébergement en service : systemd `trailmap` (port 8000), tâche Windows « WSL keep-alive », Tailscale vers
+  le port 8000, alimentation réglée. Mise à jour : `./deploy-local.sh`.
 - Rien n'utilise encore PostGIS ni GraphHopper.
 
 ## Prochaines tâches
