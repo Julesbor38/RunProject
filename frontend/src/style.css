@@ -1361,69 +1361,6 @@ input[type="range"] {
   margin-top: 8px;
 }
 
-/* --- COROS guide --- */
-
-#coros-guide {
-  width: min(420px, calc(100% - 24px));
-  padding: 0;
-  border: none;
-  border-radius: 20px;
-  box-shadow: var(--shadow);
-  color: var(--fg);
-}
-
-#coros-guide::backdrop {
-  background: rgb(15 46 35 / 0.45);
-}
-
-#coros-guide form {
-  padding: 20px 18px 16px;
-}
-
-#coros-guide h3 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 6px;
-  font-family: var(--display);
-  font-size: 22px;
-  color: var(--pine-800);
-}
-
-#coros-guide ol {
-  margin: 8px 0 10px;
-  padding-left: 22px;
-  font-size: 15px;
-  line-height: 1.5;
-}
-
-#coros-guide li {
-  margin-bottom: 8px;
-}
-
-.guide-file {
-  font-family: ui-monospace, monospace;
-  font-size: 13px;
-  word-break: break-all;
-}
-
-#coros-guide footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 8px;
-}
-
-#coros-guide .link-btn {
-  color: var(--muted);
-}
-
-#coros-guide footer .primary {
-  width: auto;
-  padding: 11px 26px;
-  font-size: 17px;
-}
-
 /* --- rating sheet --- */
 
 #rate-dialog {

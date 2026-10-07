@@ -427,6 +427,18 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
   ensuite, bon fichier partagé, app inchangée ; sans partage : téléchargement, app inchangée.
 - 66 tests OK, 1 ignoré.
 
+### 2026-10-07 — Retour au téléchargement simple du GPX (choix de l'utilisateur)
+- La feuille de partage ne propose pas COROS (limite de COROS : il ne prend un GPX que depuis Fichiers) ;
+  l'étape « Enregistrer dans Fichiers » ne convainc pas. Choix pour l'instant : la solution de base.
+- « Envoyer vers la montre » télécharge le GPX (`location.href` vers `/api/routes/{id}/gpx`), puis Fichiers →
+  Partager → COROS. Dans l'app d'écran d'accueil iOS, l'aperçu du fichier remplace l'app sans retour :
+  il faut la relancer (accepté pour l'instant).
+- Guide et feuille de partage retirés (pas de code mort). Bilan des essais, pour ne pas les refaire :
+  feuille de partage (COROS absent, quel que soit le type du fichier), page par-dessus l'app (aperçu iOS sans
+  retour après le téléchargement), envoi vers Safari via `x-safari-https://` (refusé : on veut rester dans l'app).
+- Pistes pour un vrai envoi en un geste : service synchronisé par COROS (Komoot, Ride with GPS…), ou petite
+  app iOS native qui enveloppe Trail Map (« Ouvrir dans COROS » natif).
+
 ---
 
 ## État au 2026-10-07
@@ -450,5 +462,5 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
    (après map-matching), puis noter directement un tronçon.
 7. **Étape 4 — itinéraires pondérés par les notes.**
 8. **Étape 5 — communautaire** : comptes, agrégation, modération.
-9. **Téléphone** : géolocalisation via Tailscale ; envoi vers COROS en un clic via un service synchronisé
-   par COROS (à étudier) ; puis PWA (installation, hors ligne).
+9. **Téléphone** : envoi vers COROS en un geste (service synchronisé par COROS, ou app iOS native) ; aujourd'hui
+   le téléchargement oblige à relancer l'app d'écran d'accueil iOS. Puis PWA (installation, hors ligne).

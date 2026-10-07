@@ -1,6 +1,6 @@
 import { Marker } from "maplibre-gl";
 import type { Map, MapMouseEvent, PointLike } from "maplibre-gl";
-import { apiFetch, cancelRoute, fetchRouteProgress, fetchRoutes, gpxUrl } from "./api";
+import { cancelRoute, fetchRouteProgress, fetchRoutes, gpxUrl } from "./api";
 import type { LngLat, Preferences, RouteCollection, RouteFeature, RouteProgress } from "./api";
 import { fitTo } from "./activities";
 import { isMobile, km, pct } from "./format";
@@ -516,7 +516,7 @@ export class Planner {
         </div>
         <div class="actions">
           <a class="action gpx" href="${gpxUrl(p.route_id)}" download="${p.gpx_filename}"><svg class="i"><use href="#i-download"/></svg>GPX</a>
-          <button class="action watch" hidden title="Télécharger le GPX dans Safari, puis l'ouvrir avec l'app COROS depuis Fichiers"><svg class="i"><use href="#i-watch"/></svg>Envoyer vers la montre</button>
+          <button class="action watch" hidden title="Télécharger le GPX, puis l'ouvrir avec l'app COROS depuis Fichiers"><svg class="i"><use href="#i-watch"/></svg>Envoyer vers la montre</button>
         </div>`;
       card.addEventListener("click", () => this.select(r.id));
       const profileBox = card.querySelector(".profile") as HTMLElement | null;
@@ -524,39 +524,20 @@ export class Planner {
         profileBox.addEventListener("click", (e) => e.stopPropagation());
         renderProfile(profileBox, p.profile, ROUTE_COLORS[r.id] ?? ROUTE_COLORS[2], (d) => this.showHoverPoint(r, d));
       }
-      // Phone: the system share sheet with the .gpx, over the app (it can never leave the app stuck, unlike a
-      // download, whose iOS file preview has no way back). COROS is not in that sheet (it only takes a GPX from
-      // the Files app): « Enregistrer dans Fichiers », then Fichiers -> Partager -> COROS. A short guide says so
-      // first; where files can't be shared (Chrome on Android refuses .gpx), the file is downloaded.
+      // Phone: the GPX is downloaded, then Fichiers -> Partager -> COROS (the only way COROS takes a GPX: it is
+      // never offered in a web share sheet). Chosen for now (2026-10-07): in the app added to the iOS home screen,
+      // the download replaces the app with iOS's file preview, which has no way back: the app has to be relaunched.
+      // Tried and dropped: share sheet + « Enregistrer dans Fichiers », page opened over the app, sending to Safari.
       const watch = card.querySelector(".watch") as HTMLButtonElement;
       watch.hidden = !isMobile();
-      const file = isMobile() ? prefetchGpx(gpxUrl(p.route_id), p.gpx_filename) : null;
       const send = (e: Event) => {
         e.stopPropagation();
-        if (!file) return; // desktop: the link downloads the file
-        e.preventDefault();
-        const ready = file.current;
-        if (!ready) {
-          this.status(file.failed ? "GPX indisponible : régénérez l'itinéraire." : "GPX en préparation : réessayez dans un instant.", file.failed);
-          return;
-        }
-        if (!navigator.canShare?.({ files: [ready] })) return downloadFile(ready);
-        if (guideSeen()) return this.shareGpx(ready); // in the tap itself
-        corosGuide(ready.name).then((go) => go && this.shareGpx(ready));
+        if (e.currentTarget === watch) location.href = gpxUrl(p.route_id);
       };
       watch.addEventListener("click", send);
       card.querySelector(".gpx")!.addEventListener("click", send);
       box.appendChild(card);
     });
-  }
-
-  /** Called from the guide's « Continuer » tap: Safari only opens the share sheet within a tap. */
-  private shareGpx(file: File) {
-    // Only the file: a title would add text to the share and hide the apps that take files.
-    navigator
-      .share({ files: [file] })
-      .then(() => this.status("Ensuite : Fichiers → le fichier → Partager ⬆ → COROS. (Dans le menu : « Enregistrer dans Fichiers ».)"))
-      .catch((err: DOMException) => err.name !== "AbortError" && this.status(`Partage impossible : ${err.message}`, true));
   }
 
   private showHoverPoint(r: RouteFeature, distanceM: number | null) {
@@ -637,55 +618,6 @@ export class Planner {
   get startPoint(): LngLat | null {
     return this.start ? (this.start.getLngLat().toArray() as LngLat) : null;
   }
-}
-
-/** The GPX fetched in the background (with the session), so that a tap can share it at once. */
-function prefetchGpx(url: string, filename: string) {
-  const out: { current: File | null; failed: boolean } = { current: null, failed: false };
-  apiFetch(url)
-    .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`erreur ${r.status}`))))
-    .then((blob) => (out.current = new File([blob], filename, { type: "application/gpx+xml" })))
-    .catch(() => (out.failed = true));
-  return out;
-}
-
-const GUIDE_KEY = "trailmap.corosGuideSeen";
-
-function guideSeen(): boolean {
-  try {
-    return localStorage.getItem(GUIDE_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-/** The how-to before the first share sheet; resolves true on « Continuer » (a tap, so the sheet may open). */
-function corosGuide(filename: string): Promise<boolean> {
-  const dialog = document.getElementById("coros-guide") as HTMLDialogElement;
-  dialog.querySelector(".guide-file")!.textContent = filename;
-  dialog.returnValue = "";
-  dialog.showModal();
-  return new Promise((resolve) => {
-    const go = dialog.querySelector("button[value=go]") as HTMLButtonElement;
-    // Resolve in the click itself: navigator.share must run within the user's tap.
-    go.onclick = () => {
-      try {
-        localStorage.setItem(GUIDE_KEY, "1");
-      } catch {
-        /* shown again next time */
-      }
-      resolve(true);
-    };
-    dialog.addEventListener("close", () => resolve(false), { once: true });
-  });
-}
-
-/** Save the file without leaving the page (where it can't be shared, e.g. Chrome on Android). */
-function downloadFile(file: File) {
-  const url = URL.createObjectURL(file);
-  const a = Object.assign(document.createElement("a"), { href: url, download: file.name });
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
 function makeMarker(label: string, kind: "start" | "end") {
