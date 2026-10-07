@@ -4,8 +4,10 @@ from Overpass, so routing in that region needs no Overpass at all.
 Tiles are written in the Overpass tile format, only where they lie wholly inside the region's
 boundary (.poly): border tiles would miss the ways beyond it and keep coming from Overpass.
 
-Run: python -m app.routing.extract data/osm/rhone-alpes-latest.osm.pbf data/osm/rhone-alpes.poly [--force]
+Run: python -m app.routing.extract data/osm/france-latest.osm.pbf data/osm/france.poly [--force]
 (--force rewrites tiles already cached, to refresh them from a newer extract).
+Node locations are kept in memory for a regional extract, on disk for a whole country (about
+16 bytes per node: France is over 10 GB).
 """
 from __future__ import annotations
 
@@ -22,6 +24,7 @@ from pathlib import Path
 from .osm import HIGHWAYS, TILE_DEG, tile_path, tiles_for_bbox
 
 FLUSH_LINES = 300_000  # ways buffered in memory before they are appended to the per-tile files
+LOCATIONS_IN_MEMORY_MAX_PBF = 1_500_000_000  # bigger extracts index node locations in a file instead
 
 log = logging.getLogger(__name__)
 Ring = list[tuple[float, float]]  # (lon, lat)
@@ -94,7 +97,9 @@ def extract(pbf: Path, poly: Path, cache_dir: Path, force: bool = False) -> int:
                 f.write("".join(lines))
         buffer.clear()
 
-    processor = osmium.FileProcessor(str(pbf)).with_locations("sparse_mem_array").with_filter(osmium.filter.KeyFilter("highway"))
+    index = "sparse_mem_array" if pbf.stat().st_size <= LOCATIONS_IN_MEMORY_MAX_PBF else f"sparse_file_array,{work / 'locations.idx'}"
+    log.info("node locations: %s", index.split(",")[0])
+    processor = osmium.FileProcessor(str(pbf)).with_locations(index).with_filter(osmium.filter.KeyFilter("highway"))
     for obj in processor:
         if not obj.is_way() or not wanted.match(obj.tags.get("highway", "")):
             continue

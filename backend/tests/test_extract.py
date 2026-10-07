@@ -43,3 +43,21 @@ def test_extract_writes_overpass_like_tiles(tmp_path):
     assert load_tiles([(1, 2)], cache).ways == []  # inside the region, no path: written empty
 
     assert extract(tmp_path / "r.osm", tmp_path / "r.poly", cache, force=True) == 4
+
+
+def test_extract_with_node_locations_on_disk(tmp_path, monkeypatch):
+    """A whole-country extract keeps node locations in a file: same tiles as in memory."""
+    from app.routing import extract as module
+
+    (tmp_path / "r.osm").write_text(OSM)
+    (tmp_path / "r.poly").write_text(POLY)
+    in_memory, on_disk = tmp_path / "mem", tmp_path / "disk"
+    in_memory.mkdir()
+    on_disk.mkdir()
+    extract(tmp_path / "r.osm", tmp_path / "r.poly", in_memory)
+    monkeypatch.setattr(module, "LOCATIONS_IN_MEMORY_MAX_PBF", 0)
+    extract(tmp_path / "r.osm", tmp_path / "r.poly", on_disk)
+    tiles = sorted(p.name for p in in_memory.glob("v*.json"))
+    assert tiles and tiles == sorted(p.name for p in on_disk.glob("v*.json"))
+    assert all((in_memory / t).read_text() == (on_disk / t).read_text() for t in tiles)
+    assert not (on_disk / "extract.tmp").exists()  # the index file is removed with the work folder

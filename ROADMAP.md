@@ -276,11 +276,25 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
   suggestion de « Le plus plat » si les résultats sont trop vallonnés.
 - 71 tests OK, 1 ignoré (vallée synthétique : pétales plats là où un triangle doit grimper ; aller simple plat).
 
+### 2026-10-07 — Toute la France hors-ligne
+- Premières générations très lentes à Clermont-Ferrand et dans les zones jamais utilisées : hors de
+  Rhône-Alpes, les chemins venaient d'Overpass (minutes, ou échec quand il est saturé).
+- Extrait Geofabrik **France** (5,1 Go) découpé en tuiles : 34 370 nouvelles tuiles (36 349 en tout),
+  10,6 millions de chemins, **7,5 Go** sur le disque, 30 min 36 de calcul.
+  `extract.py` garde l'index des nœuds **sur disque** (`sparse_file_array`) au-delà de 1,5 Go d'extrait :
+  en mémoire il aurait fallu plus de 10 Go (WSL : 7,6 Go). Test : mêmes tuiles qu'avec l'index en mémoire.
+- Résultat (première génération, zone jamais utilisée) : Clermont-Ferrand 10 km en 4,0 s, frontière
+  Loire / Puy-de-Dôme 12 km en 3,9 s (plus de trou entre anciennes régions), Bordeaux 8 km en 4,6 s.
+- Reste sur Overpass : hors de France (21 zones courues à l'étranger : Croatie, Riviera italienne, Val d'Aoste).
+  Overpass refuse actuellement les connexions (aussi depuis Windows) : panne ou blocage de leur côté.
+- `data/osm/` ne doit pas aller dans la sauvegarde privée (cache régénérable, trop gros pour GitHub).
+- 72 tests OK, 1 ignoré.
+
 ---
 
 ## État au 2026-10-07
-- Tuiles OSM : toute la région Rhône-Alpes en local (extrait Geofabrik du 2026-10-07, à rafraîchir
-  avec `--force`) ; Overpass seulement en bordure et hors région, souvent saturé.
+- Tuiles OSM : toute la France en local (extrait Geofabrik du 2026-10-07, à rafraîchir avec `--force`) ;
+  Overpass seulement hors de France.
 - Auto-hébergement prêt côté code (service systemd, `deploy-local.sh`, `SELF-HOST.md`). Côté Windows à faire
   à la main : tâche planifiée « WSL keep-alive », `tailscale serve --bg http://localhost:8000`, alimentation.
 - Rien n'utilise encore PostGIS ni GraphHopper.

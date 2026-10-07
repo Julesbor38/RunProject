@@ -19,15 +19,16 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 - Interface : identité « trail » (logo `frontend/public/logo.svg`, palette forêt / braise, Barlow Condensed),
   icônes SVG, réglages fins repliables, bouton Générer collant, panneau du bas compact sur téléphone,
   icônes d'écran d'accueil + manifest.
-- Génération d'itinéraires annulable, avec avancement ; tuiles OSM de Rhône-Alpes en local
-  (plus de dépendance à Overpass dans la région). Accès téléphone via Tailscale (HTTPS, tailnet).
+- Génération d'itinéraires annulable, avec avancement ; tuiles OSM de **toute la France** en local
+  (extrait Geofabrik France, 36 349 tuiles, 7,5 Go) : plus de dépendance à Overpass en France
+  (~4 s pour une première génération dans une zone jamais utilisée). Accès téléphone via Tailscale (HTTPS, tailnet).
 - Auto-hébergement (`SELF-HOST.md`) : en production FastAPI sert aussi le front construit sur un seul port
   (8000, 127.0.0.1), service systemd `trailmap` dans WSL, WSL gardé allumé par une tâche planifiée Windows,
   `tailscale serve --bg http://localhost:8000`. Mise à jour : `./deploy-local.sh`. État : `GET /api/health`.
 - Prochaine grosse étape : map-matching (étape 2), puis notation des tronçons (étape 3).
 - Dénivelé : « Le plus plat » minimise le D+ (grande boucle, pétales de 2–5 km ou aller-retour, `flat: true`) ;
   Vallonné / Montagne / Personnalisé gardent une tranche de D+.
-- Tests : 71 OK, 1 ignoré.
+- Tests : 72 OK, 1 ignoré.
 
 ## Architecture
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
@@ -46,9 +47,10 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
     `profile.ts` (profil altimétrique), `terrain.ts` (relief 3D), `api.ts`, `format.ts`
   - Vite ne pré-empaquette pas MapLibre (sinon le worker est perdu et la carte ne charge pas) ;
     en build de production, le worker est empaqueté à part et donné à `setWorkerUrl`
-- Routage actuel : graphe OSM par tuiles 0,05° en cache dans data/osm/. En Rhône-Alpes, tuiles
+- Routage actuel : graphe OSM par tuiles 0,05° en cache dans data/osm/. En France, tuiles
   découpées localement depuis l'extrait Geofabrik (`app/routing/extract.py`, seulement les tuiles
-  entièrement dans la région) ; ailleurs et en bordure, Overpass (plusieurs instances en secours,
+  entièrement dans le polygone ; index des nœuds sur disque pour un extrait > 1,5 Go) ; hors de France
+  et sur la frontière, Overpass (plusieurs instances en secours,
   souvent saturées). Une génération attend jusqu'à 3 min les tuiles du départ et de l'arrivée
   (indispensables), puis 45 s les autres (les plus proches d'abord) et calcule sans celles qui
   manquent ; une tuile en échec n'est pas redemandée avant 5 min. Seules les tuiles à portée
@@ -94,7 +96,8 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   dans ce dépôt (il est public).
 - Les données sont sauvegardées à part dans le dépôt GitHub **privé**
   https://github.com/Julesbor38/Run-Project-Data (`trail-map-data/` = contenu de data/,
-  `strava-export/` = export Strava complet). Le mettre à jour quand data/ change.
+  `strava-export/` = export Strava complet). Le mettre à jour quand data/ change, **sans data/osm/**
+  (cache régénérable de 7,5 Go + extraits .pbf de plusieurs Go, trop gros pour GitHub).
 - Ne PAS utiliser l'API Strava comme source pour la version communautaire
   (CGU depuis nov. 2024 : affichage limité au seul utilisateur, pas d'usage IA).
   Source = export d'archive Strava / fichiers importés par l'utilisateur.
@@ -128,11 +131,12 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
     jamais `allowedHosts: true`) ; le front n'appelle que des chemins relatifs /api, relayés au backend.
   - En HTTPS, la géolocalisation fonctionne aussi sur le téléphone.
   - ⚠️ Ne JAMAIS utiliser `tailscale funnel` : il rendrait l'app (et les traces) publique sur Internet.
-- Tuiles OSM hors-ligne (Rhône-Alpes, ~530 Mo, à rafraîchir de temps en temps avec --force) :
-  curl -L -o data/osm/rhone-alpes-latest.osm.pbf https://download.geofabrik.de/europe/france/rhone-alpes-latest.osm.pbf
-  curl -L -o data/osm/rhone-alpes.poly https://download.geofabrik.de/europe/france/rhone-alpes.poly
-  cd backend && python -m app.routing.extract ../data/osm/rhone-alpes-latest.osm.pbf ../data/osm/rhone-alpes.poly [--force]
-  puis redémarrer l'API (graphes en mémoire)
+- Tuiles OSM hors-ligne (France, extrait 5,1 Go -> 7,5 Go de tuiles, ~30 min, 940 Go libres ;
+  à rafraîchir de temps en temps avec --force) :
+  curl -L -o data/osm/france-latest.osm.pbf https://download.geofabrik.de/europe/france-latest.osm.pbf
+  curl -L -o data/osm/france.poly https://download.geofabrik.de/europe/france.poly
+  cd backend && python -m app.routing.extract ../data/osm/france-latest.osm.pbf ../data/osm/france.poly [--force]
+  puis redémarrer l'API (graphes en mémoire). Une seule région : même commande avec son extrait et son .poly.
 - docker compose up -d db  (PostGIS, pas encore utilisé par l'API)
 
 ## Données
