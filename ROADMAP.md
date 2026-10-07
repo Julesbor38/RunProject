@@ -466,6 +466,17 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 - ⚠️ L'app d'écran d'accueil déjà installée garde l'ancien scope (/) : la supprimer et la rajouter depuis Safari
   (https://jules-laptop.tailf52fab.ts.net/app/) pour que /dl soit bien hors scope.
 
+### 2026-10-07 — « Ouvrir avec COROS » : l'aperçu iOS par-dessus l'app
+- Retour : COROS n'apparaît toujours pas dans la feuille de partage — attendu, et définitif pour une app web :
+  COROS ne s'y inscrit pas, il ne s'ouvre que depuis un fichier affiché par iOS (Fichiers, aperçu de fichier).
+- L'aperçu iOS du fichier, lui, propose COROS (c'est celui qui bloquait l'app quand il la remplaçait). Le lien
+  /dl/ étant désormais hors du scope de la PWA (/app/), iOS doit l'ouvrir **par-dessus l'app** avec « OK ».
+- Sur téléphone, deux boutons : **« Ouvrir avec COROS »** (lien signé /dl/, nouvelle fenêtre : aperçu → Partager
+  → COROS → OK) et **« Enregistrer dans Fichiers »** (feuille de partage). Le lien GPX simple est masqué sur
+  téléphone (il remplacerait l'app). Ordinateur : inchangé.
+- Vérifié en simulation : les deux boutons, page de l'app jamais quittée. À confirmer sur l'iPhone, avec l'app
+  réinstallée depuis https://jules-laptop.tailf52fab.ts.net/app/ (sinon /dl reste dans l'ancien scope « / »).
+
 ---
 
 ## État au 2026-10-07

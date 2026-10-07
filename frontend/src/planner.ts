@@ -517,7 +517,8 @@ export class Planner {
         </div>
         <div class="actions">
           <a class="action gpx" href="${gpxUrl(p.route_id)}" download="${p.gpx_filename}"><svg class="i"><use href="#i-download"/></svg>GPX</a>
-          <button class="action watch" hidden title="Enregistrer le GPX dans Fichiers, puis l'ouvrir avec l'app COROS"><svg class="i"><use href="#i-watch"/></svg>Envoyer vers la montre</button>
+          <button class="action watch" hidden title="Le fichier s'affiche par-dessus l'app : Partager → COROS, puis OK"><svg class="i"><use href="#i-watch"/></svg>Ouvrir avec COROS</button>
+          <button class="action files" hidden title="Feuille de partage : « Enregistrer dans Fichiers »"><svg class="i"><use href="#i-download"/></svg>Enregistrer dans Fichiers</button>
         </div>`;
       card.addEventListener("click", () => this.select(r.id));
       const profileBox = card.querySelector(".profile") as HTMLElement | null;
@@ -525,30 +526,34 @@ export class Planner {
         profileBox.addEventListener("click", (e) => e.stopPropagation());
         renderProfile(profileBox, p.profile, ROUTE_COLORS[r.id] ?? ROUTE_COLORS[2], (d) => this.showHoverPoint(r, d));
       }
-      // Phone: share the GPX from the system share sheet, over the app (see share.ts): the app's page is never
-      // left or replaced. Then « Enregistrer dans Fichiers », and Fichiers -> Partager -> COROS (COROS only takes
-      // a GPX from Fichiers). Desktop: the link downloads the file.
+      // Phone (see share.ts): never a navigation of the app's page to a file. Desktop: the GPX link downloads it.
       const watch = card.querySelector(".watch") as HTMLButtonElement;
-      watch.hidden = !isMobile();
+      const files = card.querySelector(".files") as HTMLButtonElement;
+      const gpxLink = card.querySelector(".gpx") as HTMLElement;
+      watch.hidden = files.hidden = !isMobile();
+      gpxLink.hidden = isMobile(); // phone: never a plain download (iOS would replace the app with the file)
+      gpxLink.addEventListener("click", (e) => e.stopPropagation());
       const gpx = isMobile() ? prepareGpx(p.route_id, p.gpx_filename) : null;
-      const send = (e: Event) => {
+      // « Ouvrir avec COROS »: the signed /dl/ link, out of the PWA scope: iOS shows the file over the app (with
+      // « OK » to come back) in its own preview, the one that offers COROS (the share sheet never does).
+      watch.addEventListener("click", (e) => {
         e.stopPropagation();
         if (!gpx) return;
-        e.preventDefault();
+        if (openLink(gpx)) this.status("Dans l'aperçu : Partager ⬆ → COROS, puis « OK » pour revenir ici.");
+        else this.status(gpx.failed ? `GPX indisponible (${gpx.failed}) : régénérez l'itinéraire.` : "Lien en préparation : réessayez dans un instant.", !!gpx.failed);
+      });
+      // « Enregistrer dans Fichiers »: the system share sheet, over the app; then Fichiers -> Partager -> COROS.
+      files.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (!gpx) return;
         const outcome = sendGpx(gpx, {
-          shared: () => this.status("Dans le menu : « Enregistrer dans Fichiers », puis Fichiers → le fichier → Partager ⬆ → COROS."),
-          failed: (error) =>
-            this.status(`Partage impossible (${error}).`, true, {
-              label: "Ouvrir le fichier",
-              run: () => openLink(gpx) || this.status("Lien indisponible : réessayez dans un instant.", true),
-            }),
+          shared: () => this.status("Ensuite : Fichiers → le fichier → Partager ⬆ → COROS."),
+          failed: (error) => this.status(`Partage impossible (${error}) : utilisez « Ouvrir avec COROS ».`, true),
         });
-        if (outcome === "opened") this.status("Le GPX s'ouvre par-dessus l'app : « OK » pour revenir. Puis Fichiers → Partager ⬆ → COROS.");
+        if (outcome === "opened") this.status("Dans l'aperçu : Partager ⬆ → COROS, puis « OK » pour revenir ici.");
         else if (outcome === "not-ready") this.status("GPX en préparation : réessayez dans un instant.");
         else if (outcome === "unavailable") this.status(gpx.failed ? `GPX indisponible (${gpx.failed}) : régénérez l'itinéraire.` : "Lien en préparation : réessayez dans un instant.", !!gpx.failed);
-      };
-      watch.addEventListener("click", send);
-      card.querySelector(".gpx")!.addEventListener("click", send);
+      });
       box.appendChild(card);
     });
   }
