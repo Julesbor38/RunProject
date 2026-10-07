@@ -51,6 +51,7 @@ export interface RouteFeature {
     ele_max: number | null;
     profile: [number, number][]; // [distance_m, elevation_m]
     in_ascent_range?: boolean;
+    petals: number; // loops from the start the route is made of
   };
 }
 
@@ -95,6 +96,7 @@ export async function fetchRoutes(
     ascent_max_m?: number;
     preferences: Preferences;
     request_id?: string;
+    flat?: boolean; // the flattest routes, possibly several small loops (instead of a D+ range)
   },
   signal?: AbortSignal,
 ): Promise<RouteCollection> {

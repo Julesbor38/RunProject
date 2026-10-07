@@ -2,7 +2,7 @@ import pytest
 
 from app.routing.graph import EARTH_M_PER_DEG_LAT, build_graph, mark_familiar
 from app.routing.osm import OsmData, tiles_for_bbox
-from app.routing.router import Preferences, edge_factor, loop, point_to_point, shortest
+from app.routing.router import Preferences, edge_factor, flattest, loop, point_to_point, shortest
 
 LAT0, LON0 = 45.76, 4.78
 STEP = 200 / EARTH_M_PER_DEG_LAT  # 200 m between grid lines
@@ -157,6 +157,16 @@ class PlainAndHillDem:
         return np.maximum(north, 0) / 10
 
 
+class ValleyDem:
+    """Flat valley floor along the middle row band (rows 4-6), slopes of 1 m per 10 m on both sides."""
+
+    def elevations(self, lats, lons):
+        import numpy as np
+
+        off = np.abs(np.asarray(lats) - (LAT0 + 5 * STEP)) * EARTH_M_PER_DEG_LAT
+        return np.maximum(off - STEP * EARTH_M_PER_DEG_LAT, 0) / 10
+
+
 def test_climb_ignores_small_wiggles():
     from app.routing.elevation import climb
 
@@ -193,6 +203,31 @@ def test_loop_targets_ascent_range():
     high = loop(g, 505, 4000, Preferences(hills=1), ascent_range=(80, 400))[0].stats(g)
     assert low["ascent_m"] <= 40 < 80 <= high["ascent_m"]
     assert high["profile"][0][0] == 0 and high["profile"][-1][0] == high["distance_m"]
+
+
+def test_flattest_stays_on_the_valley_floor():
+    from app.routing.graph import add_elevation
+
+    g = build_graph(grid())
+    add_elevation(g, ValleyDem())
+    ranged = loop(g, 505, 4000, Preferences(hills=-0.8), ascent_range=(0, 40))[0]
+    routes = flattest(g, 505, 4000, Preferences())
+    best = routes[0]
+    assert best.ascent(g)[0] <= 5 < ranged.ascent(g)[0]  # a 4 km triangle must climb out of the 400 m wide valley
+    assert 3400 <= best.length(g) <= 4600
+    first, last = g.edges[best.edges[0][0]], g.edges[best.edges[-1][0]]
+    assert (first.v if best.edges[0][1] else first.u) == 505 and (last.u if best.edges[-1][1] else last.v) == 505
+    assert all(a.ascent(g)[0] <= b.ascent(g)[0] + 5 for a, b in zip(routes, routes[1:]))  # flattest first
+
+
+def test_flattest_one_way_avoids_the_hill():
+    from app.routing.graph import add_elevation
+
+    g = build_graph(grid())
+    add_elevation(g, PlainAndHillDem())
+    # 600 -> 610 along the bottom: a target of 3 km needs a detour, which must stay on the plain
+    best = point_to_point(g, 0, 10, Preferences(), distance_m=3000, flat=True)[0]
+    assert best.ascent(g)[0] <= 5 and best.length(g) >= 2500
 
 
 def test_cancelled_job_stops_generation():

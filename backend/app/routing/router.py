@@ -6,6 +6,7 @@ to avoid (roads, traffic, darkness, already-run or never-run paths).
 from __future__ import annotations
 
 import heapq
+import itertools
 import math
 from dataclasses import dataclass
 
@@ -21,6 +22,8 @@ PROFILE_STEP_M = 25.0
 EQUILATERAL = math.pi / 3
 NARROW = math.radians(25)  # apex angle of the elongated loop shape
 WAYPOINT_DZ_WEIGHT = 8.0  # meters of waypoint offset traded per meter of elevation difference
+FLATTEST_CLIMB_COST = 40.0  # "le plus plat": each meter climbed costs as much as 40 m of flat
+PETAL_M = 3500.0  # preferred length of each small loop when a flat route is made of several
 
 
 @dataclass
@@ -55,6 +58,7 @@ def edge_factor(e: Edge, p: Preferences) -> float:
 class Route:
     edges: list[tuple[int, bool]]  # (edge index, reversed)
     cost: float
+    petals: int = 1  # number of loops from the start it is made of
 
     def length(self, g: Graph) -> float:
         return sum(g.edges[i].length_m for i, _ in self.edges)
@@ -117,6 +121,7 @@ class Route:
             "ele_min": min((z for _, z in profile), default=None),
             "ele_max": max((z for _, z in profile), default=None),
             "profile": profile,
+            "petals": self.petals,
         }
 
 
@@ -127,8 +132,8 @@ class Weights:
     meter in the graph, which keeps the A* heuristic admissible and as tight as possible.
     """
 
-    def __init__(self, g: Graph, p: Preferences):
-        cw = climb_weight(p)
+    def __init__(self, g: Graph, p: Preferences, climb_cost: float | None = None):
+        cw = climb_weight(p) if climb_cost is None else climb_cost
         self.factor = [edge_factor(e, p) for e in g.edges]
         self.adj: dict[int, list[tuple[int, int, float]]] = {n: [] for n in g.adj}
         floor = math.inf
@@ -196,8 +201,6 @@ def loop(
     attempt's length. Best candidates (cost per meter + distance error + distance
     to the wanted ascent range) are returned.
     """
-    lat, lon = g.coords[start]
-    candidates: list[tuple[float, Route]] = []
     variants = [(p, EQUILATERAL)]
     if ascent_range is not None and g.ele:
         # The climb weight steers the ascent; another setting and a narrow loop shape widen the
@@ -205,21 +208,94 @@ def loop(
         variants += [(_other_hills(p), EQUILATERAL), (p, NARROW)]
     job = job or Job()
     job.step("routes", 0, len(variants) * n_bearings)
-    weights = [Weights(g, prefs) for prefs, _ in variants]
-    for b, (vi, (prefs, apex)) in ((b, v) for v in enumerate(variants) for b in range(n_bearings)):
+    shapes = [(prefs, apex, Weights(g, prefs)) for prefs, apex in variants]
+    routes = _triangle_loops(g, start, distance_m, shapes, n_bearings, job)
+    routes.sort(key=lambda r: _score(g, r, distance_m, ascent_range))
+    return _diverse(routes, g, n_results)
+
+
+def flattest(
+    g: Graph,
+    start: int,
+    distance_m: float,
+    p: Preferences,
+    n_results: int = 3,
+    n_bearings: int = 12,
+    job: Job | None = None,
+) -> list[Route]:
+    """The flattest routes of about `distance_m` from `start`: one big loop, or several small
+    loops ("petals") from the start that stay on the flattest ground around it.
+
+    A big loop often has to climb out of a valley or off a plateau; 2-4 loops of 2-5 km can
+    keep to a valley floor or a balcony path. Routes are ranked by ascent per km.
+    """
+    job = job or Job()
+    flat = Preferences(**{**p.__dict__, "hills": -1.0})
+    w = Weights(g, flat, climb_cost=FLATTEST_CLIMB_COST)
+    # Out and back (apex None) too: in a steep valley, the only flat ground may be one balcony path.
+    shapes = [(flat, EQUILATERAL, w), (flat, NARROW, w), (flat, None, w)]
+    # One loop, and the two petal counts closest to PETAL_M each (petals of 2-5 km).
+    counts = sorted((k for k in range(2, 9) if 2000 <= distance_m / k <= 5000), key=lambda k: abs(distance_m / k - PETAL_M))[:2]
+    counts = [1, *sorted(counts)]
+    job.step("routes", 0, len(counts) * len(shapes) * n_bearings)
+    candidates: list[Route] = []
+    for k in counts:
+        loops = _triangle_loops(g, start, distance_m / k, shapes, n_bearings, job)
+        if k == 1:
+            candidates += loops
+        else:
+            candidates += _petal_routes(g, loops, k, distance_m / k)
+    candidates.sort(key=lambda r: _flat_score(g, r, distance_m))
+    return _diverse(candidates, g, n_results)
+
+
+def _petal_routes(g: Graph, loops: list[Route], k: int, petal_m: float, n_petals: int = 5) -> list[Route]:
+    """Routes made of `k` of the flattest small loops (a loop may be run twice when few are flat)."""
+    best = _diverse(sorted(loops, key=lambda r: _flat_score(g, r, petal_m)), g, n_petals, max_overlap=0.5)
+    asc = [r.ascent(g)[0] for r in best]
+    length = [r.length(g) for r in best]
+    # The same loop at most twice: only worth it when the other loops are much hillier.
+    combos = [c for c in itertools.combinations_with_replacement(range(len(best)), k) if max(map(c.count, c)) <= 2]
+    # Ascent adds up across loops from the same start: cheap pre-ranking, exact ranking afterwards.
+    combos.sort(key=lambda c: sum(asc[i] for i in c) / max(sum(length[i] for i in c), 1.0))
+    return [Route([e for i in c for e in best[i].edges], sum(best[i].cost for i in c), petals=k) for c in combos[:12]]
+
+
+def _flat_score(g: Graph, route: Route, distance_m: float) -> float:
+    """Lower is better, in meters of ascent per km: ascent first, then distance error, repeats and preferences."""
+    length = max(route.length(g), 1.0)
+    per_km = route.ascent(g)[0] / (length / 1000)
+    return per_km + 40.0 * abs(length - distance_m) / distance_m + 8.0 * _repeated_length(g, route.edges) / length + route.cost / length / 10
+
+
+def _triangle_loops(
+    g: Graph,
+    start: int,
+    distance_m: float,
+    shapes: list[tuple[Preferences, float | None, Weights]],
+    n_bearings: int,
+    job: Job,
+) -> list[Route]:
+    """One loop of about `distance_m` per bearing and shape (preferences, apex angle, weights):
+    a triangle through two waypoints, or with apex None a single waypoint and back (by another
+    way when there is one), its size corrected once from the first attempt's length."""
+    lat, lon = g.coords[start]
+    out = []
+    for b, (vi, (prefs, apex, w)) in ((b, v) for v in enumerate(shapes) for b in range(n_bearings)):
         job.advance()
-        bearing = 2 * math.pi * (b + vi / len(variants)) / n_bearings  # variants explore offset bearings
+        bearing = 2 * math.pi * (b + vi / len(shapes)) / n_bearings  # shapes explore offset bearings
 
-        def triangle(side: float) -> Route | None:
-            corners = [_offset(g, lat, lon, side, angle) for angle in (bearing, bearing + apex)]
-            return _route_via(g, start, start, corners, side / 3, prefs, weights[vi])
+        def triangle(side: float, bearing=bearing, prefs=prefs, apex=apex, w=w) -> Route | None:
+            angles = (bearing,) if apex is None else (bearing, bearing + apex)
+            corners = [_offset(g, lat, lon, side, angle) for angle in angles]
+            return _route_via(g, start, start, corners, side / (2 if apex is None else 3), prefs, w)
 
-        # Perimeter 2s + 2s.sin(apex/2); roads are ~20 % longer than straight lines.
-        route = _sized(g, triangle, distance_m / (1.2 * (2 + 2 * math.sin(apex / 2))), distance_m)
+        # Perimeter 2s + 2s.sin(apex/2) (2s out and back); roads are ~20 % longer than straight lines.
+        perimeter = 2 if apex is None else 2 + 2 * math.sin(apex / 2)
+        route = _sized(g, triangle, distance_m / (1.2 * perimeter), distance_m)
         if route is not None:
-            candidates.append((_score(g, route, distance_m, ascent_range), route))
-    candidates.sort(key=lambda c: c[0])
-    return _diverse([r for _, r in candidates], g, n_results)
+            out.append(route)
+    return out
 
 
 def point_to_point(
@@ -232,8 +308,10 @@ def point_to_point(
     n_results: int = 3,
     n_angles: int = 8,
     job: Job | None = None,
+    flat: bool = False,
 ) -> list[Route]:
     """The best route from src to dst or, given `distance_m`, routes of about that length.
+    `flat`: the flattest ones (climbs weigh much more, ranked by ascent per km).
 
     Longer routes go through one waypoint on an ellipse whose foci are src and dst:
     any point of it makes a src-waypoint-dst path of the same straight-line length.
@@ -241,7 +319,9 @@ def point_to_point(
     """
     job = job or Job()
     job.step("routes")
-    weights = Weights(g, p)
+    if flat:
+        p, ascent_range = Preferences(**{**p.__dict__, "hills": -1.0}), None
+    weights = Weights(g, p, climb_cost=FLATTEST_CLIMB_COST if flat else None)
     direct = shortest(g, src, dst, p, w=weights)
     if direct is None or not distance_m or direct.length(g) >= distance_m * 0.95:
         return [direct] if direct else []
@@ -251,7 +331,8 @@ def point_to_point(
     c = math.hypot(dx, dy) / 2  # half the focal distance
     axis = math.atan2(dx, dy)  # bearing from src to dst
     mid_lat, mid_lon = (lat1 + lat2) / 2, (lon1 + lon2) / 2
-    candidates = [(_score(g, direct, distance_m, ascent_range), direct)]
+    score = (lambda r: _flat_score(g, r, distance_m)) if flat else (lambda r: _score(g, r, distance_m, ascent_range))
+    candidates = [(score(direct), direct)]
     variants = [p] + ([_other_hills(p)] if ascent_range is not None and g.ele else [])
     all_weights = [weights] + [Weights(g, v) for v in variants[1:]]
     job.step("routes", 0, len(variants) * n_angles)
@@ -270,7 +351,7 @@ def point_to_point(
 
         route = _sized(g, via, distance_m / 1.2, distance_m)  # roads are ~20 % longer than straight lines
         if route is not None:
-            candidates.append((_score(g, route, distance_m, ascent_range), route))
+            candidates.append((score(route), route))
     candidates.sort(key=lambda c: c[0])
     return _diverse([r for _, r in candidates], g, n_results)
 

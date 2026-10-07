@@ -182,6 +182,7 @@ class RouteRequest(BaseModel):
     ascent_max_m: float | None = Field(None, ge=0)
     preferences: PreferencesIn = PreferencesIn()
     request_id: str | None = Field(None, max_length=64)  # lets the client follow and cancel the generation
+    flat: bool = False  # the flattest routes (petals of small loops allowed), instead of a D+ range
 
 
 @app.get("/api/routing/status")
@@ -202,8 +203,9 @@ def routes(req: RouteRequest) -> dict:
             Preferences(**req.preferences.model_dump()),
             distance_m=req.distance_km * 1000 if req.distance_km else None,
             end=req.end,
-            ascent_range=_ascent_range(req),
+            ascent_range=None if req.flat else _ascent_range(req),
             job=job,
+            flat=req.flat,
         )
     except RoutingError as e:
         raise HTTPException(422, str(e)) from e

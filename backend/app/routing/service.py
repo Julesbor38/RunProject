@@ -12,7 +12,7 @@ from .elevation import Dem
 from .graph import EARTH_M_PER_DEG_LAT, Graph, add_elevation, build_graph, mark_familiar
 from .job import Job
 from .osm import TILE_DEG, OverpassError, download_missing, load_tiles, tile_path, tiles_for_bbox
-from .router import Preferences, Route, loop, point_to_point
+from .router import Preferences, Route, flattest, loop, point_to_point
 
 MAX_DISTANCE_M = 60_000
 GRAPH_CACHE_SIZE = 4
@@ -90,6 +90,7 @@ class RoutingService:
         end: tuple[float, float] | None = None,
         ascent_range: tuple[float, float] | None = None,
         job: Job | None = None,
+        flat: bool = False,
     ) -> dict:
         """`start`/`end` are (lon, lat). A loop when `end` is None, else a point-to-point route
         (the best one, or routes of about `distance_m` when given).
@@ -105,12 +106,16 @@ class RoutingService:
         if src is None:
             raise RoutingError("aucun chemin à moins de 500 m du départ")
         if end is None:
-            routes = loop(g, src, distance_m, prefs, ascent_range=ascent_range, job=job)
+            routes = (
+                flattest(g, src, distance_m, prefs, job=job)
+                if flat and g.ele
+                else loop(g, src, distance_m, prefs, ascent_range=ascent_range, job=job)
+            )
         else:
             dst = g.nearest_node(end[1], end[0])
             if dst is None:
                 raise RoutingError("aucun chemin à moins de 500 m de l'arrivée")
-            routes = point_to_point(g, src, dst, prefs, distance_m, ascent_range, job=job)
+            routes = point_to_point(g, src, dst, prefs, distance_m, ascent_range, job=job, flat=flat and bool(g.ele))
         if not routes:
             raise RoutingError("aucun itinéraire trouvé dans cette zone")
         features = [_feature(r, g, i, ascent_range) for i, r in enumerate(routes)]

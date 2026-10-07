@@ -25,7 +25,9 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   (8000, 127.0.0.1), service systemd `trailmap` dans WSL, WSL gardé allumé par une tâche planifiée Windows,
   `tailscale serve --bg http://localhost:8000`. Mise à jour : `./deploy-local.sh`. État : `GET /api/health`.
 - Prochaine grosse étape : map-matching (étape 2), puis notation des tronçons (étape 3).
-- Tests : 69 OK, 1 ignoré.
+- Dénivelé : « Le plus plat » minimise le D+ (grande boucle, pétales de 2–5 km ou aller-retour, `flat: true`) ;
+  Vallonné / Montagne / Personnalisé gardent une tranche de D+.
+- Tests : 71 OK, 1 ignoré.
 
 ## Architecture
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
@@ -52,7 +54,9 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   manquent ; une tuile en échec n'est pas redemandée avant 5 min. Seules les tuiles à portée
   (bande autour du segment départ-arrivée, disque autour du départ pour une boucle) sont chargées.
   Génération annulable et suivie (`Job` dans `app/routing/job.py`). A* pondéré par les préférences (coûts précalculés par
-  génération, `Weights`), boucles en triangle, aller simple à distance visée via un détour sur ellipse.
+  génération, `Weights`), boucles en triangle, aller simple à distance visée via un détour sur ellipse ;
+  « le plus plat » (`flattest`) : triangles, triangles étroits, allers-retours et combinaisons de petites boucles
+  (pétales), classés au D+ par km.
   Critères dérivés des tags OSM (nature, circulation, éclairage estimé, escaliers)
   + "déjà couru" calculé depuis les traces de l'utilisateur.
   Pré-téléchargement en arrière-plan des tuiles autour des zones courues et de toutes celles qu'une
@@ -69,7 +73,7 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 - GET  /api/frequency : voies OSM (ou traces) parcourues avec leur nombre de passages, cache data/cache/
 - POST /api/reload : relit data/raw
 - GET  /api/routing/status : avancement du pré-téléchargement OSM
-- POST /api/routes : génère des itinéraires (boucle / aller simple, préférences, tranche de D+) ;
+- POST /api/routes : génère des itinéraires (boucle / aller simple, préférences, tranche de D+ ou `flat: true`) ;
   `request_id` optionnel pour suivre / annuler ; `warning` si des tuiles OSM manquent
   Chaque itinéraire reçoit `route_id`, `name`, `gpx_filename` et est gardé dans data/routes/ (300 derniers)
 - GET  /api/routes/{route_id}/gpx : GPX 1.1 (application/gpx+xml, attachment, nom ASCII .gpx)

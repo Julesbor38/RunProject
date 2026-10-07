@@ -252,6 +252,30 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 - Vérifié par captures (Chromium headless, vue ordinateur 1280×800 et iPhone 390×844) : itinéraire,
   résultats, mes sorties, réglages fins, panneau replié ; aucune erreur dans la console.
 
+### 2026-10-07 — « Le plus plat » : boucles en pétales
+- Problème : « Plat » donnait toujours « hors tranche » (10 km depuis la maison : 112–129 m de D+ pour une
+  tranche 0–120 m ; Méribel : 330–420 m). Diagnostic :
+  - le modèle d'altitude ne gonfle pas le D+ (sur 139 sorties réelles, il mesure ~0,7× le D+ enregistré) ;
+  - les vraies sorties plates depuis la maison étaient des tours de piste (8 km sur 0,7 km de chemins distincts) ;
+  - le générateur cherchait une seule grande boucle en triangle, qui doit sortir du plateau, et sa variante
+    « pour élargir le choix » relâchait la préférence plat (plus vallonnée).
+- « Plat » devient **« Le plus plat »** : plus de tranche, le serveur minimise le D+ (`router.flattest`,
+  `POST /api/routes` avec `flat: true`) :
+  - une grande boucle, ou 2 à 8 **pétales** de 2 à 5 km (les deux nombres de pétales les plus proches de 3,5 km),
+    choisis parmi les petites boucles les plus plates (une même boucle au plus deux fois) ;
+  - formes : triangle, triangle étroit et **aller-retour** (retour par un autre chemin s'il existe), utile en
+    montagne où le seul terrain plat est un balcon ou un fond de vallée ;
+  - montées 40× plus coûteuses que le plat pendant la recherche, classement au D+ par km (puis écart de distance,
+    répétitions, préférences) ; aussi pour l'aller simple.
+- Résultats depuis la maison : 5 km D+ 13, 8 km D+ 26, 10 km D+ 42, 15 km D+ 60–79 (avant : 30 / 74–107 /
+  112–129 / 173–211). Limite théorique calculée (aller-retour au moindre D+) : ~5 m/km ; atteinte.
+  Méribel centre : 25–31 m/km, au niveau de la limite théorique (~33 m/km pour 4 km) : le terrain ne permet
+  pas mieux depuis ce point.
+- Cartes : « N boucles » quand l'itinéraire est fait de pétales, D+ par km en mode « Le plus plat ».
+  Tranche impossible (Vallonné / Montagne / Personnalisé) : message « le terrain ne permet pas… » et
+  suggestion de « Le plus plat » si les résultats sont trop vallonnés.
+- 71 tests OK, 1 ignoré (vallée synthétique : pétales plats là où un triangle doit grimper ; aller simple plat).
+
 ---
 
 ## État au 2026-10-07

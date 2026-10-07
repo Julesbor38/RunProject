@@ -39,7 +39,7 @@ type AscentMode = "any" | "flat" | "rolling" | "mountain" | "custom";
 // D+ per km of loop, and how strongly the router seeks (+) or avoids (-) climbs.
 const ASCENT: Record<Exclude<AscentMode, "custom">, { label: string; perKm?: [number, number]; hills: number }> = {
   any: { label: "Indifférent", hills: 0 },
-  flat: { label: "Plat", perKm: [0, 12], hills: -0.8 },
+  flat: { label: "Le plus plat", hills: -1 }, // no range: the server minimizes the climb (small loops allowed)
   rolling: { label: "Vallonné", perKm: [15, 35], hills: 0.2 },
   mountain: { label: "Montagne", perKm: [40, 200], hills: 1 },
 };
@@ -68,6 +68,7 @@ export class Planner {
   private start: Marker | null = null;
   private end: Marker | null = null;
   private routes: RouteFeature[] = [];
+  private flatResults = false; // the shown routes come from « Le plus plat »
   private selected = 0;
   private busy = false;
   private generation: { id: string; abort: AbortController } | null = null; // the one running, cancellable
@@ -253,9 +254,11 @@ export class Planner {
           ascent_max_m: range && Number.isFinite(range[1]) ? range[1] : undefined,
           preferences: { ...this.prefs, hills: this.hills() },
           request_id: id,
+          flat: this.ascentMode === "flat",
         },
         abort.signal,
       );
+      this.flatResults = this.ascentMode === "flat";
       this.showRoutes(fc);
       const missed = range && fc.features.every((f) => f.properties.in_ascent_range === false);
       const direct = this.mode === "oneway" && this.onewayTarget && fc.features.length === 1 ? fc.features[0].properties.distance_m : null;
@@ -263,7 +266,8 @@ export class Planner {
         direct !== null
           ? `Le trajet le plus direct fait déjà ${km(direct)}, au moins les ${this.distance} km visés : voici ce trajet.`
           : missed
-            ? `Aucun${this.mode === "loop" ? "e boucle" : " itinéraire"} de ${this.distance} km dans la tranche ${rangeText(range)} : voici les plus proches.`
+            ? `Le terrain ne permet pas ${this.mode === "loop" ? "de boucle" : "d'itinéraire"} de ${this.distance} km dans la tranche ${rangeText(range)} ici : voici les plus proches.` +
+              (fc.features.some((f) => f.properties.ascent_m > range[1]) ? " Pour le moins de dénivelé possible, choisissez « Le plus plat »." : "")
             : null;
       this.status([note, fc.warning].filter(Boolean).join(" ") || null, false);
     } catch (e) {
@@ -399,7 +403,11 @@ export class Planner {
     });
     const range = this.ascentRange();
     document.getElementById("ascent-value")!.textContent =
-      !this.withDistance ? (this.ascentMode === "any" ? "Indifférent" : `${ASCENT[this.ascentMode === "custom" ? "rolling" : this.ascentMode].label}`) : range ? rangeText(range) : "Indifférent";
+      this.ascentMode === "flat"
+        ? "D+ minimal"
+        : !this.withDistance
+          ? this.ascentMode === "any" ? "Indifférent" : ASCENT[this.ascentMode === "custom" ? "rolling" : this.ascentMode].label
+          : range ? rangeText(range) : "Indifférent";
     const custom = document.getElementById("ascent-custom")!;
     custom.hidden = this.ascentMode !== "custom" || !this.withDistance;
     const [minInput, maxInput] = ["ascent-min", "ascent-max"].map((id) => document.getElementById(id) as HTMLInputElement);
@@ -483,6 +491,8 @@ export class Planner {
         <p class="climb">
           <span title="Dénivelé positif"><svg class="i"><use href="#i-up"/></svg>${p.ascent_m} m</span>
           <span title="Dénivelé négatif"><svg class="i"><use href="#i-down"/></svg>${p.descent_m} m</span>
+          ${p.petals > 1 ? `<span title="Plusieurs boucles depuis le départ, pour rester sur le terrain le plus plat"><svg class="i"><use href="#i-loop"/></svg>${p.petals} boucles</span>` : ""}
+          ${this.flatResults ? `<span class="muted" title="Dénivelé positif par kilomètre">${Math.round((p.ascent_m / p.distance_m) * 1000)} m/km</span>` : ""}
           ${p.ele_min != null ? `<span class="muted" title="Altitudes min – max"><svg class="i"><use href="#i-peak"/></svg>${Math.round(p.ele_min)}–${Math.round(p.ele_max ?? 0)} m</span>` : ""}
           ${p.in_ascent_range === false ? `<span class="badge">hors tranche</span>` : ""}
         </p>
