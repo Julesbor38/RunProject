@@ -1,0 +1,49 @@
+# Builds the native iOS app (mobile/, Capacitor) without signing, for AltStore: AltServer, on the PC,
+# signs it with a free Apple ID when installing it (see mobile/README.md). macOS runners are free for
+# public repositories. Run it from the Actions tab (« Run workflow »), or by pushing changes to mobile/.
+name: iOS app (AltStore)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["mobile/**", ".github/workflows/ios-app.yml"]
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Capacitor (copies the config and the fallback page into the Xcode project)
+        working-directory: mobile
+        run: |
+          npm ci
+          npx cap sync ios
+
+      - name: Build for iPhone, unsigned
+        working-directory: mobile/ios/App
+        run: |
+          xcodebuild -project App.xcodeproj -scheme App -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package TrailMap.ipa
+        working-directory: mobile/ios/App
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/App.app Payload/
+          zip -qry TrailMap.ipa Payload
+          ls -la TrailMap.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TrailMap-ipa
+          path: mobile/ios/App/TrailMap.ipa
+          retention-days: 30

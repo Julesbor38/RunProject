@@ -66,6 +66,7 @@ function render() {
   const nav = navigator as Navigator & { standalone?: boolean };
   const test = shareableFile("<gpx/>", "test.gpx").checks;
   const rows: [string, string][] = [
+    ["App native iOS (Capacitor)", String(!!(window as Window & { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.())],
     ["Mode écran d'accueil (navigator.standalone)", String(nav.standalone)],
     ["display-mode: standalone", String(matchMedia("(display-mode: standalone)").matches)],
     ["iOS", /OS (\d+[_\d]*) like Mac OS X/.exec(navigator.userAgent)?.[1]?.replace(/_/g, ".") ?? "?"],

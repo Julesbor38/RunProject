@@ -4,7 +4,7 @@ import { cancelRoute, fetchRouteProgress, fetchRoutes, gpxUrl } from "./api";
 import type { LngLat, Preferences, RouteCollection, RouteFeature, RouteProgress } from "./api";
 import { fitTo } from "./activities";
 import { isMobile, km, pct } from "./format";
-import { openLink, prepareGpx, sendGpx } from "./share";
+import { nativeOpenIn, openInNative, prepareGpx, sendGpx } from "./share";
 import { pointAt, renderProfile } from "./profile";
 
 const ROUTE_COLORS = ["#2563eb", "#ea580c", "#db2777"];
@@ -545,6 +545,17 @@ export class Planner {
       watch.addEventListener("click", (e) => {
         e.stopPropagation();
         if (!gpx) return;
+        if (nativeOpenIn()) {
+          // The native iOS app: its « Ouvrir dans… » menu lists the watch apps directly.
+          const opened = openInNative(gpx, p.gpx_filename);
+          if (opened === "not-ready") return note("Fichier en préparation : réessayez dans un instant.");
+          note("Choisissez l'app de votre montre dans le menu.");
+          opened.then(
+            (r) => r.shown === false && note("Aucune app ne peut ouvrir ce fichier sur ce téléphone.", true),
+            (err: Error) => note(`Ouverture impossible (${err.message}).`, true),
+          );
+          return;
+        }
         const next = "Puis dans l'app Fichiers : le fichier → Partager ⬆ → l'app de votre montre.";
         const outcome = sendGpx(gpx, {
           shared: () => note(`Fichier enregistré. ${next}`),

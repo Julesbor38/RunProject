@@ -4,6 +4,8 @@
  *
  * 1. The system share sheet, over the app: the File is built in advance (as soon as the route is shown), so
  *    that the tap calls navigator.share synchronously (Safari refuses it once the tap's activation is lost).
+ * 0. In the native iOS app (mobile/, Capacitor): its OpenIn plugin shows iOS's « Ouvrir dans… » menu, where
+ *    the watch apps are listed (a web page can't show that menu).
  * 2. Fallback, when files can't be shared: a signed /dl/ link, outside the PWA scope (/app/), opened in a new
  *    window: iOS shows it over the app with its own « OK », never in place of the app.
  */
@@ -34,6 +36,7 @@ export function shareableFile(data: BlobPart, filename: string): { file: File | 
 export interface PreparedGpx {
   ready: boolean; // the file and the link have been asked for and answered
   file: File | null; // null once ready: the share sheet takes no GPX here
+  data64: string | null; // the GPX in base64, for the native app
   link: string | null; // signed /dl/ link (fallback)
   expires: number; // of the link (epoch s)
   failed: string | null;
@@ -42,10 +45,11 @@ export interface PreparedGpx {
 
 /** Fetch the route's GPX and its signed link right away, so that a later tap needs no await. */
 export function prepareGpx(routeId: string, filename: string): PreparedGpx {
-  const out: PreparedGpx = { ready: false, file: null, link: null, expires: 0, failed: null, routeId };
+  const out: PreparedGpx = { ready: false, file: null, data64: null, link: null, expires: 0, failed: null, routeId };
   const file = apiFetch(gpxUrl(routeId))
     .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`GPX : erreur ${r.status}`))))
     .then((data) => {
+      if (nativeOpenIn()) out.data64 = toBase64(data);
       const { file: f, checks } = shareableFile(data, filename);
       setGpxChecks(filename, checks, f?.type ?? null);
       out.file = f;
@@ -91,6 +95,33 @@ export function sendGpx(
   }
   if (!gpx.ready) return "not-ready";
   return openLink(gpx) ? "opened" : "unavailable";
+}
+
+type CapacitorGlobal = {
+  isNativePlatform?: () => boolean;
+  nativePromise?: (plugin: string, method: string, options: object) => Promise<{ shown?: boolean }>;
+};
+
+/** The native app's « Ouvrir dans… » (null in a browser or the home-screen web app). */
+export function nativeOpenIn(): ((filename: string, data64: string) => Promise<{ shown?: boolean }>) | null {
+  const cap = (window as Window & { Capacitor?: CapacitorGlobal }).Capacitor;
+  if (!cap?.isNativePlatform?.() || !cap.nativePromise) return null;
+  return (filename, data) => cap.nativePromise!("OpenIn", "open", { filename, data });
+}
+
+function toBase64(data: ArrayBuffer): string {
+  const bytes = new Uint8Array(data);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
+
+/** In the native app: « Ouvrir dans… » on the prepared GPX. */
+export function openInNative(gpx: PreparedGpx, filename: string): Promise<{ shown?: boolean }> | "not-ready" {
+  const open = nativeOpenIn();
+  if (!open || !gpx.data64) return "not-ready";
+  debugLog("app native : Ouvrir dans…", filename);
+  return open(filename, gpx.data64);
 }
 
 /** The fallback: the signed link in a new window (iOS home-screen app: over the app, out of its scope). */

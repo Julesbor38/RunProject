@@ -1,0 +1,13 @@
+{
+  "appId": "io.github.julesbor38.trailmap",
+  "appName": "Trail Map",
+  "webDir": "www",
+  "server": {
+    "url": "https://jules-laptop.tailf52fab.ts.net/app/",
+    "errorPath": "index.html"
+  },
+  "ios": {
+    "contentInset": "never",
+    "scheme": "Trail Map"
+  }
+}
