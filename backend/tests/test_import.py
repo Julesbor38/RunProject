@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from app import api, imports
 
-from test_pipeline import make_data, write_gpx
+from test_pipeline import make_data, user_data, write_gpx
 
 
 def strava_zip(tmp_path: Path, n: int, extra: dict[str, bytes] | None = None) -> bytes:
@@ -53,17 +53,17 @@ def test_new_strava_export_adds_its_new_activities(client, tmp_path):
     s = wait_import(client)
     assert s["state"] == "done" and sorted(s["new"]) == ["strava:2", "strava:3"]  # strava:1 was already there
     assert client.get("/api/activities").json()["stats"]["activities"] == 4  # 3 Strava + the Coros file
-    raw = api.DATA_DIR / "raw"
+    raw = user_data(api.DATA_DIR) / "raw"
     assert not (raw / "strava" / "media").exists()  # only what the import reads
     assert (raw / "strava-export.zip").exists() and not (raw / "strava.new").exists()
 
 
 def test_single_files_are_added(client):
-    gpx = (api.DATA_DIR / "raw" / "coros.gpx").read_text().replace("46.0", "47.0").replace("T17:", "T08:")
+    gpx = (user_data(api.DATA_DIR) / "raw" / "coros.gpx").read_text().replace("46.0", "47.0").replace("T17:", "T08:")
     r = client.post("/api/import", files=[("files", ("../../ma sortie.gpx", gpx.encode(), "application/gpx+xml"))])
     assert r.status_code == 200
     assert wait_import(client)["new"] == ["file:ma_sortie.gpx"]
-    assert (api.DATA_DIR / "raw" / "uploads" / "ma_sortie.gpx").exists()  # no path from the client
+    assert (user_data(api.DATA_DIR) / "raw" / "uploads" / "ma_sortie.gpx").exists()  # no path from the client
 
 
 def test_bad_uploads_are_refused(client, tmp_path):
@@ -78,8 +78,8 @@ def test_bad_uploads_are_refused(client, tmp_path):
     assert "activities.csv" in post("other.zip", buf.getvalue()).json()["detail"]
     evil = strava_zip(tmp_path, 1, {"activities/../../../evil.gpx": b"<gpx/>"})
     assert post("evil.zip", evil).status_code == 422
-    assert not (api.DATA_DIR / "raw" / "strava.new").exists()  # nothing half-extracted left behind
-    assert not (tmp_path / "evil.gpx").exists() and not (api.DATA_DIR / "evil.gpx").exists()
+    assert not (user_data(api.DATA_DIR) / "raw" / "strava.new").exists()  # nothing half-extracted left behind
+    assert not (tmp_path / "evil.gpx").exists() and not (api.DATA_DIR / "evil.gpx").exists() and not (user_data(api.DATA_DIR) / "evil.gpx").exists()
     wait_import(client)
 
 

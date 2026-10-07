@@ -57,7 +57,7 @@ def test_strava_archive_filters_runs(tmp_path: Path):
     assert acts[1].sport == "hike" and acts[1].source == "strava:4"
 
 
-SAMPLE_FIT = Path(__file__).parents[2] / "data" / "raw" / "PollionnayTrail20261003154439.fit"
+SAMPLE_FIT = Path(__file__).parents[2] / "data" / "users" / "jules" / "raw" / "PollionnayTrail20261003154439.fit"
 
 
 @pytest.mark.skipif(not SAMPLE_FIT.exists(), reason="sample .fit not present")

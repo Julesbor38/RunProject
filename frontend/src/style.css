@@ -1129,6 +1129,50 @@ input[type="range"] {
   background: var(--bg);
 }
 
+.login-card[data-mode="login"] .when-signup,
+.login-card[data-mode="signup"] .when-login {
+  display: none;
+}
+
+.login-card .hint {
+  margin: -6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: left;
+}
+
+.switch-mode {
+  margin-top: 4px !important;
+  font-size: 13px !important;
+  color: var(--muted);
+}
+
+.switch-mode[hidden] {
+  display: none;
+}
+
+.text-btn {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--pine-700);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+#list li.empty {
+  padding: 18px 16px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+  cursor: default;
+}
+
+#list li.empty::before {
+  display: none;
+}
+
 .login-card .primary {
   display: inline-flex;
   align-items: center;

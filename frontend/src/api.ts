@@ -153,7 +153,7 @@ export async function currentUser(): Promise<string | null> {
   return r.ok ? (await r.json()).user : null;
 }
 
-export async function login(username: string, password: string): Promise<void> {
+export async function login(username: string, password: string): Promise<string> {
   const r = await fetch("/api/auth/login", {
     method: "POST",
     credentials: "same-origin",
@@ -161,6 +161,24 @@ export async function login(username: string, password: string): Promise<void> {
     body: JSON.stringify({ username, password }),
   });
   if (!r.ok) throw new Error(await errorText(r));
+  return (await r.json()).user;
+}
+
+/** Create an account (its data starts empty); logged in on success. */
+export async function signup(username: string, password: string): Promise<string> {
+  const r = await fetch("/api/auth/signup", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!r.ok) throw new Error(await errorText(r));
+  return (await r.json()).user;
+}
+
+export async function signupOpen(): Promise<boolean> {
+  const r = await fetch("/api/auth/options").catch(() => null);
+  return r?.ok ? (await r.json()).signup : false;
 }
 
 export async function logout(): Promise<void> {

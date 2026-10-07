@@ -35,14 +35,22 @@
 
     <!-- Login: everything of the user's data needs a session -->
     <div id="login" hidden>
-      <form class="login-card" autocomplete="on">
+      <form class="login-card" autocomplete="on" data-mode="login">
         <img src="/logo.svg" alt="" width="64" height="64" />
         <h1>Trail Map</h1>
-        <p class="muted">Connectez-vous pour accéder à vos sorties.</p>
+        <p class="muted when-login">Connectez-vous pour accéder à vos sorties.</p>
+        <p class="muted when-signup">Créez votre compte : vos sorties et vos notes ne sont visibles que par vous.</p>
         <label>Identifiant<input name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required /></label>
+        <p class="hint when-signup">3 à 32 caractères : lettres, chiffres, «&nbsp;.&nbsp;», «&nbsp;_&nbsp;» ou «&nbsp;-&nbsp;».</p>
         <label>Mot de passe<input name="password" type="password" autocomplete="current-password" required /></label>
+        <label class="when-signup">Confirmer le mot de passe<input name="confirm" type="password" autocomplete="new-password" /></label>
+        <p class="hint when-signup">10 caractères minimum. Une phrase facile à retenir fait un bon mot de passe.</p>
         <p class="login-error status error" hidden></p>
-        <button class="primary" type="submit"><svg class="i"><use href="#i-lock" /></svg>Se connecter</button>
+        <button class="primary" type="submit"><svg class="i"><use href="#i-lock" /></svg><span class="when-login">Se connecter</span><span class="when-signup">Créer mon compte</span></button>
+        <p class="switch-mode" hidden>
+          <span class="when-login">Pas encore de compte ? <button type="button" class="text-btn" data-to="signup">Créer un compte</button></span>
+          <span class="when-signup">Déjà un compte ? <button type="button" class="text-btn" data-to="login">Se connecter</button></span>
+        </p>
       </form>
     </div>
 

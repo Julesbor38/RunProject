@@ -12,10 +12,7 @@ export function setupImporter() {
   const label = progress.querySelector("span")!;
   const message = box.querySelector(".import-msg") as HTMLElement;
 
-  toggle.addEventListener("click", () => {
-    box.hidden = !box.hidden;
-    toggle.setAttribute("aria-expanded", String(!box.hidden));
-  });
+  toggle.addEventListener("click", () => openImporter(box.hidden === true));
 
   const show = (text: string, error = false) => {
     message.hidden = false;
@@ -61,6 +58,12 @@ export function setupImporter() {
       input.value = "";
     }
   });
+}
+
+/** Show (or hide) the import box of the "Mes sorties" tab. */
+export function openImporter(open = true) {
+  document.getElementById("import-box")!.hidden = !open;
+  document.getElementById("import-toggle")!.setAttribute("aria-expanded", String(open));
 }
 
 async function waitForImport() {

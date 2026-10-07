@@ -173,6 +173,11 @@ export class ActivitiesView {
   private renderList() {
     const list = document.getElementById("list")!;
     list.innerHTML = "";
+    if (!this.fc.features.length) {
+      list.innerHTML = `<li class="empty">Aucune sortie pour l'instant. Ajoutez votre archive Strava (.zip) ou les fichiers
+        de votre montre (.fit, .gpx) avec « Mettre à jour mes données » ci-dessus : vos sorties apparaîtront ici et sur la carte.</li>`;
+      return;
+    }
     this.visible()
       .slice()
       .reverse()
@@ -236,7 +241,7 @@ export class ActivitiesView {
     const shown = this.visible();
     const total = shown.reduce((s, f) => s + f.properties.distance_m, 0);
     const dplus = shown.reduce((s, f) => s + f.properties.ascent_m, 0);
-    return `${shown.length} sorties · ${Math.round(total / 1000).toLocaleString("fr-FR")} km · D+ ${dplus.toLocaleString("fr-FR")} m`;
+    return `${shown.length} sortie${shown.length > 1 ? "s" : ""} · ${Math.round(total / 1000).toLocaleString("fr-FR")} km · D+ ${dplus.toLocaleString("fr-FR")} m`;
   }
 }
 

@@ -1,4 +1,4 @@
-import { currentUser, login, logout, setUnauthorizedHandler } from "./api";
+import { currentUser, login, logout, setUnauthorizedHandler, signup, signupOpen } from "./api";
 
 /**
  * Resolves with the user name once logged in: right away with a valid session cookie,
@@ -22,21 +22,36 @@ function showLogin(): Promise<string> {
     const screen = document.getElementById("login")!;
     const form = screen.querySelector("form")!;
     const error = screen.querySelector(".login-error") as HTMLElement;
-    const button = form.querySelector("button")!;
+    const button = form.querySelector("button[type=submit]") as HTMLButtonElement;
+    const password = form.elements.namedItem("password") as HTMLInputElement;
+    const setMode = (mode: "login" | "signup") => {
+      form.dataset.mode = mode;
+      password.autocomplete = mode === "signup" ? "new-password" : "current-password";
+      error.hidden = true;
+    };
     screen.hidden = false;
+    setMode("login");
     (form.elements.namedItem("username") as HTMLInputElement).focus();
+    signupOpen().then((open) => ((form.querySelector(".switch-mode") as HTMLElement).hidden = !open));
+    form.querySelectorAll<HTMLButtonElement>(".switch-mode button").forEach((b) => (b.onclick = () => setMode(b.dataset.to as "login" | "signup")));
     form.onsubmit = async (e) => {
       e.preventDefault();
       const data = new FormData(form);
       const username = String(data.get("username") ?? "").trim();
-      button.disabled = true;
+      const creating = form.dataset.mode === "signup";
       error.hidden = true;
+      if (creating && data.get("password") !== data.get("confirm")) {
+        error.textContent = "Les deux mots de passe diffèrent.";
+        error.hidden = false;
+        return;
+      }
+      button.disabled = true;
       try {
-        await login(username, String(data.get("password") ?? ""));
+        const user = await (creating ? signup : login)(username, String(data.get("password") ?? ""));
         screen.hidden = true;
         form.reset();
         pending = null;
-        resolve(username);
+        resolve(user);
       } catch (err) {
         error.textContent = (err as Error).message;
         error.hidden = false;

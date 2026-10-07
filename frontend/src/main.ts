@@ -5,7 +5,7 @@ import "./style.css";
 import { ActivitiesView } from "./activities";
 import { fetchActivities, fetchRoutingStatus } from "./api";
 import { ensureLoggedIn, signOut } from "./auth";
-import { setupImporter, takeNewActivities } from "./importer";
+import { openImporter, setupImporter, takeNewActivities } from "./importer";
 import { Planner } from "./planner";
 import { Ratings } from "./ratings";
 import { addTerrain } from "./terrain";
@@ -55,7 +55,7 @@ map.on("load", async () => {
   } catch (e) {
     summary.textContent = `API injoignable (${(e as Error).message}) : le backend tourne-t-il sur :8000 ?`;
   }
-  const planner = new Planner(map, (shown) => activities?.setMuted(shown));
+  const planner = new Planner(map, (shown) => activities?.setMuted(shown), await loggedIn);
 
   const showTab = (tab: Tab) => {
     document.querySelectorAll<HTMLButtonElement>(".tabs [role=tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
@@ -66,7 +66,10 @@ map.on("load", async () => {
     if (activities) activities.clickable = (point) => tab === "activities" || !planner.claimsClick(point);
   };
   document.querySelectorAll<HTMLButtonElement>(".tabs [role=tab]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab as Tab)));
-  showTab(newKeys.size ? "activities" : "route"); // after an import: straight to the new activities
+  // After an import: straight to the new activities. A new account: straight to adding its data.
+  const empty = activities !== null && (await data).features.length === 0;
+  showTab(newKeys.size || empty ? "activities" : "route");
+  if (empty) openImporter();
 
   document.getElementById("show-tracks")!.addEventListener("change", (e) => activities?.setVisible((e.target as HTMLInputElement).checked));
 

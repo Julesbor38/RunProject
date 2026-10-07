@@ -68,7 +68,8 @@ def test_generated_routes_are_saved_and_served_as_gpx(tmp_path: Path, monkeypatc
         "features": [{"type": "Feature", "id": 0, "geometry": {"type": "LineString", "coordinates": COORDS}, "properties": {"distance_m": 3140}}],
     }
     with TestClient(api.app) as client:
-        monkeypatch.setattr(api.state["routing"], "generate", lambda *a, **k: fake)
+        client.get("/api/activities")  # loads the user's workspace
+        monkeypatch.setattr(api._workspaces["tester"].routing, "generate", lambda *a, **k: fake)
         props = client.post("/api/routes", json={"start": [4.8, 45.76], "distance_km": 3}).json()["features"][0]["properties"]
         assert props["name"] == "Trail Map boucle 3,1 km" and props["gpx_filename"] == "trail-map-boucle-3-1-km.gpx"
         r = client.get(f"/api/routes/{props['route_id']}/gpx")

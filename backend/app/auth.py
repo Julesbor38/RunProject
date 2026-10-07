@@ -1,6 +1,7 @@
 """Accounts and sessions: every /api route except /api/health and /api/auth/* needs a logged-in user.
 
-- Accounts are only created from the command line (no sign-up page):
+- Accounts are created on the login page (POST /api/auth/signup, unless TRAILMAP_SIGNUP=0, e.g. on a
+  public server) or from the command line:
     python -m app.auth add-user <name>        (asks for the password)
     python -m app.auth passwd <name>
     python -m app.auth list | remove <name>
@@ -19,13 +20,14 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import sys
 import threading
 import time
 from pathlib import Path
 
-from fastapi import HTTPException, Request
+from fastapi import HTTPException
 
 COOKIE = "trailmap_session"
 SESSION_DAYS = 30
@@ -33,9 +35,13 @@ MIN_PASSWORD = 10
 MAX_FAILURES = 5  # then locked for LOCK_S
 LOCK_S = 15 * 60
 SCRYPT = {"n": 2**15, "r": 8, "p": 1}  # ~0.1 s per hash, 32 MB
+SIGNUP_OPEN = os.environ.get("TRAILMAP_SIGNUP", "1") != "0"
+MAX_SIGNUPS = 5  # per client address and hour
+USERNAME = re.compile(r"^[a-z0-9][a-z0-9._-]{2,31}$")  # also the name of the user's data folder
 
 _lock = threading.Lock()
 _failures: dict[tuple[str, str], list[float]] = {}  # (user, client address) -> failure times
+_signups: dict[str, list[float]] = {}  # client address -> sign-up times
 
 
 def _dir(data_dir: Path) -> Path:
@@ -82,11 +88,38 @@ def users(data_dir: Path) -> dict:
     return _read(_dir(data_dir) / "users.json")
 
 
-def set_password(data_dir: Path, name: str, password: str) -> None:
+def normalize(name: str) -> str:
+    return name.strip().lower()
+
+
+def check_new_account(name: str, password: str) -> None:
+    if not USERNAME.match(name):
+        raise ValueError("identifiant : 3 à 32 caractères, lettres minuscules, chiffres, « . », « _ » ou « - »")
+    if len(password) < MIN_PASSWORD:
+        raise ValueError(f"mot de passe trop court ({MIN_PASSWORD} caractères minimum)")
+
+
+def create_user(data_dir: Path, name: str, password: str, client: str) -> str:
+    """Sign-up from the page: a new account (ValueError if invalid or taken), limited per address."""
+    name = normalize(name)
+    check_new_account(name, password)
+    with _lock:
+        recent = [t for t in _signups.get(client, []) if t > time.time() - 3600]
+        if len(recent) >= MAX_SIGNUPS:
+            raise HTTPException(429, "trop de comptes créés : réessayez dans une heure")
+        _signups[client] = [*recent, time.time()]
+    set_password(data_dir, name, password, new=True)
+    return name
+
+
+def set_password(data_dir: Path, name: str, password: str, new: bool = False) -> None:
+    """Set a password; `new`: create the account, which must not exist yet (ValueError)."""
     if len(password) < MIN_PASSWORD:
         raise ValueError(f"mot de passe trop court ({MIN_PASSWORD} caractères minimum)")
     with _lock:
         all_users = users(data_dir)
+        if new and name in all_users:
+            raise ValueError("cet identifiant est déjà pris")
         all_users[name] = {"password": hash_password(password), "created": all_users.get(name, {}).get("created", int(time.time()))}
         _write(_dir(data_dir) / "users.json", all_users)
         # A new password ends that user's other sessions.
@@ -116,8 +149,18 @@ def _sessions(data_dir: Path) -> dict:
     return {k: v for k, v in _read(_dir(data_dir) / "sessions.json").items() if v["expires"] > now}
 
 
+def new_session(data_dir: Path, name: str) -> str:
+    token = secrets.token_urlsafe(32)
+    with _lock:
+        sessions = _sessions(data_dir)
+        sessions[_token_id(token)] = {"user": name, "expires": time.time() + SESSION_DAYS * 86400}
+        _write(_dir(data_dir) / "sessions.json", sessions)
+    return token
+
+
 def login(data_dir: Path, name: str, password: str, client: str) -> str:
     """A new session token, or HTTPException 401 / 429."""
+    name = normalize(name)
     key = (name, client)
     with _lock:
         recent = [t for t in _failures.get(key, []) if t > time.time() - LOCK_S]
@@ -131,11 +174,7 @@ def login(data_dir: Path, name: str, password: str, client: str) -> str:
         raise HTTPException(401, "identifiant ou mot de passe incorrect")
     with _lock:
         _failures.pop(key, None)
-        token = secrets.token_urlsafe(32)
-        sessions = _sessions(data_dir)
-        sessions[_token_id(token)] = {"user": name, "expires": time.time() + SESSION_DAYS * 86400}
-        _write(_dir(data_dir) / "sessions.json", sessions)
-    return token
+    return new_session(data_dir, name)
 
 
 def logout(data_dir: Path, token: str | None) -> None:
@@ -152,16 +191,6 @@ def session_user(data_dir: Path, token: str | None) -> str | None:
         return None
     s = _sessions(data_dir).get(_token_id(token))
     return s["user"] if s and s["user"] in users(data_dir) else None
-
-
-def current_user(request: Request) -> str:
-    """FastAPI dependency: the logged-in user, else 401."""
-    from .api import DATA_DIR  # late: tests point DATA_DIR elsewhere
-
-    user = session_user(DATA_DIR, request.cookies.get(COOKIE))
-    if user is None:
-        raise HTTPException(401, "connexion requise")
-    return user
 
 
 # --- command line ---
@@ -182,8 +211,11 @@ def main() -> None:
     elif args.cmd == "remove":
         print("supprimé" if remove_user(DATA_DIR, args.name) else "compte inconnu")
     else:
+        args.name = normalize(args.name)
         if args.cmd == "add-user" and args.name in users(DATA_DIR):
             sys.exit("ce compte existe déjà (passwd pour changer son mot de passe)")
+        if args.cmd == "add-user" and not USERNAME.match(args.name):
+            sys.exit("identifiant : 3 à 32 caractères, lettres minuscules, chiffres, « . », « _ » ou « - »")
         if args.cmd == "passwd" and args.name not in users(DATA_DIR):
             sys.exit("compte inconnu")
         password = getpass.getpass("Mot de passe : ")

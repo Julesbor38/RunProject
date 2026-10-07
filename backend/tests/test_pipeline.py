@@ -18,8 +18,17 @@ def write_gpx(path: Path, lat0: float, hour: int = 13) -> None:
     path.write_text(GPX.format(pts=pts))
 
 
+USER = "tester"  # the user conftest logs in
+
+
+def user_data(root: Path, user: str = USER) -> Path:
+    """The user's own data folder under the data root."""
+    return root / "users" / user
+
+
 def make_data(root: Path) -> Path:
-    raw = root / "raw"
+    """A data root whose test user owns a 1-run Strava archive and a Coros file."""
+    raw = user_data(root) / "raw"
     (raw / "strava" / "activities").mkdir(parents=True)
     write_gpx(raw / "strava" / "activities" / "1.gpx", 45.0)
     (raw / "strava" / "activities.csv").write_text(
@@ -30,7 +39,7 @@ def make_data(root: Path) -> Path:
 
 
 def test_ingest_folder_reads_nested_strava_archive_once(tmp_path: Path):
-    res = ingest([make_data(tmp_path) / "raw"])
+    res = ingest([user_data(make_data(tmp_path)) / "raw"])
     assert sorted(a.source.startswith("strava:") for a in res.activities) == [False, True]
     assert res.duplicates == 0 and not res.errors
 
@@ -58,10 +67,12 @@ def test_api_health(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(api, "DATA_DIR", make_data(tmp_path))
     monkeypatch.setattr(api, "FRONTEND_DIST", tmp_path / "no-dist")
     with TestClient(api.app) as client:
+        assert client.get("/api/health").json()["accounts_loaded"] == 0
+        client.get("/api/activities")
         health = client.get("/api/health").json()
-    assert health["status"] == "ok" and health["activities"] == 2
-    assert {"tiles_total", "tiles_cached", "running", "jobs_running"} <= health["routing"].keys()
+    assert health["status"] == "ok" and health["accounts_loaded"] == 1 and health["jobs_running"] == 0
     assert health["frontend"] is False
+    assert "activities" not in health  # public: nothing about any user's data
 
 
 def test_api_serves_built_front_with_spa_fallback(tmp_path: Path, monkeypatch):

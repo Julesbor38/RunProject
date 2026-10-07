@@ -7,7 +7,7 @@ import { isMobile, km, pct } from "./format";
 import { pointAt, renderProfile } from "./profile";
 
 const ROUTE_COLORS = ["#2563eb", "#ea580c", "#db2777"];
-const STORAGE_KEY = "trailmap.planner";
+const STORAGE_PREFIX = "trailmap.planner."; // + user: accounts sharing a browser don't see each other's start
 
 interface PrefDef {
   key: keyof BasePrefs;
@@ -74,10 +74,14 @@ export class Planner {
   private generation: { id: string; abort: AbortController } | null = null; // the one running, cancellable
   private picking: "start" | "end" | null = null;
 
+  private storageKey: string;
+
   constructor(
     private map: Map,
     private onRoutesShown: (shown: boolean) => void,
+    user: string,
   ) {
+    this.storageKey = STORAGE_PREFIX + user;
     this.restore();
     this.addLayers();
     this.renderMode();
@@ -573,7 +577,8 @@ export class Planner {
 
   private restore() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      localStorage.removeItem("trailmap.planner"); // from before accounts: one shared key
+      const raw = localStorage.getItem(this.storageKey);
       if (!raw) return;
       this.saved = JSON.parse(raw) as Saved;
       this.mode = this.saved.mode === "oneway" ? "oneway" : "loop";
@@ -599,7 +604,7 @@ export class Planner {
         ascent: { mode: this.ascentMode, min: this.customAscent[0], max: this.customAscent[1] },
         onewayTarget: this.onewayTarget,
       };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      localStorage.setItem(this.storageKey, JSON.stringify(data));
     } catch {
       /* storage unavailable: settings just won't persist */
     }

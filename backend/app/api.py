@@ -1,6 +1,7 @@
-"""HTTP API: serves the ingested activities as privacy-masked GeoJSON.
+"""HTTP API: serves each user's ingested activities as privacy-masked GeoJSON, routes, ratings.
 
-No database yet: activities are read from data/raw at startup (cached in data/cache/) and kept in memory.
+No database yet: each account's activities are read from data/users/<name>/raw on its first request
+(cached in its cache/) and kept in memory (`Workspace`). OSM tiles and elevation are shared.
 Dev: uvicorn app.api:app --reload (the front is served by Vite on :5173).
 Production: build the front (npm run build), then uvicorn app.api:app --host 127.0.0.1 --port 8000
 serves both the API and frontend/dist on a single port (see SELF-HOST.md).
@@ -18,15 +19,14 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, Path as PathParam, Request, Response, UploadFile
+from fastapi import Depends, FastAPI, File, HTTPException, Path as PathParam, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from . import gpx, imports, ratings
+from . import auth
 from .auth import COOKIE, SESSION_DAYS, session_user
-from .auth import login as auth_login
-from .auth import logout as auth_logout
 from .ingest import load_zones, mask
 from .ingest.models import TrackPoint
 from .ingest.pipeline import ingest
@@ -35,6 +35,7 @@ from .ingest.simplify import simplify
 from .routing import Preferences, RoutingError, RoutingService
 from .routing.elevation import Dem
 from .routing.job import Cancelled, Job
+from .workspace import Workspace, user_dir
 
 DATA_DIR = Path(os.environ.get("TRAILMAP_DATA", Path(__file__).parents[2] / "data"))
 SIMPLIFY_TOLERANCE_M = 5.0
@@ -45,6 +46,8 @@ MAX_SAVED_ROUTES = 300
 FRONTEND_DIST = Path(os.environ.get("TRAILMAP_FRONTEND_DIST", Path(__file__).parents[2] / "frontend" / "dist"))
 
 state: dict = {}
+_workspaces: dict[str, Workspace] = {}
+_workspaces_lock = threading.Lock()
 logging.getLogger("app").setLevel(logging.INFO)
 logging.getLogger("app").addHandler(logging.StreamHandler())
 
@@ -106,12 +109,25 @@ def routing_service(fc: dict) -> RoutingService:
     return RoutingService(DATA_DIR / "osm", tracks, Dem(DATA_DIR / "dem"))
 
 
+def workspace(request: Request) -> Workspace:
+    """FastAPI dependency: the logged-in user's data, loaded on their first request."""
+    user = request.state.user
+    folder = user_dir(DATA_DIR, user)
+    with _workspaces_lock:
+        ws = _workspaces.get(user)
+        if ws is None or ws.dir != folder:
+            (folder / "raw").mkdir(parents=True, exist_ok=True)
+            fc = load_cached(folder)
+            ws = Workspace(user, folder, fc, routing_service(fc))
+            if PREFETCH_OSM:
+                ws.routing.start_prefetch()  # the user's running areas (abroad: Overpass)
+            _workspaces[user] = ws
+    return ws
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    state["activities"] = load_cached(DATA_DIR)
-    state["routing"] = routing_service(state["activities"])
-    if PREFETCH_OSM:
-        state["routing"].start_prefetch()
+    _workspaces.clear()
     state["started_at"] = time.time()
     yield
 
@@ -119,7 +135,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="Trail Map", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_methods=["GET", "POST", "PUT", "DELETE"])
 
-PUBLIC_API = {"/api/health", "/api/auth/login", "/api/auth/logout"}
+PUBLIC_API = {"/api/health", "/api/auth/login", "/api/auth/logout", "/api/auth/signup", "/api/auth/options"}
 
 
 @app.middleware("http")
@@ -139,17 +155,42 @@ class LoginIn(BaseModel):
     password: str = Field(min_length=1, max_length=256)
 
 
-@app.post("/api/auth/login")
-def login(body: LoginIn, request: Request, response: Response) -> dict:
-    token = auth_login(DATA_DIR, body.username, body.password, request.client.host if request.client else "?")
+def _client(request: Request) -> str:
+    return request.client.host if request.client else "?"
+
+
+def _set_session(response: Response, token: str) -> None:
     # Secure: sent over HTTPS (Tailscale) and http://localhost only, which browsers treat as secure.
     response.set_cookie(COOKIE, token, max_age=SESSION_DAYS * 86400, httponly=True, secure=True, samesite="strict", path="/")
-    return {"user": body.username}
+
+
+@app.post("/api/auth/login")
+def login(body: LoginIn, request: Request, response: Response) -> dict:
+    _set_session(response, auth.login(DATA_DIR, body.username, body.password, _client(request)))
+    return {"user": auth.normalize(body.username)}
+
+
+@app.get("/api/auth/options")
+def auth_options() -> dict:
+    return {"signup": auth.SIGNUP_OPEN}
+
+
+@app.post("/api/auth/signup")
+def signup(body: LoginIn, request: Request, response: Response) -> dict:
+    """Create an account (its data starts empty) and log it in."""
+    if not auth.SIGNUP_OPEN:
+        raise HTTPException(403, "la création de compte est fermée sur ce serveur")
+    try:
+        name = auth.create_user(DATA_DIR, body.username, body.password, _client(request))
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    _set_session(response, auth.new_session(DATA_DIR, name))
+    return {"user": name}
 
 
 @app.post("/api/auth/logout")
 def logout(request: Request, response: Response) -> dict:
-    auth_logout(DATA_DIR, request.cookies.get(COOKIE))
+    auth.logout(DATA_DIR, request.cookies.get(COOKIE))
     response.delete_cookie(COOKIE, path="/", secure=True, httponly=True, samesite="strict")
     return {"ok": True}
 
@@ -161,48 +202,44 @@ def me(request: Request) -> dict:
 
 @app.api_route("/api/health", methods=["GET", "HEAD"])
 def health() -> dict:
-    """Liveness and a summary of what is loaded (no track data). Used by deploy-local.sh and monitoring."""
-    stats = state["activities"]["stats"]
+    """Liveness (public: nothing about any user's data). Used by deploy-local.sh and monitoring."""
     return {
         "status": "ok",
         "uptime_s": round(time.time() - state["started_at"]),
-        "activities": stats["activities"],
-        "ingest_errors": len(stats["errors"]),
-        "routing": {**state["routing"].status(), "jobs_running": len(state.get("jobs", {}))},
+        "accounts_loaded": len(_workspaces),
+        "jobs_running": sum(len(ws.jobs) for ws in list(_workspaces.values())),
         "frontend": (FRONTEND_DIST / "index.html").is_file(),
     }
 
 
 @app.get("/api/activities")
-def activities() -> dict:
-    return state["activities"]
+def activities(ws: Workspace = Depends(workspace)) -> dict:
+    return ws.activities
 
 
 @app.post("/api/reload")
-def reload() -> dict:
-    _reload()
-    return state["activities"]["stats"]
+def reload(ws: Workspace = Depends(workspace)) -> dict:
+    _reload(ws)
+    return ws.activities["stats"]
 
 
-def _reload() -> None:
-    activities = load_cached(DATA_DIR, force=True)
-    routing = routing_service(activities)
-    state.update(activities=activities, routing=routing)
+def _reload(ws: Workspace) -> None:
+    activities = load_cached(ws.dir, force=True)
+    ws.routing = routing_service(activities)
+    ws.activities = activities
 
 
 # --- adding activities: new Strava export or single files, imported in the background ---
 
-_import_lock = threading.Lock()
-
 
 @app.post("/api/import")
-def import_files(files: list[UploadFile] = File(...)) -> dict:
+def import_files(files: list[UploadFile] = File(...), ws: Workspace = Depends(workspace)) -> dict:
     """Store the uploaded files, then re-import everything in the background (GET /api/import/status)."""
-    if not _import_lock.acquire(blocking=False):
+    if not ws.import_lock.acquire(blocking=False):
         raise HTTPException(409, "un import est déjà en cours")
     try:
-        raw = DATA_DIR / "raw"
-        with tempfile.TemporaryDirectory(dir=DATA_DIR) as tmp:
+        raw = ws.dir / "raw"
+        with tempfile.TemporaryDirectory(dir=ws.dir) as tmp:
             added = 0
             for upload in files:
                 name = upload.filename or "fichier"
@@ -215,42 +252,42 @@ def import_files(files: list[UploadFile] = File(...)) -> dict:
                     imports.install_file(path, name, raw)
                     added += 1
     except imports.InvalidImport as e:
-        _import_lock.release()
+        ws.import_lock.release()
         raise HTTPException(422, str(e)) from e
     except BaseException:
-        _import_lock.release()
+        ws.import_lock.release()
         raise
-    before = {f["properties"]["key"] for f in state["activities"]["features"]}
-    state["import"] = {"state": "running", "files": added, "started": time.time()}
-    threading.Thread(target=_run_import, args=(before,), daemon=True).start()
-    return state["import"]
+    before = {f["properties"]["key"] for f in ws.activities["features"]}
+    ws.import_status = {"state": "running", "files": added, "started": time.time()}
+    threading.Thread(target=_run_import, args=(ws, before), daemon=True).start()
+    return ws.import_status
 
 
-def _run_import(before: set[str]) -> None:
+def _run_import(ws: Workspace, before: set[str]) -> None:
     try:
-        _reload()
-        new = [f["properties"]["key"] for f in state["activities"]["features"] if f["properties"]["key"] not in before]
-        state["import"] = {**state["import"], "state": "done", "new": new, "activities": state["activities"]["stats"]["activities"]}
+        _reload(ws)
+        new = [f["properties"]["key"] for f in ws.activities["features"] if f["properties"]["key"] not in before]
+        ws.import_status = {**ws.import_status, "state": "done", "new": new, "activities": ws.activities["stats"]["activities"]}
     except Exception as e:  # noqa: BLE001 - reported to the user
         logging.getLogger("app").exception("import failed")
-        state["import"] = {**state["import"], "state": "error", "message": str(e)}
+        ws.import_status = {**ws.import_status, "state": "error", "message": str(e)}
     finally:
-        _import_lock.release()
+        ws.import_lock.release()
 
 
 @app.get("/api/import/status")
-def import_status() -> dict:
-    return state.get("import", {"state": "idle"})
+def import_status(ws: Workspace = Depends(workspace)) -> dict:
+    return ws.import_status
 
 
 # --- ratings of the user's activities ---
 
 
 @app.get("/api/ratings")
-def get_ratings(request: Request) -> dict:
+def get_ratings(ws: Workspace = Depends(workspace)) -> dict:
     return {
         "criteria": [{"key": k, "label": label} for k, label in ratings.CRITERIA],
-        "ratings": ratings.for_user(DATA_DIR, request.state.user),
+        "ratings": ratings.for_user(ws.dir, ws.user),
     }
 
 
@@ -260,8 +297,8 @@ class RatingIn(BaseModel):
 
 
 @app.put("/api/ratings/{key}")
-def put_rating(key: str, body: RatingIn, request: Request) -> dict:
-    if key not in {f["properties"]["key"] for f in state["activities"]["features"]}:
+def put_rating(key: str, body: RatingIn, ws: Workspace = Depends(workspace)) -> dict:
+    if key not in {f["properties"]["key"] for f in ws.activities["features"]}:
         raise HTTPException(404, "sortie inconnue")
     if unknown := set(body.scores) - ratings.CRITERIA_KEYS:
         raise HTTPException(422, f"critères inconnus : {', '.join(sorted(unknown))}")
@@ -269,12 +306,12 @@ def put_rating(key: str, body: RatingIn, request: Request) -> dict:
         raise HTTPException(422, "les notes vont de 1 à 5")
     if not body.scores and not body.comment.strip():
         raise HTTPException(422, "rien à enregistrer")
-    return ratings.save(DATA_DIR, request.state.user, key, body.scores, body.comment.strip())
+    return ratings.save(ws.dir, ws.user, key, body.scores, body.comment.strip())
 
 
 @app.delete("/api/ratings/{key}")
-def delete_rating(key: str, request: Request) -> dict:
-    return {"deleted": ratings.delete(DATA_DIR, request.state.user, key)}
+def delete_rating(key: str, ws: Workspace = Depends(workspace)) -> dict:
+    return {"deleted": ratings.delete(ws.dir, ws.user, key)}
 
 
 class PreferencesIn(BaseModel):
@@ -298,19 +335,19 @@ class RouteRequest(BaseModel):
 
 
 @app.get("/api/routing/status")
-def routing_status() -> dict:
+def routing_status(ws: Workspace = Depends(workspace)) -> dict:
     """Progress of the background OSM download around the user's running areas."""
-    return state["routing"].status()
+    return ws.routing.status()
 
 
 @app.post("/api/routes")
-def routes(req: RouteRequest) -> dict:
+def routes(req: RouteRequest, ws: Workspace = Depends(workspace)) -> dict:
     """Generate up to 3 loops (or one A-to-B route) matching the preferences."""
-    jobs = state.setdefault("jobs", {})
+    jobs = ws.jobs
     # setdefault: a cancel that arrived before the request itself still applies.
     job = jobs.setdefault(req.request_id, Job()) if req.request_id else Job()
     try:
-        out = state["routing"].generate(
+        out = ws.routing.generate(
             req.start,
             Preferences(**req.preferences.model_dump()),
             distance_m=req.distance_km * 1000 if req.distance_km else None,
@@ -328,15 +365,15 @@ def routes(req: RouteRequest) -> dict:
             jobs.pop(req.request_id, None)
     kind = "boucle" if req.end is None else "itinéraire"
     for f in out["features"]:
-        save_route(f, f"Trail Map {kind} {f['properties']['distance_m'] / 1000:.1f} km".replace(".", ","))
+        save_route(ws.dir, f, f"Trail Map {kind} {f['properties']['distance_m'] / 1000:.1f} km".replace(".", ","))
     return out
 
 
-def save_route(feature: dict, name: str) -> None:
-    """Keeps the route in data/routes/ and gives it a `route_id`, a `name` and its GPX `gpx_filename`."""
+def save_route(user_folder: Path, feature: dict, name: str) -> None:
+    """Keeps the route in the user's routes/ and gives it a `route_id`, a `name` and its GPX `gpx_filename`."""
     route_id = uuid.uuid4().hex
     feature["properties"].update(route_id=route_id, name=name, gpx_filename=gpx.filename(name))
-    folder = DATA_DIR / "routes"
+    folder = user_folder / "routes"
     folder.mkdir(parents=True, exist_ok=True)
     (folder / f"{route_id}.json").write_text(json.dumps({"name": name, "coordinates": feature["geometry"]["coordinates"]}))
     saved = sorted(folder.glob("*.json"), key=lambda p: p.stat().st_mtime)
@@ -345,9 +382,9 @@ def save_route(feature: dict, name: str) -> None:
 
 
 @app.get("/api/routes/{route_id}/gpx")
-def route_gpx(route_id: str = PathParam(pattern="^[0-9a-f]{32}$")):
-    """GPX of a generated route, as a download (what Safari on iOS turns into « Ouvrir dans… »)."""
-    file = DATA_DIR / "routes" / f"{route_id}.json"
+def route_gpx(route_id: str = PathParam(pattern="^[0-9a-f]{32}$"), ws: Workspace = Depends(workspace)):
+    """GPX of one of the user's generated routes, as a download (Safari on iOS: « Ouvrir dans… »)."""
+    file = ws.dir / "routes" / f"{route_id}.json"
     if not file.is_file():
         raise HTTPException(404, "itinéraire inconnu ou expiré, régénérez-le")
     saved = json.loads(file.read_text())
@@ -369,16 +406,16 @@ def gpx_of(req: GpxRequest):
 
 
 @app.get("/api/routes/{request_id}/progress")
-def route_progress(request_id: str) -> dict:
-    job = state.get("jobs", {}).get(request_id)
+def route_progress(request_id: str, ws: Workspace = Depends(workspace)) -> dict:
+    job = ws.jobs.get(request_id)
     if job is None:
         raise HTTPException(404, "génération inconnue ou terminée")
     return job.progress()
 
 
 @app.post("/api/routes/{request_id}/cancel")
-def cancel_route(request_id: str) -> dict:
-    state.setdefault("jobs", {}).setdefault(request_id, Job()).cancel()
+def cancel_route(request_id: str, ws: Workspace = Depends(workspace)) -> dict:
+    ws.jobs.setdefault(request_id, Job()).cancel()
     return {"cancelled": True}
 
 
