@@ -14,8 +14,8 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 - Carte web : traces (rendu « Fréquentation » plus foncé selon le nombre de sorties distinctes,
   ou « Par type »), filtres, fiches, générateur d'itinéraires (boucle / aller simple le plus
   court ou à distance visée), dénivelé (tranche de D+, profil, relief 3D), export GPX,
-  bouton « Envoyer vers la montre » (téléphone : feuille de partage avec le .gpx produit par le backend,
-  sinon téléchargement ; à tester sur iPhone).
+  bouton « Envoyer vers la montre » (téléphone : télécharge le .gpx produit par le backend, à ouvrir
+  depuis Fichiers → Partager → COROS ; COROS n'apparaît jamais dans la feuille de partage web, testé sur iPhone).
 - Génération d'itinéraires annulable, avec avancement ; tuiles OSM de Rhône-Alpes en local
   (plus de dépendance à Overpass dans la région). Accès téléphone via Tailscale (HTTPS, tailnet).
 - Auto-hébergement (`SELF-HOST.md`) : en production FastAPI sert aussi le front construit sur un seul port

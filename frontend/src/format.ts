@@ -16,23 +16,5 @@ export function escape(s: string) {
   return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
 
-export const GPX_TYPE = "application/gpx+xml";
-
-/** Phone or tablet: the share sheet is the way to hand a file to another app (COROS). */
+/** Phone or tablet: where the « Envoyer vers la montre » button makes sense (COROS app on the phone). */
 export const isMobile = () => matchMedia("(pointer: coarse)").matches;
-
-/**
- * Opens the system share sheet with only the file: adding a title or text makes iOS share
- * text as well, and then hides the apps that only accept a GPX file (COROS).
- * Must be called synchronously from the click, or Safari refuses it (no user activation).
- * Resolves false when sharing a file isn't possible here; a cancel (AbortError) resolves true.
- */
-export async function shareFile(file: File): Promise<boolean> {
-  if (!navigator.canShare?.({ files: [file] })) return false;
-  try {
-    await navigator.share({ files: [file] });
-  } catch (e) {
-    if ((e as DOMException).name !== "AbortError") throw e;
-  }
-  return true;
-}

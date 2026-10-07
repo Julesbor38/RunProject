@@ -3,7 +3,7 @@ import type { Map, MapMouseEvent } from "maplibre-gl";
 import { cancelRoute, fetchRouteProgress, fetchRoutes, gpxUrl } from "./api";
 import type { LngLat, Preferences, RouteCollection, RouteFeature, RouteProgress } from "./api";
 import { fitTo } from "./activities";
-import { GPX_TYPE, isMobile, km, pct, shareFile } from "./format";
+import { isMobile, km, pct } from "./format";
 import { pointAt, renderProfile } from "./profile";
 
 const ROUTE_COLORS = ["#2563eb", "#ea580c", "#db2777"];
@@ -493,7 +493,7 @@ export class Planner {
         </div>
         <div class="actions">
           <a class="link-btn gpx" href="${gpxUrl(p.route_id)}" download="${p.gpx_filename}">⤓ Exporter en GPX</a>
-          <button class="link-btn watch" hidden title="Ouvrir le parcours dans l'app COROS (ou une autre app GPX)">⌚ Envoyer vers la montre</button>
+          <button class="link-btn watch" hidden title="Télécharger le GPX pour l'ouvrir dans l'app COROS">⌚ Envoyer vers la montre</button>
         </div>`;
       card.addEventListener("click", () => this.select(r.id));
       const profileBox = card.querySelector(".profile") as HTMLElement | null;
@@ -502,23 +502,18 @@ export class Planner {
         renderProfile(profileBox, p.profile, ROUTE_COLORS[r.id] ?? ROUTE_COLORS[2], (d) => this.showHoverPoint(r, d));
       }
       card.querySelector(".gpx")!.addEventListener("click", (e) => e.stopPropagation());
-      // Phone: share sheet with the .gpx, where the COROS app imports the route and syncs it to the watch.
-      // The file is fetched now so that the click can share it right away (Safari needs the user's tap).
+      // Phone: COROS only shows up when the .gpx is shared from the Files app (not in a web share sheet,
+      // and it has no link to open it directly), so download the file and say where to go next.
       const watch = card.querySelector(".watch") as HTMLButtonElement;
       watch.hidden = !isMobile();
-      let file: File | null = null;
-      if (!watch.hidden && "share" in navigator) {
-        fetch(gpxUrl(p.route_id))
-          .then((res) => (res.ok ? res.blob() : Promise.reject(new Error(`API ${res.status}`))))
-          .then((blob) => (file = new File([blob], p.gpx_filename, { type: GPX_TYPE })))
-          .catch(() => {}); // the click falls back to the download
-      }
       watch.addEventListener("click", (e) => {
         e.stopPropagation();
-        // No file sharing here (e.g. Chrome on Android refuses .gpx): download it, then « Ouvrir dans… ».
-        const fallback = () => (location.href = gpxUrl(p.route_id));
-        if (!file) return fallback();
-        shareFile(file).then((shared) => shared || fallback(), fallback);
+        location.href = gpxUrl(p.route_id);
+        this.status(
+          /iPhone|iPad/.test(navigator.userAgent)
+            ? "GPX téléchargé : ouvrez-le dans Fichiers (Téléchargements), Partager ⬆ puis COROS."
+            : "GPX téléchargé : ouvrez-le depuis les téléchargements avec l'app COROS.",
+        );
       });
       box.appendChild(card);
     });
