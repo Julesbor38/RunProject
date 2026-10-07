@@ -4,7 +4,10 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import "./style.css";
 import { ActivitiesView } from "./activities";
 import { fetchActivities, fetchFrequency, fetchRoutingStatus } from "./api";
+import { ensureLoggedIn, signOut } from "./auth";
+import { setupImporter, takeNewActivities } from "./importer";
 import { Planner } from "./planner";
+import { Ratings } from "./ratings";
 import { addTerrain } from "./terrain";
 
 // The production bundle doesn't ship MapLibre's sibling worker file: point it at the one Vite bundles.
@@ -28,14 +31,28 @@ map.addControl(new NavigationControl(), "top-right");
 map.addControl(new GeolocateControl({ positionOptions: { enableHighAccuracy: true } }), "top-right");
 map.addControl(new ScaleControl({ unit: "metric" }), "bottom-right");
 
-const data = fetchActivities();
-const frequency = fetchFrequency().catch(() => null); // optional: tracks by sport without it
+// Nothing of the user's data is requested before login (the base map is public).
+const loggedIn = ensureLoggedIn();
+const data = loggedIn.then(fetchActivities);
+const frequency = loggedIn.then(fetchFrequency).catch(() => null); // optional: tracks by sport without it
+const ratings = new Ratings();
+const ratingsLoaded = loggedIn.then(() => ratings.load()).catch(() => undefined); // the map works without them
+loggedIn.then((user) => {
+  const out = document.getElementById("sign-out")!;
+  out.hidden = false;
+  out.title = `Se déconnecter (${user})`;
+  out.addEventListener("click", signOut);
+  setupImporter();
+  pollOsmStatus();
+});
 
 map.on("load", async () => {
   addTerrain(map);
   let activities: ActivitiesView | null = null;
+  const newKeys = new Set(takeNewActivities());
   try {
-    activities = new ActivitiesView(map, await data, (text) => (summary.textContent = text), await frequency);
+    await ratingsLoaded;
+    activities = new ActivitiesView(map, await data, (text) => (summary.textContent = text), await frequency, ratings, newKeys);
   } catch (e) {
     summary.textContent = `API injoignable (${(e as Error).message}) : le backend tourne-t-il sur :8000 ?`;
   }
@@ -49,7 +66,7 @@ map.on("load", async () => {
     if (activities) activities.interactive = tab === "activities";
   };
   document.querySelectorAll<HTMLButtonElement>(".tabs [role=tab]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab as Tab)));
-  showTab("route");
+  showTab(newKeys.size ? "activities" : "route"); // after an import: straight to the new activities
 
   document.getElementById("show-tracks")!.addEventListener("change", (e) => activities?.setVisible((e.target as HTMLInputElement).checked));
 
@@ -87,4 +104,3 @@ async function pollOsmStatus() {
     box.hidden = true;
   }
 }
-pollOsmStatus();

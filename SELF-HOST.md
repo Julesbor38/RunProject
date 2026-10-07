@@ -47,6 +47,13 @@ Puis, depuis le dépôt :
 ./deploy-local.sh            # dépendances, build du front, tests, installe et démarre le service
 ```
 
+Créer ensuite son compte (le site demande une connexion ; il n'y a pas d'inscription en ligne) :
+
+```bash
+cd backend && .venv/bin/python -m app.auth add-user jules     # mot de passe demandé (10 caractères minimum)
+.venv/bin/python -m app.auth passwd jules                    # changer de mot de passe (ferme les sessions)
+```
+
 Au premier lancement, le script appelle `deploy/install-service.sh`, qui écrit
 `/etc/systemd/system/trailmap.service` à partir de `deploy/trailmap.service.in` (utilisateur et chemins
 réels), puis `systemctl enable --now trailmap`. `sudo` demande le mot de passe.

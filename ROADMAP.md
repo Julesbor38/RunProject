@@ -290,6 +290,25 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 - `data/osm/` ne doit pas aller dans la sauvegarde privée (cache régénérable, trop gros pour GitHub).
 - 72 tests OK, 1 ignoré.
 
+### 2026-10-07 — Connexion, mise à jour des données, évaluation des sorties
+- **Connexion** : identifiant + mot de passe pour tout le site. Toute route `/api` exige une session (middleware :
+  les routes futures sont protégées par défaut), sauf `/api/health` et la connexion. Mots de passe hachés
+  (scrypt, sel), jeton de session aléatoire dans un cookie HttpOnly / Secure / SameSite=Strict, seul son
+  SHA-256 est stocké, sessions de 30 jours, blocage 15 min après 5 échecs, fichiers en 600.
+  Pas d'inscription en ligne : comptes créés en ligne de commande (`python -m app.auth add-user`).
+- **Mettre à jour mes données** (onglet Mes sorties) : nouvelle archive Strava (.zip, remplace l'ancienne :
+  seuls activities.csv et activities/ sont extraits, chemins vérifiés, taille limitée) ou fichiers
+  .fit / .gpx / .tcx (montre). Envoi avec avancement, réimport en arrière-plan, puis rechargement : les
+  nouvelles sorties sont marquées « Nouveau » avec un bandeau « N à évaluer ».
+- **Évaluation des sorties** : de 1 à 5 étoiles sur sécurité, éclairage, beauté du paysage, plaisir,
+  entretien des chemins, abri, tranquillité, peu de circulation, + commentaire. Depuis la liste
+  (« Évaluer » / « ★ 4,2 ») ou la fiche sur la carte. Stockées par sortie (clé stable `strava:<id>`) et par
+  utilisateur dans `data/ratings.json` : prêtes pour plusieurs comptes et pour l'étape 3 (report sur les tronçons).
+- Vérifié de bout en bout sur une copie des données (Chromium, vue iPhone) : mauvais mot de passe refusé,
+  connexion, évaluation enregistrée, ajout d'un .gpx (255 sorties, bandeau), déconnexion.
+- 83 tests OK, 1 ignoré (11 nouveaux : sessions, cookies, blocage, secrets non stockés en clair ; import
+  Strava, fichier isolé, archives piégées ; évaluations).
+
 ---
 
 ## État au 2026-10-07
@@ -310,7 +329,8 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
    (avec direction) est une base pour le map-matching de l'étape 2.
 4. **Profil altimétrique des sorties passées** dans « Mes sorties » (seul le D+ montre est affiché).
 5. **Étape 2 — map-matching** des traces sur les tronçons OSM (GraphHopper en Docker ou moteur Python).
-6. **Étape 3 — notation des tronçons** : modèle de données (PostGIS), API, interface de notation.
+6. **Étape 3 — notation des tronçons** : reporter les évaluations des sorties sur les tronçons OSM parcourus
+   (après map-matching), puis noter directement un tronçon.
 7. **Étape 4 — itinéraires pondérés par les notes.**
 8. **Étape 5 — communautaire** : comptes, agrégation, modération.
 9. **Téléphone** : géolocalisation via Tailscale ; envoi vers COROS en un clic via un service synchronisé

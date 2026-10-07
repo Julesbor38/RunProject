@@ -1086,6 +1086,397 @@ input[type="range"] {
   font-weight: 400;
 }
 
+/* --- login --- */
+
+#login {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background:
+    repeating-radial-gradient(circle at 80% 110%, transparent 0 22px, rgb(255 255 255 / 0.05) 22px 23px),
+    linear-gradient(160deg, var(--pine-700), var(--pine-900));
+}
+
+#login[hidden] {
+  display: none;
+}
+
+.login-card {
+  width: min(360px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 28px 24px 24px;
+  border-radius: 22px;
+  background: var(--bg);
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+.login-card img {
+  align-self: center;
+  border-radius: 16px;
+}
+
+.login-card h1 {
+  color: var(--pine-800);
+  font-size: 30px;
+}
+
+.login-card p {
+  margin: 0;
+  font-size: 14px;
+}
+
+.login-card label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.login-card input,
+#rate-dialog textarea {
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--sand-50);
+  font: inherit;
+  font-size: 16px; /* no zoom on focus in iOS Safari */
+  font-weight: 400;
+  color: var(--fg);
+}
+
+.login-card input:focus,
+#rate-dialog textarea:focus {
+  outline: 2px solid var(--pine-600);
+  outline-offset: -1px;
+  background: var(--bg);
+}
+
+.login-card .primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.panel-head .icon-btn + .icon-btn {
+  margin-left: 6px;
+}
+
+.panel-head > .icon-btn:first-of-type {
+  margin-left: auto;
+}
+
+/* --- import --- */
+
+.import {
+  padding: 0 16px 12px;
+}
+
+.import .secondary {
+  width: 100%;
+}
+
+#import-box {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--sand-50);
+}
+
+#import-box p {
+  margin: 0 0 8px;
+  line-height: 1.45;
+}
+
+.help {
+  margin-bottom: 10px;
+}
+
+.help summary {
+  color: var(--pine-700);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.help ol {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  line-height: 1.45;
+}
+
+.file-pick {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  border: 2px dashed var(--pine-100);
+  border-radius: 12px;
+  background: var(--bg);
+  color: var(--pine-700);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.file-pick:hover {
+  border-color: var(--pine-600);
+}
+
+.file-pick input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.file-pick:has(input:disabled) {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.import-progress {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.import-progress[hidden] {
+  display: none;
+}
+
+.import-progress .track {
+  height: 6px;
+  margin-bottom: 4px;
+  border-radius: 3px;
+  background: var(--sand-200);
+  overflow: hidden;
+}
+
+.import-progress .track div {
+  width: 0;
+  height: 100%;
+  background: var(--pine-600);
+  transition: width 0.3s ease;
+}
+
+#new-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 16px 12px;
+  padding: 10px 8px 10px 12px;
+  border-radius: 12px;
+  background: #fff3e8;
+  color: #7a3412;
+  font-size: 13px;
+}
+
+#new-banner[hidden] {
+  display: none;
+}
+
+#new-banner span {
+  flex: 1;
+}
+
+#new-banner .icon-btn {
+  width: 28px;
+  height: 28px;
+  background: none;
+  color: inherit;
+  font-size: 18px;
+}
+
+/* --- ratings in the list --- */
+
+#list li {
+  padding-right: 92px;
+}
+
+.rate-chip {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--pine-700);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.rate-chip.rated {
+  border-color: #f2c94c;
+  background: #fff8e1;
+  color: #8a6100;
+}
+
+.tag {
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--ember);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  vertical-align: 2px;
+}
+
+.maplibregl-popup-content .rate-btn {
+  margin-top: 8px;
+}
+
+/* --- rating sheet --- */
+
+#rate-dialog {
+  width: min(440px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  padding: 0;
+  border: none;
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+  color: var(--fg);
+}
+
+#rate-dialog::backdrop {
+  background: rgb(15 46 35 / 0.45);
+}
+
+#rate-dialog form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 18px 16px;
+}
+
+#rate-dialog header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+#rate-dialog h3 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+#rate-dialog header p {
+  margin: 4px 0 0;
+}
+
+#rate-dialog .icon-btn {
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 20px;
+}
+
+.rate-help {
+  margin: 0;
+}
+
+.rate-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.rate-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14px;
+}
+
+.stars {
+  display: flex;
+  flex: none;
+}
+
+.stars button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+.stars svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: #c9c2b5;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  transition: fill 0.1s ease, stroke 0.1s ease;
+}
+
+.stars button.on svg {
+  fill: #f2b01e;
+  stroke: #d99a0b;
+}
+
+.rate-comment {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+#rate-dialog textarea {
+  resize: vertical;
+}
+
+#rate-dialog footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+#rate-dialog footer .primary {
+  width: auto;
+  padding: 11px 22px;
+  font-size: 17px;
+}
+
+.link-btn {
+  padding: 4px 0;
+  border: none;
+  background: none;
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+.rate-delete[hidden] {
+  visibility: hidden;
+  display: inline;
+}
+
 /* --- phone: panel becomes a bottom sheet --- */
 
 @media (max-width: 700px) {

@@ -11,17 +11,23 @@ import json
 import logging
 import math
 import os
+import shutil
+import tempfile
+import threading
 import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Path as PathParam
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, File, HTTPException, Path as PathParam, Request, Response, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from . import frequency, gpx
+from . import frequency, gpx, imports, ratings
+from .auth import COOKIE, SESSION_DAYS, session_user
+from .auth import login as auth_login
+from .auth import logout as auth_logout
 from .ingest import load_zones, mask
 from .ingest.models import TrackPoint
 from .ingest.pipeline import ingest
@@ -69,6 +75,17 @@ def build_feature_collection(data_dir: Path) -> dict:
     }
 
 
+def activity_key(source: str) -> str:
+    """Stable id of an activity across re-imports: its Strava id, else its file name."""
+    return source if source.startswith("strava:") else "file:" + Path(source).name
+
+
+def _with_keys(fc: dict) -> dict:
+    for f in fc["features"]:
+        f["properties"]["key"] = activity_key(f["properties"]["source"])
+    return fc
+
+
 def _lonlat(p: TrackPoint) -> list[float]:
     return [round(p.lon, 6), round(p.lat, 6)]
 
@@ -79,11 +96,11 @@ def load_cached(data_dir: Path, force: bool = False) -> dict:
     inputs = [p for p in (data_dir / "raw").rglob("*") if p.is_file()] + [data_dir / "privacy.json"]
     newest = max((p.stat().st_mtime for p in inputs if p.exists()), default=0)
     if not force and cache.exists() and cache.stat().st_mtime > newest:
-        return json.loads(cache.read_text())
+        return _with_keys(json.loads(cache.read_text()))
     fc = build_feature_collection(data_dir)
     cache.parent.mkdir(exist_ok=True)
     cache.write_text(json.dumps(fc))
-    return fc
+    return _with_keys(fc)
 
 
 def load_frequency(data_dir: Path, fc: dict, force: bool = False) -> dict:
@@ -128,7 +145,46 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Trail Map", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_methods=["GET", "POST"])
+app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_methods=["GET", "POST", "PUT", "DELETE"])
+
+PUBLIC_API = {"/api/health", "/api/auth/login", "/api/auth/logout"}
+
+
+@app.middleware("http")
+async def require_login(request: Request, call_next):
+    """Every /api route needs a session, except the few public ones: new routes are protected by default."""
+    path = request.url.path
+    if (path == "/api" or path.startswith("/api/")) and path not in PUBLIC_API:
+        user = session_user(DATA_DIR, request.cookies.get(COOKIE))
+        if user is None:
+            return JSONResponse({"detail": "connexion requise"}, status_code=401)
+        request.state.user = user
+    return await call_next(request)
+
+
+class LoginIn(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=256)
+
+
+@app.post("/api/auth/login")
+def login(body: LoginIn, request: Request, response: Response) -> dict:
+    token = auth_login(DATA_DIR, body.username, body.password, request.client.host if request.client else "?")
+    # Secure: sent over HTTPS (Tailscale) and http://localhost only, which browsers treat as secure.
+    response.set_cookie(COOKIE, token, max_age=SESSION_DAYS * 86400, httponly=True, secure=True, samesite="strict", path="/")
+    return {"user": body.username}
+
+
+@app.post("/api/auth/logout")
+def logout(request: Request, response: Response) -> dict:
+    auth_logout(DATA_DIR, request.cookies.get(COOKIE))
+    response.delete_cookie(COOKIE, path="/", secure=True, httponly=True, samesite="strict")
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+def me(request: Request) -> dict:
+    return {"user": request.state.user}
 
 
 @app.api_route("/api/health", methods=["GET", "HEAD"])
@@ -159,10 +215,102 @@ def frequency_map() -> dict:
 
 @app.post("/api/reload")
 def reload() -> dict:
-    state["activities"] = load_cached(DATA_DIR, force=True)
-    state["frequency"] = load_frequency(DATA_DIR, state["activities"], force=True)
-    state["routing"] = routing_service(state["activities"])
+    _reload()
     return state["activities"]["stats"]
+
+
+def _reload() -> None:
+    activities = load_cached(DATA_DIR, force=True)
+    freq = load_frequency(DATA_DIR, activities, force=True)
+    routing = routing_service(activities)
+    state.update(activities=activities, frequency=freq, routing=routing)
+
+
+# --- adding activities: new Strava export or single files, imported in the background ---
+
+_import_lock = threading.Lock()
+
+
+@app.post("/api/import")
+def import_files(files: list[UploadFile] = File(...)) -> dict:
+    """Store the uploaded files, then re-import everything in the background (GET /api/import/status)."""
+    if not _import_lock.acquire(blocking=False):
+        raise HTTPException(409, "un import est déjà en cours")
+    try:
+        raw = DATA_DIR / "raw"
+        with tempfile.TemporaryDirectory(dir=DATA_DIR) as tmp:
+            added = 0
+            for upload in files:
+                name = upload.filename or "fichier"
+                path = Path(tmp) / f"upload-{added}"
+                imports.save_stream(upload.file, path)
+                if name.lower().endswith(".zip"):
+                    added += imports.install_strava_zip(path, raw)
+                    shutil.copyfile(path, raw / "strava-export.zip")  # the latest full export, for backups
+                else:
+                    imports.install_file(path, name, raw)
+                    added += 1
+    except imports.InvalidImport as e:
+        _import_lock.release()
+        raise HTTPException(422, str(e)) from e
+    except BaseException:
+        _import_lock.release()
+        raise
+    before = {f["properties"]["key"] for f in state["activities"]["features"]}
+    state["import"] = {"state": "running", "files": added, "started": time.time()}
+    threading.Thread(target=_run_import, args=(before,), daemon=True).start()
+    return state["import"]
+
+
+def _run_import(before: set[str]) -> None:
+    try:
+        _reload()
+        new = [f["properties"]["key"] for f in state["activities"]["features"] if f["properties"]["key"] not in before]
+        state["import"] = {**state["import"], "state": "done", "new": new, "activities": state["activities"]["stats"]["activities"]}
+    except Exception as e:  # noqa: BLE001 - reported to the user
+        logging.getLogger("app").exception("import failed")
+        state["import"] = {**state["import"], "state": "error", "message": str(e)}
+    finally:
+        _import_lock.release()
+
+
+@app.get("/api/import/status")
+def import_status() -> dict:
+    return state.get("import", {"state": "idle"})
+
+
+# --- ratings of the user's activities ---
+
+
+@app.get("/api/ratings")
+def get_ratings(request: Request) -> dict:
+    return {
+        "criteria": [{"key": k, "label": label} for k, label in ratings.CRITERIA],
+        "ratings": ratings.for_user(DATA_DIR, request.state.user),
+    }
+
+
+class RatingIn(BaseModel):
+    scores: dict[str, int] = Field(default_factory=dict)
+    comment: str = Field("", max_length=2000)
+
+
+@app.put("/api/ratings/{key}")
+def put_rating(key: str, body: RatingIn, request: Request) -> dict:
+    if key not in {f["properties"]["key"] for f in state["activities"]["features"]}:
+        raise HTTPException(404, "sortie inconnue")
+    if unknown := set(body.scores) - ratings.CRITERIA_KEYS:
+        raise HTTPException(422, f"critères inconnus : {', '.join(sorted(unknown))}")
+    if any(not 1 <= v <= 5 for v in body.scores.values()):
+        raise HTTPException(422, "les notes vont de 1 à 5")
+    if not body.scores and not body.comment.strip():
+        raise HTTPException(422, "rien à enregistrer")
+    return ratings.save(DATA_DIR, request.state.user, key, body.scores, body.comment.strip())
+
+
+@app.delete("/api/ratings/{key}")
+def delete_rating(key: str, request: Request) -> dict:
+    return {"deleted": ratings.delete(DATA_DIR, request.state.user, key)}
 
 
 class PreferencesIn(BaseModel):

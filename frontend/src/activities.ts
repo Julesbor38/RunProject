@@ -2,6 +2,8 @@ import { LngLatBounds, Popup } from "maplibre-gl";
 import type { IControl, Map, MapLayerMouseEvent } from "maplibre-gl";
 import type { ActivityCollection, ActivityFeature, FrequencyCollection, Sport } from "./api";
 import { duration, escape, formatDate, km } from "./format";
+import { forgetNewActivities } from "./importer";
+import type { Ratings } from "./ratings";
 
 export const SPORTS: Record<Sport, { label: string; color: string }> = {
   run: { label: "Course", color: "#e4572e" },
@@ -46,7 +48,9 @@ export class ActivitiesView {
     private map: Map,
     private fc: ActivityCollection,
     private onSummary: (text: string) => void,
-    freq: FrequencyCollection | null = null,
+    freq: FrequencyCollection | null,
+    private ratings: Ratings,
+    private newKeys: Set<string>, // added by the last import: put forward, to be rated
   ) {
     this.mode = freq ? loadMode() : "sport";
     // The frequency layer is drawn under the per-activity one, which stays (transparent) on top
@@ -108,7 +112,12 @@ export class ActivitiesView {
     this.applyStyle();
     this.renderFilters();
     this.renderList();
+    this.renderNewBanner();
     onSummary(this.summary());
+    ratings.onChange(() => {
+      this.renderList();
+      this.renderNewBanner();
+    });
   }
 
   /** Dim tracks behind generated routes. */
@@ -183,14 +192,17 @@ export class ActivitiesView {
     this.selected = f.id;
     map.setFeatureState({ source: SOURCE, id: f.id }, { highlight: true });
     const p = f.properties;
+    const avg = this.ratings.average(p.key);
     const popup = new Popup({ maxWidth: "260px" })
       .setLngLat(at ?? f.geometry.coordinates[0][0])
       .setHTML(
         `<strong>${escape(p.name ?? "Sans nom")}</strong><br>` +
           `${formatDate(p.start)} · ${p.sport ? SPORTS[p.sport]?.label ?? p.sport : "?"}<br>` +
-          `${km(p.distance_m)} · D+ ${p.ascent_m} m${p.duration_s ? ` · ${duration(p.duration_s)}` : ""}`,
+          `${km(p.distance_m)} · D+ ${p.ascent_m} m${p.duration_s ? ` · ${duration(p.duration_s)}` : ""}` +
+          `<br><button class="action rate-btn">${avg === null ? "Évaluer cette sortie" : `★ ${avg.toFixed(1).replace(".", ",")} · Modifier`}</button>`,
       )
       .addTo(map);
+    popup.getElement().querySelector(".rate-btn")!.addEventListener("click", () => this.ratings.open(f));
     popup.on("close", () => {
       if (this.selected === f.id) {
         map.setFeatureState({ source: SOURCE, id: f.id }, { highlight: false });
@@ -234,9 +246,18 @@ export class ActivitiesView {
         const li = document.createElement("li");
         li.dataset.id = String(f.id);
         li.style.setProperty("--c", p.sport ? SPORTS[p.sport]?.color ?? "#888" : "#888");
+        const avg = this.ratings.average(p.key);
+        li.classList.toggle("new", this.newKeys.has(p.key));
         li.innerHTML =
-          `<span class="name">${escape(p.name ?? "Sans nom")}</span>` +
-          `<span class="meta">${formatDate(p.start)} · ${km(p.distance_m)} · D+ ${p.ascent_m} m</span>`;
+          `<span class="name">${escape(p.name ?? "Sans nom")}${this.newKeys.has(p.key) ? ` <span class="tag">Nouveau</span>` : ""}</span>` +
+          `<span class="meta">${formatDate(p.start)} · ${km(p.distance_m)} · D+ ${p.ascent_m} m</span>` +
+          (avg === null
+            ? `<button class="rate-chip" title="Évaluer : sécurité, éclairage, paysage…">Évaluer</button>`
+            : `<button class="rate-chip rated" title="Modifier l'évaluation">★ ${avg.toFixed(1).replace(".", ",")}</button>`);
+        li.querySelector(".rate-chip")!.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this.ratings.open(f);
+        });
         li.addEventListener("mouseenter", () => this.setHover(f.id));
         li.addEventListener("mouseleave", () => this.setHover(null));
         li.addEventListener("click", () => {
@@ -245,6 +266,31 @@ export class ActivitiesView {
         });
         list.appendChild(li);
       });
+  }
+
+  /** After an import: how many new activities are left to rate, and a button to rate the next one. */
+  private renderNewBanner() {
+    const box = document.getElementById("new-banner")!;
+    const unrated = this.fc.features.filter((f) => this.newKeys.has(f.properties.key) && this.ratings.average(f.properties.key) === null);
+    box.hidden = !this.newKeys.size;
+    if (!this.newKeys.size) return;
+    const n = this.newKeys.size;
+    box.innerHTML = unrated.length
+      ? `<span><strong>${n} nouvelle${n > 1 ? "s" : ""} sortie${n > 1 ? "s" : ""}</strong> : ${unrated.length} à évaluer.</span>
+         <button class="action watch next">Évaluer</button><button class="icon-btn dismiss" aria-label="Fermer">×</button>`
+      : `<span>Toutes les nouvelles sorties sont évaluées, merci !</span><button class="icon-btn dismiss" aria-label="Fermer">×</button>`;
+    box.querySelector(".next")?.addEventListener("click", () => {
+      const f = unrated[unrated.length - 1]; // oldest first
+      fitTo(this.map, [f]);
+      this.select(f);
+      this.ratings.open(f);
+    });
+    box.querySelector(".dismiss")!.addEventListener("click", () => {
+      this.newKeys.clear();
+      forgetNewActivities();
+      this.renderNewBanner();
+      this.renderList();
+    });
   }
 
   private visible() {

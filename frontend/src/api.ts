@@ -1,3 +1,24 @@
+/** Called when the session is missing or expired (set by auth.ts: shows the login screen). */
+let onUnauthorized: () => void = () => {};
+export function setUnauthorizedHandler(handler: () => void) {
+  onUnauthorized = handler;
+}
+
+/** fetch() for /api: same-origin cookies, and a 401 brings the login screen back. */
+export async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
+  const r = await fetch(input, { credentials: "same-origin", ...init });
+  if (r.status === 401 && !input.startsWith("/api/auth/")) {
+    onUnauthorized();
+    throw new Error("connexion requise");
+  }
+  return r;
+}
+
+async function errorText(r: Response): Promise<string> {
+  const detail = await r.json().catch(() => null);
+  return typeof detail?.detail === "string" ? detail.detail : `erreur ${r.status}`;
+}
+
 export type Sport = "run" | "trail_run" | "hike";
 export type LngLat = [number, number];
 
@@ -7,6 +28,7 @@ export interface ActivityFeature {
   geometry: { type: "MultiLineString"; coordinates: LngLat[][] };
   properties: {
     source: string;
+    key: string; // stable across re-imports (Strava id or file name): ratings are attached to it
     sport: Sport | null;
     name: string | null;
     start: string | null;
@@ -76,13 +98,13 @@ export interface FrequencyCollection {
 }
 
 export async function fetchFrequency(): Promise<FrequencyCollection> {
-  const r = await fetch("/api/frequency");
+  const r = await apiFetch("/api/frequency");
   if (!r.ok) throw new Error(`API ${r.status}`);
   return r.json();
 }
 
 export async function fetchActivities(): Promise<ActivityCollection> {
-  const r = await fetch("/api/activities");
+  const r = await apiFetch("/api/activities");
   if (!r.ok) throw new Error(`API ${r.status}`);
   return r.json();
 }
@@ -100,16 +122,13 @@ export async function fetchRoutes(
   },
   signal?: AbortSignal,
 ): Promise<RouteCollection> {
-  const r = await fetch("/api/routes", {
+  const r = await apiFetch("/api/routes", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
     signal,
   });
-  if (!r.ok) {
-    const detail = await r.json().catch(() => null);
-    throw new Error(typeof detail?.detail === "string" ? detail.detail : `erreur ${r.status}`);
-  }
+  if (!r.ok) throw new Error(await errorText(r));
   return r.json();
 }
 
@@ -121,7 +140,7 @@ export interface RoutingStatus {
 }
 
 export async function fetchRoutingStatus(): Promise<RoutingStatus> {
-  const r = await fetch("/api/routing/status");
+  const r = await apiFetch("/api/routing/status");
   if (!r.ok) throw new Error(`API ${r.status}`);
   return r.json();
 }
@@ -135,13 +154,111 @@ export interface RouteProgress {
 
 /** Progress of a generation started with this `request_id`, or null once it is over. */
 export async function fetchRouteProgress(requestId: string): Promise<RouteProgress | null> {
-  const r = await fetch(`/api/routes/${encodeURIComponent(requestId)}/progress`);
+  const r = await apiFetch(`/api/routes/${encodeURIComponent(requestId)}/progress`);
   return r.ok ? r.json() : null;
 }
 
 export async function cancelRoute(requestId: string): Promise<void> {
-  await fetch(`/api/routes/${encodeURIComponent(requestId)}/cancel`, { method: "POST" });
+  await apiFetch(`/api/routes/${encodeURIComponent(requestId)}/cancel`, { method: "POST" });
 }
 
 /** The GPX of a generated route, served as a .gpx download (application/gpx+xml, attachment). */
 export const gpxUrl = (routeId: string) => `/api/routes/${encodeURIComponent(routeId)}/gpx`;
+
+// --- account ---
+
+export async function currentUser(): Promise<string | null> {
+  const r = await fetch("/api/auth/me", { credentials: "same-origin" });
+  return r.ok ? (await r.json()).user : null;
+}
+
+export async function login(username: string, password: string): Promise<void> {
+  const r = await fetch("/api/auth/login", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!r.ok) throw new Error(await errorText(r));
+}
+
+export async function logout(): Promise<void> {
+  await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
+}
+
+// --- ratings ---
+
+export interface Criterion {
+  key: string;
+  label: string;
+}
+
+export interface Rating {
+  scores: Record<string, number>; // criterion -> 1..5
+  comment: string;
+  updated: number;
+}
+
+export async function fetchRatings(): Promise<{ criteria: Criterion[]; ratings: Record<string, Rating> }> {
+  const r = await apiFetch("/api/ratings");
+  if (!r.ok) throw new Error(await errorText(r));
+  return r.json();
+}
+
+export async function saveRating(key: string, scores: Record<string, number>, comment: string): Promise<Rating> {
+  const r = await apiFetch(`/api/ratings/${encodeURIComponent(key)}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ scores, comment }),
+  });
+  if (!r.ok) throw new Error(await errorText(r));
+  return r.json();
+}
+
+export async function deleteRating(key: string): Promise<void> {
+  const r = await apiFetch(`/api/ratings/${encodeURIComponent(key)}`, { method: "DELETE" });
+  if (!r.ok) throw new Error(await errorText(r));
+}
+
+// --- adding activities ---
+
+export interface ImportStatus {
+  state: "idle" | "running" | "done" | "error";
+  files?: number;
+  new?: string[]; // keys of the activities the import added
+  activities?: number;
+  message?: string;
+}
+
+/** Upload with progress (fetch has no upload progress): resolves once the server stored the files. */
+export function uploadImport(files: File[], onProgress: (fraction: number) => void): Promise<ImportStatus> {
+  return new Promise((resolve, reject) => {
+    const form = new FormData();
+    files.forEach((f) => form.append("files", f, f.name));
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/import");
+    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
+    xhr.onload = () => {
+      if (xhr.status === 401) {
+        onUnauthorized();
+        return reject(new Error("connexion requise"));
+      }
+      let body: { detail?: string } & ImportStatus;
+      try {
+        body = JSON.parse(xhr.responseText);
+      } catch {
+        return reject(new Error(`erreur ${xhr.status}`));
+      }
+      if (xhr.status >= 400) reject(new Error(typeof body.detail === "string" ? body.detail : `erreur ${xhr.status}`));
+      else resolve(body);
+    };
+    xhr.onerror = () => reject(new Error("envoi interrompu (réseau)"));
+    xhr.send(form);
+  });
+}
+
+export async function fetchImportStatus(): Promise<ImportStatus> {
+  const r = await apiFetch("/api/import/status");
+  if (!r.ok) throw new Error(await errorText(r));
+  return r.json();
+}

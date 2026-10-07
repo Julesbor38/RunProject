@@ -25,10 +25,49 @@
         <symbol id="i-up" viewBox="0 0 24 24"><path d="M3 18l6-7 4 4 8-9"/><path d="M15 6h6v6"/></symbol>
         <symbol id="i-down" viewBox="0 0 24 24"><path d="M3 6l6 7 4-4 8 9"/><path d="M15 18h6v-6"/></symbol>
         <symbol id="i-peak" viewBox="0 0 24 24"><path d="M3 20l6.5-11 4 6 2.5-3.5L21 20z"/></symbol>
+        <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4M7 8.5l5-5 5 5M5 20h14"/></symbol>
+        <symbol id="i-logout" viewBox="0 0 24 24"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 17l5-5-5-5M15 12H4"/></symbol>
+        <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
       </defs>
     </svg>
 
     <div id="map"></div>
+
+    <!-- Login: everything of the user's data needs a session -->
+    <div id="login" hidden>
+      <form class="login-card" autocomplete="on">
+        <img src="/logo.svg" alt="" width="64" height="64" />
+        <h1>Trail Map</h1>
+        <p class="muted">Connectez-vous pour accéder à vos sorties.</p>
+        <label>Identifiant<input name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required /></label>
+        <label>Mot de passe<input name="password" type="password" autocomplete="current-password" required /></label>
+        <p class="login-error status error" hidden></p>
+        <button class="primary" type="submit"><svg class="i"><use href="#i-lock" /></svg>Se connecter</button>
+      </form>
+    </div>
+
+    <!-- Rating sheet of one activity -->
+    <dialog id="rate-dialog">
+      <form>
+        <header>
+          <div>
+            <h3 class="rate-title"></h3>
+            <p class="rate-meta muted small"></p>
+          </div>
+          <button type="button" class="icon-btn rate-close" aria-label="Fermer">×</button>
+        </header>
+        <p class="muted small rate-help">De 1 à 5 étoiles (5 = le mieux). Touchez de nouveau une étoile pour effacer la note.</p>
+        <div class="rate-rows"></div>
+        <label class="rate-comment">Commentaire
+          <textarea maxlength="2000" rows="3" placeholder="Ce qui vous a plu, ce qu'il faut savoir…"></textarea>
+        </label>
+        <p class="rate-error status error" hidden></p>
+        <footer>
+          <button type="button" class="link-btn rate-delete">Effacer l'évaluation</button>
+          <button type="submit" class="primary">Enregistrer</button>
+        </footer>
+      </form>
+    </dialog>
 
     <button id="panel-toggle" class="fab" aria-label="Afficher le menu" hidden>
       <img src="/logo.svg" alt="" width="28" height="28" />
@@ -45,6 +84,9 @@
             <p id="summary">Chargement…</p>
           </div>
         </div>
+        <button id="sign-out" class="icon-btn" aria-label="Se déconnecter" hidden>
+          <svg class="i"><use href="#i-logout" /></svg>
+        </button>
         <button id="panel-close" class="icon-btn" aria-label="Replier le menu">
           <svg class="i"><use href="#i-chevron" /></svg>
         </button>
@@ -124,6 +166,31 @@
       </section>
 
       <section id="tab-activities" class="tab-body" hidden>
+        <div class="import">
+          <button id="import-toggle" class="secondary" aria-expanded="false" aria-controls="import-box">
+            <svg class="i"><use href="#i-upload" /></svg>Mettre à jour mes données
+          </button>
+          <div id="import-box" hidden>
+            <p class="small">Ajoutez votre <strong>nouvelle archive Strava</strong> (.zip, elle remplace l'ancienne) ou des fichiers
+              <strong>.fit / .gpx / .tcx</strong> (montre COROS…). Les sorties déjà importées ne sont pas dupliquées.</p>
+            <details class="help small">
+              <summary>Obtenir son archive Strava</summary>
+              <ol>
+                <li>Sur strava.com : Paramètres → Mon compte.</li>
+                <li>« Télécharger ou supprimer votre compte » → Commencer → « Demander votre archive ».</li>
+                <li>Strava envoie un lien par e-mail (quelques minutes à quelques heures) : téléchargez le .zip, puis choisissez-le ici.</li>
+              </ol>
+            </details>
+            <label class="file-pick"><input type="file" multiple accept=".zip,.fit,.gpx,.tcx,.gz" />
+              <svg class="i"><use href="#i-upload" /></svg><span>Choisir les fichiers</span></label>
+            <div class="import-progress" hidden>
+              <div class="track"><div></div></div>
+              <span></span>
+            </div>
+            <p class="import-msg status" hidden></p>
+          </div>
+        </div>
+        <div id="new-banner" hidden></div>
         <div class="tracks-mode">
           <div class="segmented" id="tracks-mode">
             <button data-mode="frequency">Fréquentation</button>
