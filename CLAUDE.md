@@ -37,6 +37,9 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   réglée, `tailscale serve --bg http://localhost:8000`. Mise à jour : `./deploy-local.sh` ; logs :
   `journalctl -u trailmap -f` ; dev : `sudo systemctl stop trailmap` d'abord (même port 8000).
 - Prochaine grosse étape : map-matching (étape 2), puis notation des tronçons (étape 3).
+- **Lieux notables** (`app/pois/`, `src/pois.ts`) : extraits de l'extrait OSM France dans data/pois/pois.sqlite
+  (commun à tous), Overpass hors de France, Wikidata (photo créditée) ; fiche + « Passer par ici » (points de
+  passage du générateur, 3 max) ; lieux à ~50 m listés sous chaque itinéraire.
 - Dénivelé : « Le plus plat » minimise le D+ (grande boucle, pétales de 2–5 km ou aller-retour, `flat: true`) ;
   Vallonné / Montagne / Personnalisé gardent une tranche de D+.
 - Comptes : connexion obligatoire (identifiant + mot de passe) pour toute l'API sauf /api/health ;
@@ -46,7 +49,7 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   import en arrière-plan, bandeau des nouvelles sorties) ; évaluation de chaque sortie de 1 à 5 sur
   8 critères (sécurité, éclairage, beauté du paysage, plaisir, entretien, abri, tranquillité,
   peu de circulation) + commentaire, en attendant de les reporter sur les tronçons (étape 3).
-- Tests : 71 OK, 1 ignoré.
+- Tests : 84 OK, 1 ignoré.
 
 ## Architecture
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
@@ -104,6 +107,8 @@ Chaque route ne lit et n'écrit que les données du compte connecté (data/users
 - GET /api/ratings : critères + évaluations de l'utilisateur ; PUT|DELETE /api/ratings/{key}
   ({scores: {critère: 1..5}, comment}) ; `key` = clé stable de la sortie (`strava:<id>` ou `file:<nom>`)
 - GET  /api/health : état (comptes chargés, générations en cours, front construit), rien sur les données d'un compte
+- GET  /api/pois?bbox=&zoom=&categories= : lieux notables de la zone ; GET /api/pois/<id> : fiche (Wikidata)
+- POST /api/routes accepte `via` : [[lon, lat], …] (3 max), points de passage
 - GET  /api/activities : traces masquées + simplifiées (~700 Ko), cache data/cache/
 - POST /api/reload : relit data/raw
 - GET  /api/routing/status : avancement du pré-téléchargement OSM
@@ -189,5 +194,6 @@ Chaque route ne lit et n'écrit que les données du compte connecté (data/users
   - cache/ : sorties prétraitées ; routes/ : itinéraires générés (GPX) ; ratings.json : évaluations
     (à sauvegarder !) ; privacy.json : zones de confidentialité (optionnel)
 - data/auth/ : comptes (users.json, mots de passe hachés) et sessions (sessions.json), droits 600
+- data/pois/pois.sqlite : lieux notables (extraits de l'OSM France, + Overpass hors France, + cache Wikidata)
 - data/osm/ : tuiles OSM (cache, communes), data/dem/ : tuiles d'altitude (communes)
 - Types importés : course, trail, randonnée (sport normalisé run / trail_run / hike)

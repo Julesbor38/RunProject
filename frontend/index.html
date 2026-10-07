@@ -68,6 +68,12 @@
       </form>
     </div>
 
+    <!-- Sheet of a notable place (phone; a map bubble on a computer) -->
+    <dialog id="poi-dialog">
+      <button type="button" class="icon-btn poi-close" aria-label="Fermer">×</button>
+      <div class="poi-dialog-body"></div>
+    </dialog>
+
     <!-- Rating sheet of one activity -->
     <dialog id="rate-dialog">
       <form>
@@ -143,6 +149,8 @@
               <button id="place-end" class="secondary"><svg class="i"><use href="#i-pin" /></svg><span class="label">Placer l'arrivée sur la carte</span></button>
             </div>
           </div>
+          <!-- « Passer par ici » (sheet of a notable place) -->
+          <div id="via-list" hidden></div>
         </div>
 
         <div class="field" id="oneway-length-field" hidden>
@@ -173,6 +181,10 @@
           <summary><svg class="i"><use href="#i-sliders" /></svg>Réglages fins<svg class="i caret"><use href="#i-chevron" /></svg></summary>
           <div id="prefs"></div>
         </details>
+
+        <h2>Lieux notables</h2>
+        <div class="presets" id="poi-filters"></div>
+        <p class="muted small poi-hint">Touchez un lieu sur la carte pour sa fiche, et « Passer par ici » pour l'ajouter à l'itinéraire.</p>
 
         <div class="generate-bar">
           <button id="generate" class="primary">Générer l'itinéraire</button>

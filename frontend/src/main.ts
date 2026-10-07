@@ -9,6 +9,7 @@ import { setupDebug } from "./debug";
 import { ensureServer } from "./native";
 import { openImporter, setupImporter, takeNewActivities } from "./importer";
 import { Planner } from "./planner";
+import { PoiLayer } from "./pois";
 import { Ratings } from "./ratings";
 import { addTerrain } from "./terrain";
 
@@ -28,7 +29,8 @@ const map = new Map({
   zoom: 11,
   attributionControl: { compact: true }, // a small ⓘ: keeps the bottom of the map free on phones
 });
-if (import.meta.env.DEV) Object.assign(window, { map }); // handy from the browser console
+// Handy from the browser console (dev), and for driving the map in tests (?debug=1).
+if (import.meta.env.DEV || new URLSearchParams(location.search).get("debug") === "1") Object.assign(window, { map });
 map.addControl(new NavigationControl(), "top-right");
 map.addControl(new GeolocateControl({ positionOptions: { enableHighAccuracy: true } }), "top-right");
 map.addControl(new ScaleControl({ unit: "metric" }), "bottom-right");
@@ -61,6 +63,10 @@ map.on("load", async () => {
     summary.textContent = `API injoignable (${(e as Error).message}) : le backend tourne-t-il sur :8000 ?`;
   }
   const planner = new Planner(map, (shown) => activities?.setMuted(shown), await loggedIn);
+  // Notable places: above the tracks and the routes; « Passer par ici » adds a point de passage.
+  const pois = new PoiLayer(map, (at, name) => planner.addVia(at, name));
+  planner.pois = pois;
+  planner.renderPoiFilters();
 
   const showTab = (tab: Tab) => {
     document.querySelectorAll<HTMLButtonElement>(".tabs [role=tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
@@ -68,7 +74,7 @@ map.on("load", async () => {
     document.getElementById("tab-activities")!.hidden = tab !== "activities";
     planner.setActive(tab === "route");
     // Tracks open their sheet (and rating) on click in both tabs, unless the planner needs that click.
-    if (activities) activities.clickable = (point) => tab === "activities" || !planner.claimsClick(point);
+    if (activities) activities.clickable = (point) => (tab === "activities" ? !pois.hitAt(point) : !planner.claimsClick(point));
   };
   document.querySelectorAll<HTMLButtonElement>(".tabs [role=tab]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab as Tab)));
   // After an import: straight to the new activities. A new account: straight to adding its data.

@@ -12,8 +12,10 @@ from .elevation import Dem
 from .graph import EARTH_M_PER_DEG_LAT, Graph, add_elevation, build_graph, mark_familiar
 from .job import Job
 from .osm import TILE_DEG, OverpassError, download_missing, load_tiles, tile_path, tiles_for_bbox
-from .router import Preferences, Route, flattest, loop, point_to_point
+from .router import Preferences, Route, flattest, loop, loop_via, point_to_point, via_route
 
+MAX_VIA = 3  # « Passer par ici » points per route
+VIA_MAX_M = 300  # a point de passage must be that close to a path
 MAX_DISTANCE_M = 60_000
 GRAPH_CACHE_SIZE = 4
 ENDS_DOWNLOAD_S = 180  # a generation waits this long for the tiles of its start and end, required
@@ -82,6 +84,7 @@ class RoutingService:
         ascent_range: tuple[float, float] | None = None,
         job: Job | None = None,
         flat: bool = False,
+        via: list[tuple[float, float]] | None = None,
     ) -> dict:
         """`start`/`end` are (lon, lat). A loop when `end` is None, else a point-to-point route
         (the best one, or routes of about `distance_m` when given).
@@ -92,11 +95,27 @@ class RoutingService:
         if distance_m and distance_m > MAX_DISTANCE_M:
             raise RoutingError(f"distance max {MAX_DISTANCE_M // 1000} km")
         job = job or Job()
-        g, skipped = self._graph(start, end, distance_m, job)
+        via = list(via or [])[:MAX_VIA]
+        g, skipped = self._graph(start, end, distance_m, job, via)
         src = g.nearest_node(start[1], start[0])
         if src is None:
             raise RoutingError("aucun chemin à moins de 500 m du départ")
-        if end is None:
+        via_nodes = []
+        for lon, lat in via:
+            node = g.nearest_node(lat, lon, max_m=VIA_MAX_M)
+            if node is None:
+                raise RoutingError(f"un point de passage est à plus de {VIA_MAX_M} m de tout chemin")
+            via_nodes.append(node)
+        if via_nodes and flat:
+            prefs = Preferences(**{**prefs.__dict__, "hills": -1.0})
+        if via_nodes and end is None:
+            routes = loop_via(g, src, via_nodes, distance_m, prefs, ascent_range=None if flat else ascent_range, job=job)
+        elif via_nodes:
+            dst = g.nearest_node(end[1], end[0])
+            if dst is None:
+                raise RoutingError("aucun chemin à moins de 500 m de l'arrivée")
+            routes = via_route(g, src, dst, via_nodes, prefs, distance_m, None if flat else ascent_range, job=job)
+        elif end is None:
             routes = (
                 flattest(g, src, distance_m, prefs, job=job)
                 if flat and g.ele
@@ -111,6 +130,9 @@ class RoutingService:
             raise RoutingError("aucun itinéraire trouvé dans cette zone")
         features = [_feature(r, g, i, ascent_range) for i, r in enumerate(routes)]
         out = {"type": "FeatureCollection", "features": features, "elevation": bool(g.ele)}
+        shortest_m = min(f["properties"]["distance_m"] for f in features)
+        if via_nodes and distance_m and shortest_m > 1.15 * distance_m:
+            out["notice"] = f"Avec ces points de passage, l'itinéraire fait au moins {shortest_m / 1000:.1f} km.".replace(".", ",", 1)
         if skipped:
             out["warning"] = (
                 f"{skipped} zone(s) OpenStreetMap n'ont pas pu être téléchargées (serveurs saturés) : "
@@ -118,9 +140,9 @@ class RoutingService:
             )
         return out
 
-    def _graph(self, start, end, distance_m, job: Job) -> tuple[Graph, int]:
+    def _graph(self, start, end, distance_m, job: Job, via=()) -> tuple[Graph, int]:
         """Graph around the request, and the number of its tiles that could not be downloaded."""
-        lons, lats = [start[0]], [start[1]]
+        lons, lats = [start[0], *(v[0] for v in via)], [start[1], *(v[1] for v in via)]
         if end is not None:
             lons.append(end[0])
             lats.append(end[1])
@@ -134,9 +156,12 @@ class RoutingService:
         dlon = margin_m / (111_320 * math.cos(math.radians(start[1])))
         box = tiles_for_bbox(min(lats) - dlat, min(lons) - dlon, max(lats) + dlat, max(lons) + dlon)
         a, b = (start[0], start[1]), (lons[-1], lats[-1])
-        near = sorted((d, t) for t in box if (d := _tile_to_segment_m(t, a, b)) <= margin_m)
+        # The path start -> points de passage -> end (or back to the start): tiles near any of its legs.
+        path = [a, *((v[0], v[1]) for v in via), b if end is not None else a]
+        legs = list(zip(path, path[1:])) or [(a, b)]
+        near = sorted((d, t) for t in box if (d := min(_tile_to_segment_m(t, p, q) for p, q in legs)) <= margin_m)
         tiles = tuple(t for _, t in near)  # nearest first: downloaded first, more useful when time runs out
-        ends = list(dict.fromkeys([_tile_of(*a), _tile_of(*b)]))
+        ends = list(dict.fromkeys([_tile_of(*a), _tile_of(*b), *(_tile_of(v[0], v[1]) for v in via)]))
         now = time.monotonic()
         recent = [
             t for t in tiles

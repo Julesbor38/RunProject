@@ -535,6 +535,35 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
   le GPX écrit par Filesystem est ouvert dans le menu « Ouvrir avec… » ; feuille de partage seulement si aucune
   app ne l'ouvre. À recompiler (Actions -> iOS (AltStore) -> Run workflow) avant l'installation.
 
+### 2026-10-07 — Lieux notables sur la carte (nature, eau, patrimoine, parcs, points utiles)
+- Données : le cache de tuiles du routage ne contient que les chemins ; les lieux sont extraits **une fois de
+  l'extrait OSM France** déjà téléchargé (`python -m app.pois.extract ../data/osm/france-latest.osm.pbf [--force]`,
+  pyosmium, surfaces reconstituées -> centre + superficie ; rivières nommées : un point par ~5 km ; doublons
+  nœud / surface fusionnés à 150 m) dans `data/pois/pois.sqlite` (SQLite + R-tree, commun à tous les comptes).
+  Hors de France : Overpass par zone de 0,25°, en arrière-plan, une zone à la fois, mise en cache (30 min avant
+  de réessayer un échec), seulement pour les zones regardées.
+- Catégories / types d'après les tags demandés (cascade rangée dans « Eau »), éléments sans nom ignorés sauf
+  points de vue, sommets, sources, croix, eau potable, toilettes, abris, pique-nique. Score (Wikidata, Wikipédia,
+  ref:mhs, altitude des sommets, point de vue nommé, superficie) -> zoom minimal d'affichage (9 à 15).
+- Wikidata : description FR, lien Wikipédia FR, vignette Commons **avec auteur et licence** ; appels groupés
+  (50), User-Agent explicite, cache 30 jours (1 jour après un échec), préchargement des lieux visibles.
+- API (derrière la connexion) : `GET /api/pois?bbox=&zoom=&categories=` (≤ 400, meilleurs scores),
+  `GET /api/pois/<id>` (fiche). Chaque itinéraire proposé liste ses lieux à moins de ~50 m (`properties.pois`).
+- **Points de passage** (« Passer par ici ») dans le générateur, 3 au plus : boucle par les points (ordre de leur
+  direction depuis le départ) + un point libre pour la distance ; aller simple départ -> points -> arrivée, détour
+  pour la distance sur la dernière portion ; message si les points imposent une boucle plus longue.
+- Front : icônes par type sur pastille de couleur de catégorie, regroupement en vue large (≤ zoom 12), chargement
+  de la zone visible après 300 ms d'arrêt, cache par zone, requête précédente annulée ; puces de catégories
+  (mémorisées) dans « Itinéraire » ; fiche : photo + crédit + licence, description, « Monument historique »,
+  liens Wikipédia / OSM, « © OpenStreetMap contributors », « Passer par ici » (feuille par-dessus l'app sur
+  téléphone : une bulle passait sous le panneau du bas) ; sous chaque itinéraire « 2 points de vue, 1 cascade… »
+  et les lieux nommés, cliquables.
+- Vérifié (copie de test, vue iPhone + ordinateur) : 32 lieux à Fourvière (zoom 15), fiche « Colline de Fourvière »
+  avec photo Commons créditée (CC BY-SA 4.0), boucle de 6,8 km passant par elle, lieux listés sous l'itinéraire.
+- 84 tests OK (extraction sur un petit extrait, catégories, score, lieux le long d'un tracé, cache Wikidata,
+  lecture Overpass, API, points de passage).
+- Extraction France lancée le 2026-10-07 au soir (lente sur les chemins et surfaces : index des nœuds sur disque).
+
 ---
 
 ## État au 2026-10-07

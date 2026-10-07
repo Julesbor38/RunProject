@@ -76,6 +76,7 @@ export interface RouteFeature {
     profile: [number, number][]; // [distance_m, elevation_m]
     in_ascent_range?: boolean;
     petals: number; // loops from the start the route is made of
+    pois?: { id: string; name: string; category: string; kind: string }[]; // notable places within ~50 m
   };
 }
 
@@ -84,6 +85,7 @@ export interface RouteCollection {
   features: RouteFeature[];
   elevation: boolean;
   warning?: string; // some OSM tiles could not be downloaded
+  notice?: string; // e.g. the points de passage make the route longer than asked
 }
 
 export async function fetchActivities(): Promise<ActivityCollection> {
@@ -102,6 +104,7 @@ export async function fetchRoutes(
     preferences: Preferences;
     request_id?: string;
     flat?: boolean; // the flattest routes, possibly several small loops (instead of a D+ range)
+    via?: LngLat[]; // « Passer par ici » points
   },
   signal?: AbortSignal,
 ): Promise<RouteCollection> {

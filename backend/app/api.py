@@ -36,6 +36,10 @@ from .routing import Preferences, RoutingError, RoutingService
 from .routing.elevation import Dem
 from .routing.job import Cancelled, Job
 from .workspace import Workspace, user_dir
+from .pois.catalog import CATEGORIES
+from .pois.overpass import OverpassZones, ZONE_DEG
+from .pois.store import PoiStore
+from .pois.wikidata import Wikidata
 
 DATA_DIR = Path(os.environ.get("TRAILMAP_DATA", Path(__file__).parents[2] / "data"))
 SIMPLIFY_TOLERANCE_M = 5.0
@@ -109,6 +113,47 @@ def load_cached(data_dir: Path, force: bool = False) -> dict:
 def routing_service(fc: dict) -> RoutingService:
     tracks = [line for f in fc["features"] for line in f["geometry"]["coordinates"]]
     return RoutingService(DATA_DIR / "osm", tracks, Dem(DATA_DIR / "dem"))
+
+
+# --- notable places: shared by all accounts (public OSM data), behind the login like the rest ---
+
+_pois: dict = {}
+
+
+def pois_store() -> PoiStore:
+    """The place store of DATA_DIR (data/pois/pois.sqlite), with its Wikidata and Overpass helpers."""
+    path = DATA_DIR / "pois" / "pois.sqlite"
+    if _pois.get("path") != path:
+        _pois.update(path=path, store=PoiStore(path), france=None)
+        _pois["wikidata"] = Wikidata(_pois["store"])
+        _pois["overpass"] = OverpassZones(_pois["store"], _zone_in_france)
+    return _pois["store"]
+
+
+def _zone_in_france(zone: tuple[int, int]) -> bool:
+    """Covered by the local extract (all its 0.05° tiles inside France's boundary): no Overpass there."""
+    if _pois.get("france") is None:
+        from .routing.extract import inside_tiles, read_poly
+        from .routing.osm import TILE_DEG
+
+        poly = DATA_DIR / "osm" / "france.poly"
+        tiles = inside_tiles(*read_poly(poly)) if poly.exists() else set()
+        per = round(ZONE_DEG / TILE_DEG)
+        _pois["france"] = {(i // per, j // per) for i, j in tiles}, tiles, per
+    zones, tiles, per = _pois["france"]
+    if zone not in zones:
+        return False
+    i0, j0 = zone[0] * per, zone[1] * per
+    return all((i, j) in tiles for i in range(i0, i0 + per) for j in range(j0, j0 + per))
+
+
+def places_along(coords: list, within_m: float = 50.0) -> list[dict]:
+    try:
+        found = pois_store().along(coords, within_m)
+    except Exception:  # noqa: BLE001 - the places are a bonus: never fail a route for them
+        logging.getLogger("app").exception("places along a route")
+        return []
+    return [{"id": p.id, "name": p.name, "category": p.category, "kind": p.kind} for p in found]
 
 
 def workspace(request: Request) -> Workspace:
@@ -359,6 +404,7 @@ class RouteRequest(BaseModel):
     preferences: PreferencesIn = PreferencesIn()
     request_id: str | None = Field(None, max_length=64)  # lets the client follow and cancel the generation
     flat: bool = False  # the flattest routes (petals of small loops allowed), instead of a D+ range
+    via: list[tuple[float, float]] = Field(default_factory=list, max_length=3)  # (lon, lat) « Passer par ici »
 
 
 @app.get("/api/routing/status")
@@ -382,6 +428,7 @@ def routes(req: RouteRequest, ws: Workspace = Depends(workspace)) -> dict:
             ascent_range=None if req.flat else _ascent_range(req),
             job=job,
             flat=req.flat,
+            via=req.via,
         )
     except RoutingError as e:
         raise HTTPException(422, str(e)) from e
@@ -392,6 +439,7 @@ def routes(req: RouteRequest, ws: Workspace = Depends(workspace)) -> dict:
             jobs.pop(req.request_id, None)
     kind = "boucle" if req.end is None else "itinéraire"
     for f in out["features"]:
+        f["properties"]["pois"] = places_along(f["geometry"]["coordinates"])
         save_route(ws.dir, f, f"Trail Map {kind} {f['properties']['distance_m'] / 1000:.1f} km".replace(".", ","))
     return out
 
@@ -440,6 +488,57 @@ def shared_gpx(route_id: str = PathParam(pattern="^[0-9a-f]{32}$"), user: str = 
         raise HTTPException(404, "itinéraire inconnu ou expiré, régénérez-le")
     saved = json.loads(file.read_text())
     return gpx.response(saved["name"], saved["coordinates"])
+
+
+@app.get("/api/pois")
+def pois(bbox: str, zoom: float = 13, categories: str | None = None) -> dict:
+    """Notable places of the visible area (min_lon,min_lat,max_lon,max_lat), the best ones for that zoom."""
+    try:
+        box = [float(v) for v in bbox.split(",")]
+        assert len(box) == 4 and box[0] < box[2] and box[1] < box[3]
+    except (ValueError, AssertionError) as e:
+        raise HTTPException(422, "bbox = min_lon,min_lat,max_lon,max_lat") from e
+    if (box[2] - box[0]) * (box[3] - box[1]) > 40:
+        raise HTTPException(422, "zone trop grande : zoomez")
+    cats = CATEGORIES if categories is None else [c for c in categories.split(",") if c in CATEGORIES]
+    store = pois_store()
+    found = store.in_bbox(box, zoom, cats)
+    if PREFETCH_OSM and zoom >= 11:
+        _pois["overpass"].want(box)  # outside France: fetched in the background, shown on a later request
+    if PREFETCH_OSM:
+        _pois["wikidata"].prefetch(p.tags["wikidata"] for p in found[:40] if "wikidata" in p.tags)
+    return {"type": "FeatureCollection", "features": [p.feature() for p in found]}
+
+
+@app.get("/api/pois/{poi_id}")
+def poi_detail(poi_id: str = PathParam(pattern="^[nwr][0-9]{1,15}$")) -> dict:
+    """A place's sheet: what OSM says, plus Wikidata (description, Wikipédia, credited picture)."""
+    store = pois_store()
+    p = store.get(poi_id)
+    if p is None:
+        raise HTTPException(404, "lieu inconnu")
+    t = p.tags
+    osm_type = {"n": "node", "w": "way", "r": "relation"}[p.id[0]]
+    sheet = {
+        "id": p.id, "name": p.name, "category": p.category, "kind": p.kind, "lon": p.lon, "lat": p.lat,
+        "ele": t.get("ele"), "mhs": t.get("ref:mhs"), "heritage": t.get("heritage"), "description": t.get("description"),
+        "osm_url": f"https://www.openstreetmap.org/{osm_type}/{p.id[1:]}", "website": t.get("website"),
+        "wikipedia": _wikipedia_url(t.get("wikipedia")), "image": None,
+    }
+    if "wikidata" in t:
+        wd = _pois["wikidata"].get(t["wikidata"]) or {}
+        sheet["description"] = wd.get("description") or sheet["description"]
+        sheet["wikipedia"] = wd.get("wikipedia") or sheet["wikipedia"]
+        sheet["image"] = wd.get("image")
+    return sheet
+
+
+def _wikipedia_url(tag: str | None) -> str | None:
+    """OSM's `wikipedia=fr:Titre` -> its URL."""
+    if not tag or ":" not in tag:
+        return None
+    lang, title = tag.split(":", 1)
+    return f"https://{lang}.wikipedia.org/wiki/{title.replace(' ', '_')}" if lang.isalpha() and len(lang) <= 3 else None
 
 
 class GpxRequest(BaseModel):

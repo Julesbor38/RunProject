@@ -411,9 +411,16 @@ def _route_via(
         if w is None:
             return None
         waypoints.append(w)
+    return _through(g, [src, *waypoints, dst], p, weights)
+
+
+def _through(g: Graph, nodes: list[int], p: Preferences, weights: Weights) -> Route | None:
+    """The best legs between consecutive nodes, discouraging reuse of earlier legs."""
     edges: list[tuple[int, bool]] = []
     cost, reuse = 0.0, {}
-    for a, b in zip([src, *waypoints], [*waypoints, dst]):
+    for a, b in zip(nodes, nodes[1:]):
+        if a == b:
+            continue
         leg = shortest(g, a, b, p, reuse, weights)
         if leg is None:
             return None
@@ -421,6 +428,82 @@ def _route_via(
         cost += leg.cost
         reuse.update((idx, REUSE_PENALTY) for idx, _ in leg.edges)
     return Route(edges, cost)
+
+
+def _bearing(g: Graph, a: int, b: int) -> float:
+    (lat1, lon1), (lat2, lon2) = g.coords[a], g.coords[b]
+    return math.atan2((lon2 - lon1) * g.m_per_deg_lon, (lat2 - lat1) * EARTH_M_PER_DEG_LAT)
+
+
+def loop_via(
+    g: Graph,
+    start: int,
+    vias: list[int],
+    distance_m: float,
+    p: Preferences,
+    ascent_range: tuple[float, float] | None = None,
+    n_results: int = 3,
+    n_bearings: int = 8,
+    job: Job | None = None,
+) -> list[Route]:
+    """Loops through fixed points (« Passer par ici »), visited in the order of their bearing from the start.
+    When they leave room for it, a free point at each bearing lengthens the loop towards `distance_m`."""
+    job = job or Job()
+    job.step("routes", 0, n_bearings + 1)
+    weights = Weights(g, p)
+    lat0, lon0 = g.coords[start]
+    by_bearing = lambda nodes: sorted(nodes, key=lambda n: _bearing(g, start, n))  # noqa: E731
+    candidates = []
+    base = _through(g, [start, *by_bearing(vias), start], p, weights)
+    job.advance()
+    if base is not None:
+        candidates.append(base)
+    if base is None or base.length(g) < 0.9 * distance_m:
+        for b in range(n_bearings):
+            job.advance()
+
+            def with_free_point(side: float, bearing=2 * math.pi * b / n_bearings) -> Route | None:
+                lat, lon = _offset(g, lat0, lon0, side, bearing)
+                free = g.nearest_node(lat, lon, max_m=max(side / 3, 300.0))
+                if free is None:
+                    return None
+                return _through(g, [start, *by_bearing([*vias, free]), start], p, weights)
+
+            # Perimeter of a triangle start / via / free point ~ 3.6 x its side once roads are followed.
+            route = _sized(g, with_free_point, distance_m / 3.6, distance_m)
+            if route is not None:
+                candidates.append(route)
+    candidates.sort(key=lambda r: _score(g, r, distance_m, ascent_range))
+    return _diverse(candidates, g, n_results)
+
+
+def via_route(
+    g: Graph,
+    src: int,
+    dst: int,
+    vias: list[int],
+    p: Preferences,
+    distance_m: float | None = None,
+    ascent_range: tuple[float, float] | None = None,
+    job: Job | None = None,
+) -> list[Route]:
+    """src -> fixed points (ordered along src -> dst) -> dst. With `distance_m`, the detour that lengthens
+    the route is taken between the last point and dst."""
+    weights = Weights(g, p)
+    (lat1, lon1), (lat2, lon2) = g.coords[src], g.coords[dst]
+    ax, ay = (lon2 - lon1) * g.m_per_deg_lon, (lat2 - lat1) * EARTH_M_PER_DEG_LAT
+
+    def along(n: int) -> float:
+        lat, lon = g.coords[n]
+        return (lon - lon1) * g.m_per_deg_lon * ax + (lat - lat1) * EARTH_M_PER_DEG_LAT * ay
+
+    order = sorted(vias, key=along)
+    head = _through(g, [src, *order], p, weights)
+    if head is None:
+        return []
+    left = distance_m - head.length(g) if distance_m else None
+    tails = point_to_point(g, order[-1], dst, p, left if left and left > 0 else None, ascent_range, job=job)
+    return [Route(head.edges + t.edges, head.cost + t.cost) for t in tails]
 
 
 def _range_miss(value: float, rng: tuple[float, float]) -> float:

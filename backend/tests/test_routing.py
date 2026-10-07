@@ -2,7 +2,7 @@ import pytest
 
 from app.routing.graph import EARTH_M_PER_DEG_LAT, build_graph, mark_familiar
 from app.routing.osm import OsmData, tiles_for_bbox
-from app.routing.router import Preferences, edge_factor, flattest, loop, point_to_point, shortest
+from app.routing.router import Preferences, edge_factor, flattest, loop, loop_via, point_to_point, shortest, via_route
 
 LAT0, LON0 = 45.76, 4.78
 STEP = 200 / EARTH_M_PER_DEG_LAT  # 200 m between grid lines
@@ -326,3 +326,32 @@ def test_routes_avoid_a_failed_far_tile(tmp_path, monkeypatch):
     monkeypatch.setattr(service, "download_missing", failing(_tile_of(*start)))
     with pytest.raises(RoutingError, match="départ"):
         svc.generate(start, Preferences(), distance_m=4000, end=end)
+
+
+def _nodes_of(g, route):
+    return {n for idx, _ in route.edges for n in (g.edges[idx].u, g.edges[idx].v)}
+
+
+def test_loop_passes_through_the_points_de_passage():
+    g = build_graph(grid())
+    via = 808  # 600 m north, 600 m east of the start (505)
+    routes = loop_via(g, 505, [via], 4000, Preferences())
+    assert routes and all(via in _nodes_of(g, r) for r in routes)
+    first, last = g.edges[routes[0].edges[0][0]], g.edges[routes[0].edges[-1][0]]
+    assert 505 in (first.u, first.v) and 505 in (last.u, last.v)  # back to the start
+    assert 3000 <= routes[0].length(g) <= 5200
+
+
+def test_loop_through_a_far_point_is_longer_than_asked():
+    g = build_graph(grid())
+    routes = loop_via(g, 505, [1010], 1000, Preferences())  # the corner, ~1.4 km away for a 1 km loop
+    assert routes and routes[0].length(g) >= 2000 and 1010 in _nodes_of(g, routes[0])
+
+
+def test_one_way_through_points_then_to_the_end():
+    g = build_graph(grid())
+    route = via_route(g, 0, 10, [505], Preferences())[0]  # bottom-left -> bottom-right via the centre
+    nodes = _nodes_of(g, route)
+    assert {0, 505, 10} <= nodes
+    longer = via_route(g, 0, 10, [505], Preferences(), distance_m=4500)[0]
+    assert longer.length(g) > route.length(g) and 505 in _nodes_of(g, longer)

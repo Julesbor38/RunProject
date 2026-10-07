@@ -3,12 +3,15 @@ import type { Map, MapMouseEvent, PointLike } from "maplibre-gl";
 import { cancelRoute, fetchRouteProgress, fetchRoutes, gpxUrl } from "./api";
 import type { LngLat, Preferences, RouteCollection, RouteFeature, RouteProgress } from "./api";
 import { fitTo } from "./activities";
-import { isMobile, km, pct } from "./format";
+import { escape, isMobile, km, pct } from "./format";
 import { isNative } from "./native";
+import { CATEGORIES, summarize } from "./pois";
+import type { PoiCategory, PoiLayer } from "./pois";
 import { prepareGpx, sendGpx, shareNative } from "./share";
 import { pointAt, renderProfile } from "./profile";
 
 const ROUTE_COLORS = ["#2563eb", "#ea580c", "#db2777"];
+const MAX_VIA = 3;
 const STORAGE_PREFIX = "trailmap.planner."; // + user: accounts sharing a browser don't see each other's start
 
 interface PrefDef {
@@ -70,6 +73,9 @@ export class Planner {
   private start: Marker | null = null;
   private end: Marker | null = null;
   private routes: RouteFeature[] = [];
+  private vias: { at: LngLat; name: string; marker: Marker }[] = []; // « Passer par ici », max 3
+  /** The notable places layer (main.ts): its clicks are not the planner's; the list under a route opens them. */
+  pois: PoiLayer | null = null;
   private flatResults = false; // the shown routes come from « Le plus plat »
   private selected = 0;
   private busy = false;
@@ -97,6 +103,7 @@ export class Planner {
     map.on("click", (e: MapMouseEvent) => {
       if (!this.active || this.busy) return;
       if (map.queryRenderedFeatures(e.point, { layers: ["routes"] }).length) return; // selecting a route
+      if (this.pois?.hitAt(e.point)) return; // a notable place: its sheet
       const at = e.lngLat.toArray() as LngLat;
       // A click places a missing point, or moves the one being picked; placed points are otherwise dragged.
       const target = this.picking ?? (!this.start ? "start" : this.mode === "oneway" && !this.end ? "end" : null);
@@ -118,6 +125,7 @@ export class Planner {
 
   /** Whether a map click there is the planner's: placing or moving a point, or picking a route. */
   claimsClick(point: PointLike): boolean {
+    if (this.pois?.hitAt(point)) return true; // a notable place, not a track
     if (!this.active || this.busy) return false;
     if (this.map.queryRenderedFeatures(point, { layers: ["routes"] }).length) return true;
     return this.picking !== null || !this.start || (this.mode === "oneway" && !this.end);
@@ -203,6 +211,65 @@ export class Planner {
     this.pointsChanged();
   }
 
+  /** « Passer par ici » (sheet of a notable place): the next routes go through it. */
+  addVia(at: LngLat, name: string) {
+    if (this.vias.length >= MAX_VIA) {
+      this.status(`${MAX_VIA} points de passage au maximum : retirez-en un d'abord.`, true);
+      return;
+    }
+    const marker = makeMarker(String(this.vias.length + 1), "via").setLngLat(at).addTo(this.map);
+    marker.on("dragend", () => {
+      const v = this.vias.find((x) => x.marker === marker);
+      if (v) v.at = marker.getLngLat().toArray() as LngLat;
+      this.pointsChanged();
+    });
+    this.vias.push({ at, name, marker });
+    this.renderVias();
+    this.pointsChanged();
+    this.status(`« ${name} » ajouté aux points de passage : générez l'itinéraire.`);
+  }
+
+  private removeVia(i: number) {
+    this.vias.splice(i, 1)[0]?.marker.remove();
+    this.vias.forEach((v, j) => (v.marker.getElement().textContent = String(j + 1)));
+    this.renderVias();
+    this.pointsChanged();
+  }
+
+  private renderVias() {
+    const box = document.getElementById("via-list")!;
+    box.hidden = !this.vias.length;
+    box.innerHTML = this.vias
+      .map(
+        (v, i) => `<div class="point via-row"><span class="pin via">${i + 1}</span><span>${escape(v.name)}</span>
+          <button type="button" class="icon-btn via-remove" data-i="${i}" aria-label="Retirer ${escape(v.name)}">×</button></div>`,
+      )
+      .join("");
+    box.querySelectorAll<HTMLButtonElement>(".via-remove").forEach((b) => b.addEventListener("click", () => this.removeVia(Number(b.dataset.i))));
+  }
+
+  /** Category chips of the notable places (they live in this tab). */
+  renderPoiFilters() {
+    const box = document.getElementById("poi-filters")!;
+    box.innerHTML = "";
+    if (!this.pois) return;
+    (Object.keys(CATEGORIES) as PoiCategory[]).forEach((cat) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "chip" + (this.pois!.enabled.has(cat) ? " on" : "");
+      b.style.setProperty("--c", CATEGORIES[cat].color);
+      b.innerHTML = `<span class="dot"></span>${CATEGORIES[cat].label}`;
+      b.onclick = () => {
+        const cats = new Set(this.pois!.enabled);
+        if (cats.has(cat)) cats.delete(cat);
+        else cats.add(cat);
+        this.pois!.setCategories(cats);
+        this.renderPoiFilters();
+      };
+      box.appendChild(b);
+    });
+  }
+
   private pointsChanged() {
     this.clearRoutes();
     this.renderPoints();
@@ -268,6 +335,7 @@ export class Planner {
           preferences: { ...this.prefs, hills: this.hills() },
           request_id: id,
           flat: this.ascentMode === "flat",
+          via: this.vias.map((v) => v.at),
         },
         abort.signal,
       );
@@ -282,7 +350,7 @@ export class Planner {
             ? `Le terrain ne permet pas ${this.mode === "loop" ? "de boucle" : "d'itinéraire"} de ${this.distance} km dans la tranche ${rangeText(range)} ici : voici les plus proches.` +
               (fc.features.some((f) => f.properties.ascent_m > range[1]) ? " Pour le moins de dénivelé possible, choisissez « Le plus plat »." : "")
             : null;
-      this.status([note, fc.warning].filter(Boolean).join(" ") || null, false);
+      this.status([note, fc.notice, fc.warning].filter(Boolean).join(" ") || null, false);
     } catch (e) {
       if (abort.signal.aborted) this.status("Génération annulée.");
       else this.status(`Impossible de générer l'itinéraire : ${(e as Error).message}`, true);
@@ -510,6 +578,8 @@ export class Planner {
           ${p.in_ascent_range === false ? `<span class="badge">hors tranche</span>` : ""}
         </p>
         ${r.id === this.selected && p.profile.length ? `<div class="profile"></div>` : ""}
+        ${p.pois?.length ? `<details class="route-pois"><summary><strong>Lieux notables</strong> : ${escape(summarize(p.pois))}</summary>
+          <ul>${placesList(p.pois)}</ul></details>` : ""}
         <div class="bars">
           ${bar("Nature", p.nature)}
           ${bar("Éclairé", p.lit)}
@@ -522,6 +592,13 @@ export class Planner {
         </div>
         <p class="send-note" hidden></p>`;
       card.addEventListener("click", () => this.select(r.id));
+      card.querySelectorAll<HTMLButtonElement>(".poi-link").forEach((b) =>
+        b.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this.pois?.show(b.dataset.id!);
+        }),
+      );
+      card.querySelector(".route-pois")?.addEventListener("click", (e) => e.stopPropagation());
       const profileBox = card.querySelector(".profile") as HTMLElement | null;
       if (profileBox) {
         profileBox.addEventListener("click", (e) => e.stopPropagation());
@@ -653,7 +730,19 @@ export class Planner {
   }
 }
 
-function makeMarker(label: string, kind: "start" | "end") {
+/** Named places (clickable), then the nameless ones counted by kind (« + 6 points de vue »). */
+function placesList(pois: { id: string; name: string; category: string; kind: string }[]): string {
+  const named = pois.filter((x) => x.name).slice(0, 12);
+  const rest = pois.filter((x) => !named.includes(x));
+  const color = (cat: string) => CATEGORIES[cat as PoiCategory]?.color ?? "#888";
+  return (
+    named
+      .map((x) => `<li><button type="button" class="poi-link" data-id="${escape(x.id)}" style="--c:${color(x.category)}"><span class="dot"></span>${escape(x.name)}</button></li>`)
+      .join("") + (rest.length ? `<li class="muted small">+ ${escape(summarize(rest))}</li>` : "")
+  );
+}
+
+function makeMarker(label: string, kind: "start" | "end" | "via") {
   const el = document.createElement("div");
   el.className = `pin ${kind} marker`;
   el.textContent = label;
