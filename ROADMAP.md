@@ -330,6 +330,26 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 - Vérifié (ordinateur et vue iPhone) en cliquant sur de vraies traces : départ placé d'abord quand il
   manque, puis fiche de la sortie et fiche d'évaluation, dans les deux onglets.
 
+### 2026-10-07 — Création de compte et données séparées par compte
+- « Créer un compte » sur l'écran de connexion (identifiant 3–32 caractères [a-z0-9._-], mot de passe
+  ≥ 10 caractères confirmé), connexion automatique ; 5 créations par heure et par adresse au plus ;
+  fermable avec `TRAILMAP_SIGNUP=0` (serveur public).
+- **Chaque compte n'a accès qu'à ses données** : data/users/<nom>/ (sorties, cache, évaluations, itinéraires
+  générés et leurs GPX, zones de confidentialité). Côté serveur, un `Workspace` par compte, chargé à sa
+  première requête : sorties, moteur d'itinéraires (« déjà couru » d'après ses propres traces),
+  générations et import en cours. Tuiles OSM et altitudes restent communes (aucune donnée personnelle).
+  `/api/health` ne dit plus rien des données d'un compte.
+- Un nouveau compte arrive directement sur « Mes sorties » avec l'import ouvert et un message d'accueil.
+- Point de départ mémorisé par compte dans le navigateur (deux comptes sur le même téléphone ne voient
+  pas le départ de l'autre).
+- Données existantes rattachées au compte « jules » (`python -m app.workspace adopt jules` : déplacement,
+  rien d'écrasé). Un cache vide recréé à la racine pendant la bascule a été supprimé.
+- Vérifié de bout en bout (vue iPhone) : création de « marie », mots de passe différents refusés, compte vide
+  accueilli, import d'une sortie ; « demo » garde ses 254 sorties sans celle de marie.
+- 66 tests OK, 1 ignoré (nouveaux : création de compte et ses règles, cloisonnement des sorties, évaluations,
+  imports et GPX entre deux comptes, rattachement des anciennes données).
+- Prochaine étape côté comptes : mise en commun (évaluations partagées des tronçons, étape 5).
+
 ---
 
 ## État au 2026-10-07

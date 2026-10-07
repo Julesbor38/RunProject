@@ -30,12 +30,13 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 - Dénivelé : « Le plus plat » minimise le D+ (grande boucle, pétales de 2–5 km ou aller-retour, `flat: true`) ;
   Vallonné / Montagne / Personnalisé gardent une tranche de D+.
 - Comptes : connexion obligatoire (identifiant + mot de passe) pour toute l'API sauf /api/health ;
-  comptes créés en ligne de commande uniquement (`python -m app.auth add-user <nom>`).
+  création de compte sur l'écran de connexion (désactivable : TRAILMAP_SIGNUP=0) ou en ligne de commande.
+  **Chaque compte n'a accès qu'à ses propres données** (data/users/<nom>/) ; mise en commun plus tard.
 - « Mes sorties » : « Mettre à jour mes données » (nouvelle archive Strava .zip ou fichiers .fit/.gpx/.tcx,
   import en arrière-plan, bandeau des nouvelles sorties) ; évaluation de chaque sortie de 1 à 5 sur
   8 critères (sécurité, éclairage, beauté du paysage, plaisir, entretien, abri, tranquillité,
   peu de circulation) + commentaire, en attendant de les reporter sur les tronçons (étape 3).
-- Tests : 61 OK, 1 ignoré.
+- Tests : 66 OK, 1 ignoré.
 
 ## Architecture
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
@@ -44,6 +45,9 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   - `app/auth.py` : comptes (scrypt), sessions (cookie HttpOnly/Secure/SameSite=Strict, seul le SHA-256
     du jeton est stocké), blocage après 5 échecs ; middleware dans `api.py` : toute route /api exige une
     session sauf PUBLIC_API (health, login, logout) ; tests : marqueur `auth`, sinon session simulée (conftest)
+  - `app/workspace.py` : données propres à chaque compte (`Workspace` : sorties, moteur d'itinéraires avec
+    ses traces pour « déjà couru », générations, import en cours), chargées à la première requête du compte
+    (dépendance FastAPI `workspace` dans api.py) ; `adopt` : rattacher les données d'avant les comptes
   - `app/imports.py` : archive Strava (.zip, extraction limitée à activities.csv + activities/, anti zip-slip
     et zip-bomb) ou fichiers isolés ; `app/ratings.py` : évaluations par sortie et par utilisateur
 - frontend/ : TypeScript + Vite + MapLibre GL 6 (PWA à venir), fond OpenFreeMap
@@ -77,13 +81,15 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 - Les notes seront attachées à des tronçons OSM (après map-matching), pas aux traces brutes.
 
 ## API
-Toutes les routes exigent une session (cookie), sauf /api/health et /api/auth/login|logout.
-- POST /api/auth/login {username, password}, POST /api/auth/logout, GET /api/auth/me
+Toutes les routes exigent une session (cookie), sauf /api/health et /api/auth/login|logout|signup|options.
+Chaque route ne lit et n'écrit que les données du compte connecté (data/users/<nom>/).
+- POST /api/auth/login {username, password}, POST /api/auth/signup (même corps : crée le compte et connecte),
+  GET /api/auth/options ({signup}), POST /api/auth/logout, GET /api/auth/me
 - POST /api/import (multipart `files`) : archive Strava .zip et/ou .fit/.gpx/.tcx, puis réimport en arrière-plan ;
   GET /api/import/status : running / done (`new` : clés des sorties ajoutées) / error
 - GET /api/ratings : critères + évaluations de l'utilisateur ; PUT|DELETE /api/ratings/{key}
   ({scores: {critère: 1..5}, comment}) ; `key` = clé stable de la sortie (`strava:<id>` ou `file:<nom>`)
-- GET  /api/health : état (activités, routage, front construit), sans données de trace
+- GET  /api/health : état (comptes chargés, générations en cours, front construit), rien sur les données d'un compte
 - GET  /api/activities : traces masquées + simplifiées (~700 Ko), cache data/cache/
 - POST /api/reload : relit data/raw
 - GET  /api/routing/status : avancement du pré-téléchargement OSM
@@ -110,7 +116,7 @@ Toutes les routes exigent une session (cookie), sauf /api/health et /api/auth/lo
   https://github.com/Julesbor38/Run-Project-Data (`trail-map-data/` = contenu de data/,
   `strava-export/` = export Strava complet). Le mettre à jour quand data/ change, **sans data/osm/**
   (cache régénérable de 7,5 Go + extraits .pbf de plusieurs Go, trop gros pour GitHub) ni
-  data/auth/sessions.json ; data/ratings.json, lui, doit y être.
+  data/auth/sessions.json ; data/users/ (sorties, évaluations de chaque compte), lui, doit y être.
 - Ne PAS utiliser l'API Strava comme source pour la version communautaire
   (CGU depuis nov. 2024 : affichage limité au seul utilisateur, pas d'usage IA).
   Source = export d'archive Strava / fichiers importés par l'utilisateur.
@@ -128,8 +134,11 @@ Toutes les routes exigent une session (cookie), sauf /api/health et /api/auth/lo
 - cd backend && python3 -m venv .venv && source .venv/bin/activate && pip install -e ".[dev]"
   (sans le paquet python3-venv : `uv venv .venv && uv pip install -e ".[dev]"`, uv dans ~/.local/bin)
   (recréer le .venv si le dossier du projet a été déplacé : ses chemins sont absolus)
-- Comptes : cd backend && .venv/bin/python -m app.auth add-user <nom> | passwd <nom> | list | remove <nom>
-  (mot de passe demandé au clavier, 10 caractères minimum ; un nouveau mot de passe ferme les sessions)
+- Comptes : sur l'écran de connexion (« Créer un compte »), ou
+  cd backend && .venv/bin/python -m app.auth add-user <nom> | passwd <nom> | list | remove <nom>
+  (mot de passe demandé au clavier, 10 caractères minimum ; un nouveau mot de passe ferme les sessions ;
+  remove ne supprime pas data/users/<nom>/). Identifiant : 3–32 caractères [a-z0-9._-], en minuscules.
+- Données d'avant les comptes (data/raw…) -> un compte : python -m app.workspace adopt <nom> (fait pour jules)
 - python -m app.ingest <fichier|dossier|archive_strava_dézippée>
 - pytest
 - API : cd backend && uvicorn app.api:app --reload  (port 8000, lit data/raw, cache data/cache/)
@@ -155,12 +164,12 @@ Toutes les routes exigent une session (cookie), sauf /api/health et /api/auth/lo
 - docker compose up -d db  (PostGIS, pas encore utilisé par l'API)
 
 ## Données
-- data/raw/strava/ : export Strava dézippé (activities.csv + activities/), archive d'origine data/raw/export_124148223.zip
-- data/raw/*.fit : exports Coros (18 fichiers)
-- data/privacy.json : zones de confidentialité (optionnel)
+- data/users/<nom>/ : tout ce qui appartient à un compte (personne d'autre n'y accède) :
+  - raw/strava/ : export Strava dézippé (activities.csv + activities/) ; raw/strava-export.zip : dernière
+    archive envoyée ; raw/uploads/ : fichiers ajoutés depuis la page ; raw/*.fit : exports Coros
+    (jules : archive d'origine raw/export_124148223.zip + 18 .fit)
+  - cache/ : sorties prétraitées ; routes/ : itinéraires générés (GPX) ; ratings.json : évaluations
+    (à sauvegarder !) ; privacy.json : zones de confidentialité (optionnel)
 - data/auth/ : comptes (users.json, mots de passe hachés) et sessions (sessions.json), droits 600
-- data/ratings.json : évaluations des sorties (à sauvegarder !)
-- data/raw/uploads/ : fichiers ajoutés depuis la page ; data/raw/strava-export.zip : dernière archive envoyée
-- data/routes/ : itinéraires générés récemment (pour leur GPX)
-- data/osm/ : tuiles OSM (cache), data/dem/ : tuiles d'altitude, data/cache/ : activités prétraitées
+- data/osm/ : tuiles OSM (cache, communes), data/dem/ : tuiles d'altitude (communes)
 - Types importés : course, trail, randonnée (sport normalisé run / trail_run / hike)

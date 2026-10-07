@@ -47,7 +47,9 @@ Puis, depuis le dépôt :
 ./deploy-local.sh            # dépendances, build du front, tests, installe et démarre le service
 ```
 
-Créer ensuite son compte (le site demande une connexion ; il n'y a pas d'inscription en ligne) :
+Créer ensuite son compte : depuis l'écran de connexion (« Créer un compte »), ou en ligne de commande.
+Chaque compte ne voit que ses propres sorties (data/users/<nom>/). Sur un serveur public (VPS), fermer la
+création de compte en ligne avec `Environment=TRAILMAP_SIGNUP=0` dans le service systemd.
 
 ```bash
 cd backend && .venv/bin/python -m app.auth add-user jules     # mot de passe demandé (10 caractères minimum)
