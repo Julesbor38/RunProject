@@ -6,11 +6,13 @@ import logging
 import math
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
+
+from .job import Job
 
 # Public Overpass instances, tried in turn when one is overloaded (504/429 are common).
 OVERPASS_URLS = (
@@ -51,13 +53,50 @@ def tile_path(tile: tuple[int, int], cache_dir: Path) -> Path:
     return cache_dir / f"v{TILE_FORMAT_VERSION}_{tile[0]}_{tile[1]}.json"
 
 
-def download_missing(tiles: list[tuple[int, int]], cache_dir: Path) -> int:
-    """Fetch uncached tiles, a few at a time. Returns the number downloaded."""
+def download_missing(
+    tiles: list[tuple[int, int]],
+    cache_dir: Path,
+    job: Job | None = None,
+    deadline_s: float | None = None,
+    stage: str = "download",
+) -> tuple[int, list[tuple[int, int]]]:
+    """Fetch uncached tiles, a few at a time. Returns (number downloaded, tiles that failed).
+
+    Tiles not there after `deadline_s` count as failed. Raises Cancelled when `job` is cancelled.
+    Either way queued tiles are dropped and those in flight finish in the background (and are cached).
+    """
     missing = [t for t in tiles if not tile_path(t, cache_dir).exists()]
-    if missing:
-        with ThreadPoolExecutor(PARALLEL_DOWNLOADS) as pool:
-            list(pool.map(lambda t: _tile(t, cache_dir), missing))
-    return len(missing)
+    failed: list[tuple[int, int]] = []
+    if not missing:
+        return 0, failed
+    if job is not None:
+        job.step(stage, 0, len(missing))
+    pool = ThreadPoolExecutor(PARALLEL_DOWNLOADS)
+    try:
+        # In flight, a tile keeps going for the next request even if this one gives up on it.
+        futures = {pool.submit(_tile, t, cache_dir): t for t in missing}
+        pending = set(futures)
+        end = time.monotonic() + deadline_s if deadline_s is not None else math.inf
+        while pending:
+            if job is not None:
+                job.check()
+            left = end - time.monotonic()
+            if left <= 0:
+                failed += [futures[f] for f in pending]
+                log.warning("OSM tiles %s not downloaded in %ss", [futures[f] for f in pending], deadline_s)
+                break
+            done, pending = wait(pending, timeout=min(0.5, left), return_when=FIRST_COMPLETED)
+            for f in done:
+                try:
+                    f.result()
+                except Exception as e:  # noqa: BLE001 - the caller decides whether the tile was essential
+                    failed.append(futures[f])
+                    log.warning("OSM tile %s not downloaded: %s", futures[f], e)
+                if job is not None:
+                    job.advance()
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+    return len(missing) - len(failed), failed
 
 
 def load_tiles(tiles: list[tuple[int, int]], cache_dir: Path) -> OsmData:

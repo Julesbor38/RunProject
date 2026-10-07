@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 from .elevation import climb
 from .graph import EARTH_M_PER_DEG_LAT, Edge, Graph
+from .job import Job
 
 MIN_FACTOR = 0.5  # lowest possible cost factor, keeps the A* heuristic admissible
 REUSE_PENALTY = 4.0  # discourages running the same edge twice in a loop
@@ -187,6 +188,7 @@ def loop(
     n_results: int = 3,
     n_bearings: int = 8,
     ascent_range: tuple[float, float] | None = None,
+    job: Job | None = None,
 ) -> list[Route]:
     """Loops of about `distance_m` through two waypoints placed in a triangle around the start.
 
@@ -201,8 +203,11 @@ def loop(
         # The climb weight steers the ascent; another setting and a narrow loop shape widen the
         # spread of ascents (a narrow loop can follow a valley, or climb straight up and back).
         variants += [(_other_hills(p), EQUILATERAL), (p, NARROW)]
+    job = job or Job()
+    job.step("routes", 0, len(variants) * n_bearings)
     weights = [Weights(g, prefs) for prefs, _ in variants]
     for b, (vi, (prefs, apex)) in ((b, v) for v in enumerate(variants) for b in range(n_bearings)):
+        job.advance()
         bearing = 2 * math.pi * (b + vi / len(variants)) / n_bearings  # variants explore offset bearings
 
         def triangle(side: float) -> Route | None:
@@ -226,6 +231,7 @@ def point_to_point(
     ascent_range: tuple[float, float] | None = None,
     n_results: int = 3,
     n_angles: int = 8,
+    job: Job | None = None,
 ) -> list[Route]:
     """The best route from src to dst or, given `distance_m`, routes of about that length.
 
@@ -233,6 +239,8 @@ def point_to_point(
     any point of it makes a src-waypoint-dst path of the same straight-line length.
     A target shorter than the direct route yields the direct route alone.
     """
+    job = job or Job()
+    job.step("routes")
     weights = Weights(g, p)
     direct = shortest(g, src, dst, p, w=weights)
     if direct is None or not distance_m or direct.length(g) >= distance_m * 0.95:
@@ -246,7 +254,9 @@ def point_to_point(
     candidates = [(_score(g, direct, distance_m, ascent_range), direct)]
     variants = [p] + ([_other_hills(p)] if ascent_range is not None and g.ele else [])
     all_weights = [weights] + [Weights(g, v) for v in variants[1:]]
+    job.step("routes", 0, len(variants) * n_angles)
     for a, (vi, prefs) in ((a, v) for v in enumerate(variants) for a in range(n_angles)):
+        job.advance()
         # Odd multiples of pi/n: never on the src-dst axis, which would mean running past dst and back.
         theta = math.pi * (2 * a + 1 + vi) / n_angles
 

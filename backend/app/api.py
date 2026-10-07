@@ -25,6 +25,7 @@ from .ingest.simplify import simplify
 from .routing import Preferences, RoutingError, RoutingService
 from .routing.osm import TILE_DEG, load_cached_tiles, tile_path
 from .routing.elevation import Dem
+from .routing.job import Cancelled, Job
 
 DATA_DIR = Path(os.environ.get("TRAILMAP_DATA", Path(__file__).parents[2] / "data"))
 SIMPLIFY_TOLERANCE_M = 5.0
@@ -155,6 +156,7 @@ class RouteRequest(BaseModel):
     ascent_min_m: float | None = Field(None, ge=0)  # wanted D+ range (with distance_km)
     ascent_max_m: float | None = Field(None, ge=0)
     preferences: PreferencesIn = PreferencesIn()
+    request_id: str | None = Field(None, max_length=64)  # lets the client follow and cancel the generation
 
 
 @app.get("/api/routing/status")
@@ -166,6 +168,9 @@ def routing_status() -> dict:
 @app.post("/api/routes")
 def routes(req: RouteRequest) -> dict:
     """Generate up to 3 loops (or one A-to-B route) matching the preferences."""
+    jobs = state.setdefault("jobs", {})
+    # setdefault: a cancel that arrived before the request itself still applies.
+    job = jobs.setdefault(req.request_id, Job()) if req.request_id else Job()
     try:
         return state["routing"].generate(
             req.start,
@@ -173,9 +178,29 @@ def routes(req: RouteRequest) -> dict:
             distance_m=req.distance_km * 1000 if req.distance_km else None,
             end=req.end,
             ascent_range=_ascent_range(req),
+            job=job,
         )
     except RoutingError as e:
         raise HTTPException(422, str(e)) from e
+    except Cancelled as e:
+        raise HTTPException(409, "génération annulée") from e
+    finally:
+        if req.request_id:
+            jobs.pop(req.request_id, None)
+
+
+@app.get("/api/routes/{request_id}/progress")
+def route_progress(request_id: str) -> dict:
+    job = state.get("jobs", {}).get(request_id)
+    if job is None:
+        raise HTTPException(404, "génération inconnue ou terminée")
+    return job.progress()
+
+
+@app.post("/api/routes/{request_id}/cancel")
+def cancel_route(request_id: str) -> dict:
+    state.setdefault("jobs", {}).setdefault(request_id, Job()).cancel()
+    return {"cancelled": True}
 
 
 def _ascent_range(req: RouteRequest) -> tuple[float, float] | None:

@@ -55,6 +55,7 @@ export interface RouteCollection {
   type: "FeatureCollection";
   features: RouteFeature[];
   elevation: boolean;
+  warning?: string; // some OSM tiles could not be downloaded
 }
 
 /** Pieces of the tracks with the number of distinct activities that went along them. */
@@ -82,18 +83,23 @@ export async function fetchActivities(): Promise<ActivityCollection> {
   return r.json();
 }
 
-export async function fetchRoutes(body: {
-  start: LngLat;
-  end?: LngLat;
-  distance_km?: number;
-  ascent_min_m?: number;
-  ascent_max_m?: number;
-  preferences: Preferences;
-}): Promise<RouteCollection> {
+export async function fetchRoutes(
+  body: {
+    start: LngLat;
+    end?: LngLat;
+    distance_km?: number;
+    ascent_min_m?: number;
+    ascent_max_m?: number;
+    preferences: Preferences;
+    request_id?: string;
+  },
+  signal?: AbortSignal,
+): Promise<RouteCollection> {
   const r = await fetch("/api/routes", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
+    signal,
   });
   if (!r.ok) {
     const detail = await r.json().catch(() => null);
@@ -113,4 +119,21 @@ export async function fetchRoutingStatus(): Promise<RoutingStatus> {
   const r = await fetch("/api/routing/status");
   if (!r.ok) throw new Error(`API ${r.status}`);
   return r.json();
+}
+
+export interface RouteProgress {
+  stage: "start" | "download_ends" | "download" | "graph" | "routes";
+  done: number;
+  total: number;
+  cancelled: boolean;
+}
+
+/** Progress of a generation started with this `request_id`, or null once it is over. */
+export async function fetchRouteProgress(requestId: string): Promise<RouteProgress | null> {
+  const r = await fetch(`/api/routes/${encodeURIComponent(requestId)}/progress`);
+  return r.ok ? r.json() : null;
+}
+
+export async function cancelRoute(requestId: string): Promise<void> {
+  await fetch(`/api/routes/${encodeURIComponent(requestId)}/cancel`, { method: "POST" });
 }

@@ -162,20 +162,45 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 - Essayé puis retiré : suppression des petites boucles redondantes (ouvrait des coupures sur de vraies rues).
 - 53 tests OK, 1 ignoré.
 
+### 2026-10-07 — Itinéraires : annulation, Overpass en panne, tuiles OSM hors-ligne
+- Installation sur ce PC : sans le paquet `python3-venv` (sudo), venv créé avec `uv` (`~/.local/bin`) ;
+  Node 24 LTS dans `~/.local/node` ; `data/` restauré depuis Run-Project-Data.
+- Aller simple à distance visée qui « mouline » (ex. Tassin → Fourvière 30 km) : le calcul ne prend
+  que quelques secondes, l'attente venait d'Overpass (> 100 s par zone, 504, jusqu'à ~12 min de
+  tentatives par zone, et une zone en échec faisait tout échouer).
+  - Bouton « ✕ Annuler le calcul » (et Échap) : le serveur s'arrête en moins d'une seconde
+    (`Job`, `POST /api/routes/{id}/cancel`).
+  - Avancement affiché (`GET /api/routes/{id}/progress`) : zones du départ/arrivée, autres zones x/y,
+    préparation du réseau, essais x/16.
+  - Zones du départ et de l'arrivée téléchargées d'abord (jusqu'à 3 min, indispensables), puis les
+    autres, les plus proches d'abord, 45 s au plus ; on calcule sans celles qui manquent (message),
+    elles finissent en arrière-plan. Une zone en échec n'est pas redemandée avant 5 min.
+  - Seules les zones à portée sont chargées (bande autour du segment A–B, disque pour une boucle) :
+    30 km depuis Tassin, 9 zones à télécharger au lieu de 15.
+  - Tassin → Fourvière 30 km : 1 min 08 la première fois avec Overpass saturé (> 4 min et souvent
+    un échec avant), 36 s graphe à reconstruire, 6 s ensuite.
+- Overpass entièrement en panne (tous les serveurs en 504 / sans réponse) : impossible de partir loin
+  de chez soi. → **Tuiles OSM hors-ligne pour Rhône-Alpes** : extrait Geofabrik (530 Mo) découpé par
+  `python -m app.routing.extract` (pyosmium) au même format que les tuiles Overpass, seulement les
+  zones entièrement dans la région (les bords restent à Overpass). 1 859 zones en 1 min 42,
+  1,3 Go de mémoire ; > 99,8 % de chemins en commun avec Overpass. Annecy boucle 15 km : 6,5 s ;
+  Grenoble aller simple 25 km : 17 s, sans Overpass.
+- `backend/Run-Project-Data/` (clone du dépôt privé) ajouté au `.gitignore`.
+- 62 tests OK, 1 ignoré.
+
 ---
 
-## État au 2026-10-04
-- Pré-téléchargement OSM : 74 / 176 zones en cache (il reprend au lancement de l'API ; la carte de
-  fréquentation se recalcule quand il se termine).
-  Overpass renvoie souvent des erreurs réseau (« Cannot assign requested address ») sur ce PC.
+## État au 2026-10-07
+- Tuiles OSM : toute la région Rhône-Alpes en local (extrait Geofabrik du 2026-10-07, à rafraîchir
+  avec `--force`) ; Overpass seulement en bordure et hors région, souvent saturé.
 - Rien n'utilise encore PostGIS ni GraphHopper.
 
 ## Prochaines tâches
 1. **Corriger les 3 .fit.gz illisibles** (`10708302692`, `10690331142`, `10690331477`) :
    erreur `developer_data_index 0 not defined`, assouplir le parseur FIT.
-2. **Performances** : encore ~7 s pour 20 km + tranche de D+ (132 recherches A*). Pistes : un seul
-   Dijkstra depuis le départ partagé entre candidats, ou GraphHopper. Regarder les erreurs
-   réseau Overpass (« Cannot assign requested address », IPv6 ?).
+2. **Performances** : ~6 s pour 30 km graphe en mémoire, mais ~20–30 s pour construire un grand
+   graphe (beaucoup de zones). Pistes : un seul Dijkstra depuis le départ partagé entre candidats,
+   graphe plus compact, ou GraphHopper (qui peut lire le même extrait .osm.pbf).
 3. **Fréquentation** : quelques petits détails dans les carrefours complexes (géométrie OSM réelle) ;
    à vérifier quand toutes les zones OSM seront téléchargées. Le comptage par portion de voie OSM
    (avec direction) est une base pour le map-matching de l'étape 2.

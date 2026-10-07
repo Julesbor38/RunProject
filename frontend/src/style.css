@@ -425,6 +425,10 @@ input[type="range"] {
   cursor: default;
 }
 
+.primary.cancel {
+  background: #64748b;
+}
+
 .status {
   margin: 10px 0 0;
   padding: 10px 12px;

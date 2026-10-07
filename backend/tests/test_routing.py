@@ -193,3 +193,101 @@ def test_loop_targets_ascent_range():
     high = loop(g, 505, 4000, Preferences(hills=1), ascent_range=(80, 400))[0].stats(g)
     assert low["ascent_m"] <= 40 < 80 <= high["ascent_m"]
     assert high["profile"][0][0] == 0 and high["profile"][-1][0] == high["distance_m"]
+
+
+def test_cancelled_job_stops_generation():
+    from app.routing.job import Cancelled, Job
+
+    g = build_graph(grid())
+    job = Job()
+    job.cancel()
+    with pytest.raises(Cancelled):
+        point_to_point(g, 303, 707, Preferences(), distance_m=4000, job=job)
+
+
+def test_job_reports_route_candidates():
+    from app.routing.job import Job
+
+    g = build_graph(grid())
+    job = Job()
+    point_to_point(g, 303, 707, Preferences(), distance_m=4000, job=job)
+    assert job.progress()["stage"] == "routes"
+    assert job.done == job.total == 8
+
+
+def test_failed_tiles_are_reported_not_raised(tmp_path, monkeypatch):
+    from app.routing import osm
+
+    def fake(tile):
+        if tile == (1, 1):
+            raise osm.OverpassError("busy")
+        return {"nodes": {}, "ways": []}
+
+    monkeypatch.setattr(osm, "_download", fake)
+    downloaded, failed = osm.download_missing([(1, 1), (1, 2), (2, 2)], tmp_path)
+    assert (downloaded, failed) == (2, [(1, 1)])
+    assert osm.tile_path((1, 2), tmp_path).exists()
+
+
+def test_download_stops_when_cancelled(tmp_path, monkeypatch):
+    from app.routing import osm
+    from app.routing.job import Cancelled, Job
+
+    monkeypatch.setattr(osm, "_download", lambda tile: {"nodes": {}, "ways": []})
+    job = Job()
+    job.cancel()
+    with pytest.raises(Cancelled):
+        osm.download_missing([(1, 1)], tmp_path, job)
+
+
+def test_slow_tiles_count_as_failed_after_deadline(tmp_path, monkeypatch):
+    import threading
+
+    from app.routing import osm
+
+    release = threading.Event()
+
+    def slow(tile):
+        if tile == (1, 1):
+            release.wait(5)
+        return {"nodes": {}, "ways": []}
+
+    monkeypatch.setattr(osm, "_download", slow)
+    try:
+        downloaded, failed = osm.download_missing([(1, 1), (1, 2)], tmp_path, deadline_s=0.3)
+    finally:
+        release.set()
+    assert (downloaded, failed) == (1, [(1, 1)])
+
+
+def test_far_corner_tiles_are_skipped():
+    from app.routing.service import _tile_to_segment_m, _tile_of
+
+    start = (LON0, LAT0)
+    assert _tile_to_segment_m(_tile_of(*start), start, start) < 0
+    i, j = _tile_of(*start)
+    side = _tile_to_segment_m((i + 1, j), start, start)
+    corner = _tile_to_segment_m((i + 3, j + 3), start, start)
+    assert 0 <= side < corner
+
+
+def test_routes_avoid_a_failed_far_tile(tmp_path, monkeypatch):
+    from app.routing import service
+    from app.routing.service import RoutingError, RoutingService, _tile_of
+
+    start, end = (LON0 + 3 * STEP * 1.43, LAT0 + 3 * STEP), (LON0 + 7 * STEP * 1.43, LAT0 + 7 * STEP)
+    far = (_tile_of(*start)[0] - 1, _tile_of(*start)[1])  # south neighbour, within reach
+    monkeypatch.setattr(service, "load_tiles", lambda tiles, cache_dir: grid())
+    svc = RoutingService(tmp_path, [])
+
+    def failing(*bad):
+        return lambda tiles, cache_dir, job=None, deadline_s=None, stage="download": (0, [t for t in tiles if t in bad])
+
+    monkeypatch.setattr(service, "download_missing", failing(far))
+    fc = svc.generate(start, Preferences(), distance_m=4000, end=end)
+    assert fc["features"] and "warning" in fc
+
+    svc = RoutingService(tmp_path, [])
+    monkeypatch.setattr(service, "download_missing", failing(_tile_of(*start)))
+    with pytest.raises(RoutingError, match="départ"):
+        svc.generate(start, Preferences(), distance_m=4000, end=end)

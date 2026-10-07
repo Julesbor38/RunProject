@@ -1,7 +1,7 @@
 import { Marker } from "maplibre-gl";
 import type { Map, MapMouseEvent } from "maplibre-gl";
-import { fetchRoutes } from "./api";
-import type { LngLat, Preferences, RouteCollection, RouteFeature } from "./api";
+import { cancelRoute, fetchRouteProgress, fetchRoutes } from "./api";
+import type { LngLat, Preferences, RouteCollection, RouteFeature, RouteProgress } from "./api";
 import { fitTo } from "./activities";
 import { download, km, pct, shareableGpx, shareFile, toGpx } from "./format";
 import { pointAt, renderProfile } from "./profile";
@@ -70,6 +70,7 @@ export class Planner {
   private routes: RouteFeature[] = [];
   private selected = 0;
   private busy = false;
+  private generation: { id: string; abort: AbortController } | null = null; // the one running, cancellable
   private picking: "start" | "end" | null = null;
 
   constructor(
@@ -100,7 +101,11 @@ export class Planner {
     document.getElementById("place-end")!.addEventListener("click", () => this.place("end"));
     document.getElementById("locate")!.addEventListener("click", () => this.locate());
     document.getElementById("generate")!.addEventListener("click", () => this.generate());
-    document.addEventListener("keydown", (e) => e.key === "Escape" && this.setPicking(null));
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape") return;
+      if (this.generation) this.cancel();
+      else this.setPicking(null);
+    });
     this.updateButton();
   }
 
@@ -214,6 +219,7 @@ export class Planner {
   // --- generation ---
 
   private async generate() {
+    if (this.generation) return this.cancel();
     if (this.busy) return;
     if (!this.start || (this.mode === "oneway" && !this.end)) {
       const which = !this.start ? "start" : "end";
@@ -226,36 +232,57 @@ export class Planner {
     this.setPicking(null);
     const start = this.start.getLngLat().toArray() as LngLat;
     const end = this.mode === "oneway" ? (this.end?.getLngLat().toArray() as LngLat | undefined) : undefined;
+    const id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    const abort = new AbortController();
+    this.generation = { id, abort };
     this.busy = true;
     this.updateButton();
-    this.status("Calcul en cours… (dans une zone encore jamais utilisée, les chemins OSM sont téléchargés d'abord : jusqu'à une minute)");
+    this.status("Calcul en cours… (Échap ou « Annuler » pour arrêter)");
+    const poll = window.setInterval(async () => {
+      const p = await fetchRouteProgress(id).catch(() => null);
+      if (p && !abort.signal.aborted) this.status(progressText(p));
+    }, 1000);
     try {
       const range = this.withDistance ? this.ascentRange() : null;
-      const fc = await fetchRoutes({
-        start,
-        end,
-        distance_km: this.withDistance ? this.distance : undefined,
-        ascent_min_m: range?.[0],
-        ascent_max_m: range && Number.isFinite(range[1]) ? range[1] : undefined,
-        preferences: { ...this.prefs, hills: this.hills() },
-      });
+      const fc = await fetchRoutes(
+        {
+          start,
+          end,
+          distance_km: this.withDistance ? this.distance : undefined,
+          ascent_min_m: range?.[0],
+          ascent_max_m: range && Number.isFinite(range[1]) ? range[1] : undefined,
+          preferences: { ...this.prefs, hills: this.hills() },
+          request_id: id,
+        },
+        abort.signal,
+      );
       this.showRoutes(fc);
       const missed = range && fc.features.every((f) => f.properties.in_ascent_range === false);
       const direct = this.mode === "oneway" && this.onewayTarget && fc.features.length === 1 ? fc.features[0].properties.distance_m : null;
-      this.status(
+      const note =
         direct !== null
           ? `Le trajet le plus direct fait déjà ${km(direct)}, au moins les ${this.distance} km visés : voici ce trajet.`
           : missed
             ? `Aucun${this.mode === "loop" ? "e boucle" : " itinéraire"} de ${this.distance} km dans la tranche ${rangeText(range)} : voici les plus proches.`
-            : null,
-        false,
-      );
+            : null;
+      this.status([note, fc.warning].filter(Boolean).join(" ") || null, false);
     } catch (e) {
-      this.status(`Impossible de générer l'itinéraire : ${(e as Error).message}`, true);
+      if (abort.signal.aborted) this.status("Génération annulée.");
+      else this.status(`Impossible de générer l'itinéraire : ${(e as Error).message}`, true);
     } finally {
+      window.clearInterval(poll);
+      this.generation = null;
       this.busy = false;
       this.updateButton();
     }
+  }
+
+  /** Stop the running generation: the page gives up at once, the server at its next step. */
+  private cancel() {
+    const g = this.generation;
+    if (!g) return;
+    g.abort.abort();
+    cancelRoute(g.id).catch(() => {});
   }
 
   private showRoutes(fc: RouteCollection) {
@@ -509,8 +536,9 @@ export class Planner {
 
   private updateButton() {
     const b = document.getElementById("generate") as HTMLButtonElement;
-    b.disabled = this.busy;
-    b.textContent = this.busy ? "Calcul…" : this.routes.length ? "Régénérer" : "Générer l'itinéraire";
+    b.disabled = this.busy && !this.generation;
+    b.classList.toggle("cancel", !!this.generation);
+    b.textContent = this.generation ? "✕ Annuler le calcul" : this.routes.length ? "Régénérer" : "Générer l'itinéraire";
   }
 
   private status(text: string | null, error = false) {
@@ -576,6 +604,22 @@ function bar(label: string, value: number, bad = false) {
 
 function samePrefs(a: BasePrefs, b: BasePrefs) {
   return (Object.keys(a) as (keyof BasePrefs)[]).every((k) => Math.abs(a[k] - b[k]) < 1e-6);
+}
+
+function progressText(p: RouteProgress) {
+  const hint = " (Échap pour annuler)";
+  switch (p.stage) {
+    case "download_ends":
+      return `Téléchargement des chemins autour du départ et de l'arrivée (zone jamais utilisée, jusqu'à 3 min si OpenStreetMap est saturé)…${hint}`;
+    case "download":
+      return `Téléchargement des chemins OpenStreetMap de la zone : ${p.done}/${p.total}…${hint}`;
+    case "graph":
+      return `Préparation du réseau de chemins…${hint}`;
+    case "routes":
+      return p.total ? `Recherche des itinéraires : essai ${p.done}/${p.total}…${hint}` : `Recherche du trajet direct…${hint}`;
+    default:
+      return `Calcul en cours…${hint}`;
+  }
 }
 
 function rangeText([lo, hi]: [number, number]) {

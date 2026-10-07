@@ -4,16 +4,21 @@ from __future__ import annotations
 import logging
 import math
 import threading
+import time
 from collections import Counter, OrderedDict
 from pathlib import Path
 
 from .elevation import Dem
 from .graph import EARTH_M_PER_DEG_LAT, Graph, add_elevation, build_graph, mark_familiar
+from .job import Job
 from .osm import TILE_DEG, OverpassError, download_missing, load_tiles, tile_path, tiles_for_bbox
 from .router import Preferences, Route, loop, point_to_point
 
 MAX_DISTANCE_M = 60_000
 GRAPH_CACHE_SIZE = 4
+ENDS_DOWNLOAD_S = 180  # a generation waits this long for the tiles of its start and end, required
+REQUEST_DOWNLOAD_S = 45  # then this long for the others, and routes without those still missing
+RETRY_FAILED_TILE_S = 300  # a tile that just failed is not asked for again by requests before this
 PREFETCH_MIN_RUNS = 2  # tiles crossed by at least this many runs are prefetched, with a 1-tile margin
 
 log = logging.getLogger(__name__)
@@ -29,6 +34,7 @@ class RoutingService:
         self.dem = dem
         self.tracks = tracks  # user's tracks as (lon, lat) polylines, for familiarity
         self._graphs: OrderedDict[tuple, Graph] = OrderedDict()
+        self._failed_at: dict[tuple[int, int], float] = {}  # tile -> time its download last failed
         self._lock = threading.Lock()  # graph cache is shared by concurrent requests
         self.prefetch_tiles = home_tiles(tracks)
         self.prefetch_error: str | None = None
@@ -52,11 +58,9 @@ class RoutingService:
                 for i in range(0, len(self.prefetch_tiles), 2):
                     with self._idle:
                         self._idle.wait_for(lambda: self._requests_downloading == 0)
-                    try:
-                        downloaded += download_missing(self.prefetch_tiles[i : i + 2], self.osm_dir)
-                    except Exception as e:  # noqa: BLE001 - skip the tile, it will load on demand
-                        failed += 1
-                        log.warning("OSM prefetch: tiles skipped: %s", e)
+                    n, skipped = download_missing(self.prefetch_tiles[i : i + 2], self.osm_dir)
+                    downloaded += n
+                    failed += len(skipped)  # they will load on demand
                 if failed:
                     self.prefetch_error = f"{failed} zone(s) non téléchargée(s), elles le seront à la demande"
             finally:
@@ -85,30 +89,41 @@ class RoutingService:
         distance_m: float | None = None,
         end: tuple[float, float] | None = None,
         ascent_range: tuple[float, float] | None = None,
+        job: Job | None = None,
     ) -> dict:
         """`start`/`end` are (lon, lat). A loop when `end` is None, else a point-to-point route
-        (the best one, or routes of about `distance_m` when given)."""
+        (the best one, or routes of about `distance_m` when given).
+
+        `job` reports progress and raises Cancelled once cancelled."""
         if end is None and not distance_m:
             raise RoutingError("distance requise pour une boucle")
         if distance_m and distance_m > MAX_DISTANCE_M:
             raise RoutingError(f"distance max {MAX_DISTANCE_M // 1000} km")
-        g = self._graph(start, end, distance_m)
+        job = job or Job()
+        g, skipped = self._graph(start, end, distance_m, job)
         src = g.nearest_node(start[1], start[0])
         if src is None:
             raise RoutingError("aucun chemin à moins de 500 m du départ")
         if end is None:
-            routes = loop(g, src, distance_m, prefs, ascent_range=ascent_range)
+            routes = loop(g, src, distance_m, prefs, ascent_range=ascent_range, job=job)
         else:
             dst = g.nearest_node(end[1], end[0])
             if dst is None:
                 raise RoutingError("aucun chemin à moins de 500 m de l'arrivée")
-            routes = point_to_point(g, src, dst, prefs, distance_m, ascent_range)
+            routes = point_to_point(g, src, dst, prefs, distance_m, ascent_range, job=job)
         if not routes:
             raise RoutingError("aucun itinéraire trouvé dans cette zone")
         features = [_feature(r, g, i, ascent_range) for i, r in enumerate(routes)]
-        return {"type": "FeatureCollection", "features": features, "elevation": bool(g.ele)}
+        out = {"type": "FeatureCollection", "features": features, "elevation": bool(g.ele)}
+        if skipped:
+            out["warning"] = (
+                f"{skipped} zone(s) OpenStreetMap n'ont pas pu être téléchargées (serveurs saturés) : "
+                "les itinéraires les évitent, régénérez plus tard pour les inclure."
+            )
+        return out
 
-    def _graph(self, start, end, distance_m) -> Graph:
+    def _graph(self, start, end, distance_m, job: Job) -> tuple[Graph, int]:
+        """Graph around the request, and the number of its tiles that could not be downloaded."""
         lons, lats = [start[0]], [start[1]]
         if end is not None:
             lons.append(end[0])
@@ -121,35 +136,86 @@ class RoutingService:
             margin_m = max(1500, (distance_m or 0) / 2.4) + 1000
         dlat = margin_m / EARTH_M_PER_DEG_LAT
         dlon = margin_m / (111_320 * math.cos(math.radians(start[1])))
-        tiles = tuple(tiles_for_bbox(min(lats) - dlat, min(lons) - dlon, max(lats) + dlat, max(lons) + dlon))
+        box = tiles_for_bbox(min(lats) - dlat, min(lons) - dlon, max(lats) + dlat, max(lons) + dlon)
+        a, b = (start[0], start[1]), (lons[-1], lats[-1])
+        near = sorted((d, t) for t in box if (d := _tile_to_segment_m(t, a, b)) <= margin_m)
+        tiles = tuple(t for _, t in near)  # nearest first: downloaded first, more useful when time runs out
+        ends = list(dict.fromkeys([_tile_of(*a), _tile_of(*b)]))
+        now = time.monotonic()
+        recent = [
+            t for t in tiles
+            if t not in ends
+            and now - self._failed_at.get(t, -math.inf) < RETRY_FAILED_TILE_S
+            and not tile_path(t, self.osm_dir).exists()
+        ]
         with self._lock:
             # A graph built for a wider area serves smaller requests too.
             for key, g in self._graphs.items():
-                if set(tiles) <= set(key):
+                if set(tiles) - set(recent) <= set(key):
                     self._graphs.move_to_end(key)
-                    return g
+                    return g, len(recent)
         with self._idle:
             self._requests_downloading += 1
         try:
-            osm = load_tiles(list(tiles), self.osm_dir)
-        except OverpassError as e:
-            raise RoutingError(str(e)) from e
+            # The ends' tiles are required; one far from them that fails only narrows the choice of routes.
+            _, failed = download_missing(ends, self.osm_dir, job, ENDS_DOWNLOAD_S, stage="download_ends")
+            if failed:
+                raise RoutingError(
+                    "les serveurs OpenStreetMap (Overpass) sont saturés et les chemins autour du "
+                    f"{'départ' if _tile_of(*a) in failed else 'point d\'arrivée'} ne sont pas encore connus : "
+                    "le téléchargement continue en arrière-plan, réessayez dans quelques minutes"
+                )
+            rest = [t for t in tiles if t not in recent and t not in ends]
+            _, failed = download_missing(rest, self.osm_dir, job, REQUEST_DOWNLOAD_S)
         finally:
             with self._idle:
                 self._requests_downloading -= 1
                 self._idle.notify_all()
+        self._failed_at.update(dict.fromkeys(failed, time.monotonic()))
+        failed += recent
+        tiles = tuple(t for t in tiles if t not in failed)
+        job.step("graph")
+        try:
+            osm = load_tiles(list(tiles), self.osm_dir)
+        except OverpassError as e:
+            raise RoutingError(str(e)) from e
         g = build_graph(osm)
+        job.check()
         mark_familiar(g, self.tracks)
+        job.check()
         if self.dem is not None:
             try:
                 add_elevation(g, self.dem)
             except Exception as e:  # noqa: BLE001 - routing still works without elevation
                 log.warning("elevation unavailable: %s", e)
         with self._lock:
-            self._graphs[tiles] = g
+            self._graphs[tiles] = g  # without the failed tiles: a later request retries them
             if len(self._graphs) > GRAPH_CACHE_SIZE:
                 self._graphs.popitem(last=False)
-        return g
+        return g, len(failed)
+
+
+def _tile_of(lon: float, lat: float) -> tuple[int, int]:
+    return math.floor(lat / TILE_DEG), math.floor(lon / TILE_DEG)
+
+
+def _tile_to_segment_m(tile: tuple[int, int], a: tuple[float, float], b: tuple[float, float]) -> float:
+    """Distance (m) from a tile to the segment between the (lon, lat) points a and b.
+
+    Routes stay within a band around the start-end segment (a disc around the start for
+    loops): the box's corner tiles beyond it need not be downloaded.
+    """
+    ky = EARTH_M_PER_DEG_LAT
+    kx = 111_320 * math.cos(math.radians(a[1]))
+    south, west = tile[0] * TILE_DEG, tile[1] * TILE_DEG
+    x0, x1, y0, y1 = west * kx, (west + TILE_DEG) * kx, south * ky, (south + TILE_DEG) * ky
+    (ax, ay), (bx, by) = (a[0] * kx, a[1] * ky), (b[0] * kx, b[1] * ky)
+    n = max(1, math.ceil(math.hypot(bx - ax, by - ay) / 100))  # samples every 100 m along the segment
+    best = math.inf
+    for i in range(n + 1):
+        x, y = ax + (bx - ax) * i / n, ay + (by - ay) * i / n
+        best = min(best, math.hypot(max(x0 - x, 0, x - x1), max(y0 - y, 0, y - y1)))
+    return best - 50  # half a sample step
 
 
 def home_tiles(tracks: list[list[tuple[float, float]]]) -> list[tuple[int, int]]:
