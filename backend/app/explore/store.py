@@ -147,6 +147,13 @@ class ExploreStore:
         with self._lock:
             return set(self._db.execute("SELECT cx, cy FROM area_cells WHERE user = ?", (user,)))
 
+    def cells_in(self, user: str, cx0: int, cx1: int, cy0: int, cy1: int, limit: int = 2_000_000) -> list[tuple[int, int]]:
+        with self._lock:
+            return self._db.execute(
+                "SELECT cx, cy FROM area_cells WHERE user = ? AND cx BETWEEN ? AND ? AND cy BETWEEN ? AND ? LIMIT ?",
+                (user, cx0, cx1, cy0, cy1, limit),
+            ).fetchall()
+
     def cells_without_commune(self, limit: int = 200_000) -> list[tuple[str, int, int]]:
         with self._lock:
             return self._db.execute("SELECT user, cx, cy FROM area_cells WHERE commune IS NULL LIMIT ?", (limit,)).fetchall()

@@ -108,3 +108,129 @@ def _ring_area(ring: list) -> float:
     k = M_PER_DEG * math.cos(math.radians(float(r[:, 1].mean())))
     x, y = r[:, 0] * k, r[:, 1] * M_PER_DEG
     return abs(float(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1)))) / 2
+
+
+# --- the « Brouillard »: a veil over the map with the discovered area cut out ---
+
+WORLD = [[-180.0, -85.0], [180.0, -85.0], [180.0, 85.0], [-180.0, 85.0], [-180.0, -85.0]]
+
+
+def block_for_zoom(zoom: float) -> int:
+    """Cells merged into blocks when zoomed out (10 m at 13+, 20 m at 12, 40 m at 11, 80 m below)."""
+    return 1 << max(0, min(3, 13 - math.floor(zoom)))
+
+
+def grid_range(bbox: Sequence[float]) -> tuple[int, int, int, int]:
+    """(cx0, cx1, cy0, cy1) of the cells over a [min_lon, min_lat, max_lon, max_lat] box."""
+    x0, y0 = to_grid(bbox[1], bbox[0])
+    x1, y1 = to_grid(bbox[3], bbox[2])
+    return math.floor(x0 / CELL_M), math.floor(x1 / CELL_M), math.floor(y0 / CELL_M), math.floor(y1 / CELL_M)
+
+
+def veil(cells: Iterable[tuple[int, int]], block: int = 1) -> dict:
+    """GeoJSON MultiPolygon of the veil: the world minus the discovered cells (merged into `block`×`block`), the
+    undiscovered pockets inside a discovered area veiled again. Rings are wound for MapLibre: outer rings one
+    way, holes the other."""
+    blocks = {(cx // block, cy // block) for cx, cy in cells}
+    size = CELL_M * block
+
+    def lonlat(ring):
+        return [[round(x * size / (M_PER_DEG * REF_COS), 6), round(y * size / M_PER_DEG, 6)] for x, y in ring]
+
+    rings = [_simplify(r, 0.7) for r in _outlines(blocks)]
+    rings = [r for r in rings if len(r) >= 4]
+    areas = [_signed_area(r) for r in rings]
+    regions = [r for r, a in zip(rings, areas) if a > 0]  # counter-clockwise: the edge of a discovered area
+    # clockwise: an undiscovered pocket inside one (specks of a block or two, between close passes, are not shown)
+    pockets = [r for r, a in zip(rings, areas) if a < -2.5]
+    polygons = [[WORLD] + [lonlat(r) for r in regions]]  # world counter-clockwise, regions as clockwise holes:
+    polygons[0][1:] = [ring[::-1] for ring in polygons[0][1:]]
+    for pocket in pockets:
+        islands = [r for r in regions if _in_grid_ring(r[0], pocket)]
+        polygons.append([lonlat(pocket[::-1])] + [lonlat(r)[::-1] for r in islands])
+    return {"type": "Feature", "geometry": {"type": "MultiPolygon", "coordinates": polygons}, "properties": {}}
+
+
+def _outlines(blocks: set[tuple[int, int]]) -> list[list[tuple[int, int]]]:
+    """Closed rings (grid vertices) around the blocks, each block on the left: areas counter-clockwise,
+    holes clockwise. Where two blocks touch only by a corner, the ring turns left (keeps to its block)."""
+    out: dict[tuple[int, int], list[tuple[int, int]]] = {}
+    for i, j in blocks:
+        if (i, j - 1) not in blocks:
+            out.setdefault((i, j), []).append((i + 1, j))
+        if (i + 1, j) not in blocks:
+            out.setdefault((i + 1, j), []).append((i + 1, j + 1))
+        if (i, j + 1) not in blocks:
+            out.setdefault((i + 1, j + 1), []).append((i, j + 1))
+        if (i - 1, j) not in blocks:
+            out.setdefault((i, j + 1), []).append((i, j))
+    rings = []
+    while out:
+        start = next(iter(out))
+        ring = [start]
+        a, b = start, out[start].pop()
+        if not out[start]:
+            del out[start]
+        while b != start:
+            ring.append(b)
+            nexts = out[b]
+            dx, dy = b[0] - a[0], b[1] - a[1]
+            # left turn first, then straight, then right
+            order = {(-dy, dx): 0, (dx, dy): 1, (dy, -dx): 2}
+            c = min(nexts, key=lambda n: order.get((n[0] - b[0], n[1] - b[1]), 3))
+            nexts.remove(c)
+            if not nexts:
+                del out[b]
+            a, b = b, c
+        ring.append(start)
+        rings.append(_drop_collinear(ring))
+    return rings
+
+
+def _drop_collinear(ring: list[tuple[int, int]]) -> list[tuple[float, float]]:
+    pts = ring[:-1]
+    keep = [p for k, p in enumerate(pts)
+            if (p[0] - pts[k - 1][0]) * (pts[(k + 1) % len(pts)][1] - p[1]) != (p[1] - pts[k - 1][1]) * (pts[(k + 1) % len(pts)][0] - p[0])]
+    return keep + keep[:1]
+
+
+def _simplify(ring: list, tolerance: float) -> list:
+    """Douglas-Peucker on a closed ring (grid units): smooths the staircases of diagonal paths."""
+    if len(ring) <= 5:
+        return ring
+    far = max(range(len(ring)), key=lambda k: (ring[k][0] - ring[0][0]) ** 2 + (ring[k][1] - ring[0][1]) ** 2)
+    return _dp(ring[: far + 1], tolerance)[:-1] + _dp(ring[far:], tolerance)
+
+
+def _dp(pts: list, tolerance: float) -> list:
+    keep = [False] * len(pts)
+    keep[0] = keep[-1] = True
+    stack = [(0, len(pts) - 1)]
+    while stack:
+        a, b = stack.pop()
+        (ax, ay), (bx, by) = pts[a], pts[b]
+        dx, dy = bx - ax, by - ay
+        norm = math.hypot(dx, dy)
+        best, at = 0.0, -1
+        for k in range(a + 1, b):
+            px, py = pts[k]
+            d = abs(dy * (px - ax) - dx * (py - ay)) / norm if norm else math.hypot(px - ax, py - ay)
+            if d > best:
+                best, at = d, k
+        if best > tolerance:
+            keep[at] = True
+            stack += [(a, at), (at, b)]
+    return [p for p, k in zip(pts, keep) if k]
+
+
+def _signed_area(ring: list) -> float:
+    return sum(x1 * y2 - x2 * y1 for (x1, y1), (x2, y2) in zip(ring, ring[1:])) / 2
+
+
+def _in_grid_ring(p, ring: list) -> bool:
+    x, y = p
+    inside = False
+    for (x1, y1), (x2, y2) in zip(ring, ring[1:]):
+        if (y1 > y) != (y2 > y) and x < x1 + (y - y1) * (x2 - x1) / (y2 - y1):
+            inside = not inside
+    return inside

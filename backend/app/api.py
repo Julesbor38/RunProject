@@ -656,6 +656,16 @@ def explore_fog(bbox: str, ws: Workspace = Depends(workspace)) -> dict:
     return {"type": "FeatureCollection", "features": features}
 
 
+@app.get("/api/explore/veil")
+def explore_veil(bbox: str, zoom: float = 14, ws: Workspace = Depends(workspace)) -> dict:
+    """« Brouillard » veil: the world minus the area I discovered in this box (coarser when zoomed out)."""
+    from .explore.area import block_for_zoom, grid_range, veil
+
+    box = _bbox(bbox, 2.0)  # ~ zoom 9 and closer
+    cells = explorer().store.cells_in(ws.user, *grid_range(box))
+    return veil(cells, block_for_zoom(zoom))
+
+
 @app.get("/api/explore/communes/{commune_id}")
 def explore_commune(commune_id: str = PathParam(pattern="^[0-9A-Za-z]{1,16}$"), ws: Workspace = Depends(workspace)) -> dict:
     c = explorer().store.commune(commune_id)

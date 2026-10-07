@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.explore.area import cell_area, cell_center, corridor_cells, in_polygons, polygons_area
+from app.explore.area import cell_area, cell_center, corridor_cells, in_polygons, polygons_area, veil
 from app.explore.communes import walkable_total
 from app.explore.explorer import Explorer
 from app.explore.matching import EdgeIndex, moving_parts, segment_key, traversed_edges
@@ -218,6 +218,9 @@ def test_explore_api_is_per_user(tmp_path, monkeypatch):
         assert c.get("/api/explore/fog", params={"bbox": "4,45,5,46"}).status_code == 422  # zoom in first
         assert c.get("/api/explore/fog", params={"bbox": "4.0,45.0,4.01,45.01"}).json()["type"] == "FeatureCollection"
         assert c.get("/api/explore/communes/12345").status_code == 404
+        assert c.get("/api/explore/veil", params={"bbox": "0,40,5,46"}).status_code == 422  # zoom in first
+        v = c.get("/api/explore/veil", params={"bbox": "4.0,45.0,4.1,45.1", "zoom": 12}).json()
+        assert v["geometry"]["coordinates"] == [[[[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]]]]  # nothing run here
         assert c.post("/api/explore/seen", json={"ids": ["badge:peaks:1"]}).json() == {"ok": True}
     assert ex.store.settings("tester")["seen"] == ["badge:peaks:1"] and ex.store.settings("marie")["seen"] == []
     assert ex.store.discovered("marie") == [] and ex.store.settings("marie")["leaderboard_opt_in"] is False
@@ -264,3 +267,17 @@ def test_polygon_area_and_holes():
     lats = np.array([45.0 + 100 / 111_320, 45.0 + 500 / 111_320, 45.0 + 2000 / 111_320])
     lons = np.array([4.0 + 100 / k, 4.0 + 500 / k, 4.0 + 100 / k])
     assert in_polygons(lats, lons, poly).tolist() == [True, False, False]  # inside, in the hole, outside
+
+
+@pytest.mark.parametrize("block", [1, 2, 8])
+def test_veil_is_cleared_over_the_area_discovered(block):
+    import numpy as np
+
+    cells = corridor_cells([track([(5, 0), (5, 3), (7, 3)])])  # a corner, to have staircases and a bend
+    cells -= {c for c in cells if c[0] % 7 == 0 and c[1] % 5 == 0}  # undiscovered specks inside
+    polygons = veil(cells, block)["geometry"]["coordinates"]
+    lat, lon = node(5, 2)
+    on, beside, far = (lat, lon), (lat + 12 / 111_320, lon), (lat + 300 / 111_320, lon)
+    veiled = in_polygons(np.array([on[0], beside[0], far[0]]), np.array([on[1], beside[1], far[1]]), polygons)
+    assert veiled.tolist() == [False, False, True]
+    assert in_polygons(np.array([node(6, 3)[0]]), np.array([node(6, 3)[1]]), polygons).tolist() == [False]  # after the bend

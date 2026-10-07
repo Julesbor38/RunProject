@@ -615,6 +615,17 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
   pré-téléchargement des tuiles).
 - 101 tests OK (bande de 20 m, aller-retour, cellules comptées une fois, superficie et trous, rattrapage silencieux).
 
+### 2026-10-08 — Brouillard éclairci sur la superficie découverte
+- Le voile du mode « Brouillard » n'est plus uniforme : il est percé sur la superficie découverte (la bande de
+  20 m de chaque côté des passages). `GET /api/explore/veil?bbox=&zoom=` renvoie le monde moins les zones
+  découvertes de la vue (+ 25 % de marge) : contours des cellules suivis en anneaux (zones / poches non
+  découvertes, enroulement adapté à MapLibre), escaliers lissés (Douglas-Peucker), poches d'un ou deux blocs
+  ignorées ; cellules regroupées en vue éloignée (10 m dès le zoom 13, 20 m au 12, 40 m au 11, 80 m en dessous),
+  voile complet sous le zoom 9. Couche `fill` à la place du fond uniforme ; les chemins (jaune / gris) restent
+  au zoom 13 et plus.
+- Historique réel : 0,2 à 0,3 s et 50 à 200 Ko par vue, du quartier à l'agglomération lyonnaise.
+- 104 tests OK (voile percé sur la trace et à 12 m, voilé à 300 m, après un virage, à plusieurs échelles ; API).
+
 ---
 
 ## État au 2026-10-07

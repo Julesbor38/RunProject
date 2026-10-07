@@ -42,7 +42,8 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   incrémental en arrière-plan (démarrage + après import ; `TRAILMAP_EXPLORE=0` pour le couper) ; par commune
   (OSM admin_level=8, 34 770 extraites) : % de la **superficie** découverte (bande de 20 m de chaque côté des
   passages, cellules de ~10 m, `area.py`) et % des chemins ; lieux découverts (≤ 30 m), paliers 10–90 % des chemins
-  et badges (annoncés seulement après un import, les rattrapages sont silencieux), mode « Brouillard », suggestions de zones jamais courues -> générateur en
+  et badges (annoncés seulement après un import, les rattrapages sont silencieux), mode « Brouillard » (voile
+  percé sur la superficie découverte, chemins courus en jaune au zoom ≥ 13), suggestions de zones jamais courues -> générateur en
   mode Découverte. Tables prêtes pour un classement (opt-in désactivé par défaut), rien d'exposé aux autres.
 - Prochaine grosse étape : notation des tronçons (étape 3) sur les tronçons de l'Exploration.
 - **Lieux notables** (`app/pois/`, `src/pois.ts`) : extraits de l'extrait OSM France dans data/pois/pois.sqlite
@@ -57,7 +58,7 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   import en arrière-plan, bandeau des nouvelles sorties) ; évaluation de chaque sortie de 1 à 5 sur
   8 critères (sécurité, éclairage, beauté du paysage, plaisir, entretien, abri, tranquillité,
   peu de circulation) + commentaire, en attendant de les reporter sur les tronçons (étape 3).
-- Tests : 101 OK, 1 ignoré.
+- Tests : 104 OK, 1 ignoré.
 
 ## Architecture
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
@@ -121,7 +122,8 @@ Chaque route ne lit et n'écrit que les données du compte connecté (data/users
 - GET  /api/pois?bbox=&zoom=&categories= : lieux notables de la zone ; GET /api/pois/<id> : fiche (Wikidata)
 - GET  /api/explore : résumé (totaux dont km², communes avec % des chemins et `area_pct` de la superficie, paliers / badges, `new` = franchis non vus, suggestions) ;
   POST /api/explore/seen {ids} ; GET /api/explore/fog?bbox= (tronçons faits / à faire, petite zone sinon 422) ;
-  GET /api/explore/communes/{id} : contour (GeoJSON + bbox)
+  GET /api/explore/communes/{id} : contour (GeoJSON + bbox) ; GET /api/explore/veil?bbox=&zoom= : voile du
+  brouillard (monde moins la superficie découverte, ≤ 2 deg²)
 - POST /api/routes accepte `via` : [[lon, lat], …] (3 max), points de passage
 - GET  /api/activities : traces masquées + simplifiées (~700 Ko), cache data/cache/
 - POST /api/reload : relit data/raw

@@ -2,7 +2,8 @@
  * « Exploration » tab (like Zenly / Wandrer): my communes with the share of their area I have discovered (20 m
  * each side of the paths run) and of their paths I have run, places
  * discovered, milestones and badges, suggestions of paths never run nearby; on the map, the « Brouillard »:
- * the paths I ran lit up, the others greyed, the selected commune's boundary. Only the visible area is loaded.
+ * a veil over the map, cleared over the area I discovered; closer, the paths I ran lit up, the others greyed;
+ * the selected commune's boundary. Only the visible area is loaded.
  */
 import type { GeoJSONSource, Map } from "maplibre-gl";
 import { apiFetch } from "./api";
@@ -50,12 +51,19 @@ const TOWN = "explore-town";
 const BADGE_ICONS: Record<string, string> = {
   communes: "i-town", peaks: "i-peak", waterfalls: "i-drop", viewpoints: "i-eye", heritage: "i-castle", lakes: "i-waves",
 };
-const MIN_FOG_ZOOM = 13;
+const MIN_FOG_ZOOM = 13; // paths
+const MIN_VEIL_ZOOM = 9; // discovered area (coarser when zoomed out)
+const WORLD_VEIL = {
+  type: "Feature" as const,
+  properties: {},
+  geometry: { type: "Polygon" as const, coordinates: [[[-180, -85], [180, -85], [180, 85], [-180, 85], [-180, -85]]] },
+};
 
 export class ExploreView {
   private fogOn = false;
   private timer = 0;
   private abort: AbortController | null = null;
+  private veilAbort: AbortController | null = null;
   private poll = 0;
   private townId: string | null = null;
 
@@ -66,10 +74,11 @@ export class ExploreView {
   ) {
     map.addSource(FOG, { type: "geojson", data: empty() });
     map.addSource(TOWN, { type: "geojson", data: empty() });
+    map.addSource(VEIL, { type: "geojson", data: WORLD_VEIL });
     // Under the routes and the places (and the tracks, hidden in fog mode): first of ours, "activities".
     const before = map.getLayer("activities") ? "activities" : undefined;
-    // A veil over the base map, under the paths: the unexplored world fades away.
-    map.addLayer({ id: VEIL, type: "background", layout: { visibility: "none" }, paint: { "background-color": "#1d2622", "background-opacity": 0.45 } }, before);
+    // A veil over the base map, under the paths, cut out over the area discovered: the unexplored world fades away.
+    map.addLayer({ id: VEIL, type: "fill", source: VEIL, layout: { visibility: "none" }, paint: { "fill-color": "#1d2622", "fill-opacity": 0.5 } }, before);
     map.addLayer({
       id: `${FOG}-todo`,
       type: "line",
@@ -209,7 +218,28 @@ export class ExploreView {
     this.timer = window.setTimeout(() => this.loadFog(), delay);
   }
 
+  /** The veil over the visible area (and a margin), cleared where I have been. */
+  private async loadVeil() {
+    const source = this.map.getSource(VEIL) as GeoJSONSource;
+    const zoom = this.map.getZoom();
+    this.veilAbort?.abort();
+    if (zoom < MIN_VEIL_ZOOM) return source.setData(WORLD_VEIL);
+    const b = this.map.getBounds();
+    const [w, s, e, n] = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
+    const mx = (e - w) * 0.25;
+    const my = (n - s) * 0.25;
+    const bbox = [w - mx, s - my, e + mx, n + my].map((v) => v.toFixed(4)).join(",");
+    const abort = (this.veilAbort = new AbortController());
+    try {
+      const r = await apiFetch(`/api/explore/veil?bbox=${bbox}&zoom=${zoom.toFixed(1)}`, { signal: abort.signal });
+      if (r.ok && !abort.signal.aborted) source.setData(await r.json());
+    } catch {
+      /* a newer move took over */
+    }
+  }
+
   private async loadFog() {
+    this.loadVeil();
     const hint = document.getElementById("fog-hint")!;
     const source = this.map.getSource(FOG) as GeoJSONSource;
     if (this.map.getZoom() < MIN_FOG_ZOOM) {
