@@ -36,6 +36,9 @@ export interface RouteFeature {
   id: number;
   geometry: { type: "LineString"; coordinates: number[][] }; // [lon, lat, ele?]
   properties: {
+    route_id: string; // kept by the server: GET gpxUrl(route_id)
+    name: string;
+    gpx_filename: string; // ASCII, ends in .gpx
     distance_m: number;
     nature: number;
     lit: number;
@@ -137,3 +140,6 @@ export async function fetchRouteProgress(requestId: string): Promise<RouteProgre
 export async function cancelRoute(requestId: string): Promise<void> {
   await fetch(`/api/routes/${encodeURIComponent(requestId)}/cancel`, { method: "POST" });
 }
+
+/** The GPX of a generated route, served as a .gpx download (application/gpx+xml, attachment). */
+export const gpxUrl = (routeId: string) => `/api/routes/${encodeURIComponent(routeId)}/gpx`;

@@ -213,6 +213,24 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
   transposition sur un VPS.
 - 65 tests OK, 1 ignoré.
 
+### 2026-10-07 — Envoi du GPX vers l'app COROS depuis le téléphone
+- Sur iPhone, l'app COROS n'apparaissait pas pour ouvrir le GPX ; il fallait enregistrer le fichier puis
+  passer par Fichiers. Causes probables : partage du fichier **avec un titre** (iOS partage alors aussi du
+  texte et masque les apps qui n'acceptent qu'un fichier), nom avec accents et espaces, GPX fabriqué
+  dans le navigateur.
+- GPX produit par le backend (`app/gpx.py`) : GPX 1.1 valide (vérifié contre le schéma officiel),
+  en-tête XML UTF-8, namespace topografix, `creator`, `metadata`, un `<trk>`/`<trkseg>`/`<trkpt>` avec `<ele>`,
+  `<wpt>` nommés possibles. Nom de fichier ASCII sans espaces (`trail-map-boucle-10-0-km.gpx`).
+  En-têtes `Content-Type: application/gpx+xml`, `Content-Disposition: attachment; filename="….gpx"`.
+- Chaque itinéraire généré reçoit un `route_id` et est gardé dans `data/routes/` (300 derniers) :
+  `GET /api/routes/{route_id}/gpx`. `POST /api/routes/gpx` renvoie le GPX d'un itinéraire envoyé par le client.
+- Front : « Exporter en GPX » = lien direct vers l'endpoint. « ⌚ Envoyer vers la montre » (téléphone) :
+  GPX récupéré dès l'affichage, puis `navigator.share({ files: [fichier .gpx] })` lancé directement dans le clic,
+  sans titre ; annulation silencieuse ; sinon (Chrome Android refuse les .gpx) téléchargement via l'endpoint
+  (« Ouvrir dans… »). Une page web ne peut pas ouvrir COROS sans la feuille de partage : pas d'API ni de lien
+  profond public pour importer un parcours.
+- 69 tests OK, 1 ignoré (4 nouveaux sur le GPX : structure, nom de fichier, en-têtes, itinéraires gardés).
+
 ---
 
 ## État au 2026-10-07
@@ -236,5 +254,5 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 6. **Étape 3 — notation des tronçons** : modèle de données (PostGIS), API, interface de notation.
 7. **Étape 4 — itinéraires pondérés par les notes.**
 8. **Étape 5 — communautaire** : comptes, agrégation, modération.
-9. **Tester sur le téléphone via Tailscale** : bouton « Envoyer vers la montre » (Android accepte-t-il
-   le partage d'un .gpx ?), géolocalisation. Puis PWA (installation, hors ligne).
+9. **Tester sur le téléphone via Tailscale** : « Envoyer vers la montre » sur iPhone (COROS doit apparaître
+   dans la feuille de partage), géolocalisation. Puis PWA (installation, hors ligne).

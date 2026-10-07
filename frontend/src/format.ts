@@ -16,42 +16,23 @@ export function escape(s: string) {
   return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
 
-export function toGpx(name: string, coords: number[][]) {
-  const pts = coords
-    .map(([lon, lat, ele]) => (ele === undefined ? `<trkpt lat="${lat}" lon="${lon}"/>` : `<trkpt lat="${lat}" lon="${lon}"><ele>${ele}</ele></trkpt>`))
-    .join("\n      ");
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<gpx version="1.1" creator="Trail Map" xmlns="http://www.topografix.com/GPX/1/1">
-  <trk>
-    <name>${escape(name)}</name>
-    <trkseg>
-      ${pts}
-    </trkseg>
-  </trk>
-</gpx>
-`;
-}
+export const GPX_TYPE = "application/gpx+xml";
 
-export function download(filename: string, content: string, type = "application/gpx+xml") {
-  const url = URL.createObjectURL(new Blob([content], { type }));
-  const a = Object.assign(document.createElement("a"), { href: url, download: filename });
-  a.click();
-  URL.revokeObjectURL(url);
-}
+/** Phone or tablet: the share sheet is the way to hand a file to another app (COROS). */
+export const isMobile = () => matchMedia("(pointer: coarse)").matches;
 
-/** A GPX file the system share sheet accepts (to open it in the COROS app), or null when unsupported. */
-export function shareableGpx(filename: string, content: string): File | null {
-  const file = new File([content], filename, { type: "application/gpx+xml" });
-  return navigator.canShare?.({ files: [file] }) ? file : null;
-}
-
-/** Opens the system share sheet; resolves false when the user cancels. */
-export async function shareFile(file: File, title: string): Promise<boolean> {
+/**
+ * Opens the system share sheet with only the file: adding a title or text makes iOS share
+ * text as well, and then hides the apps that only accept a GPX file (COROS).
+ * Must be called synchronously from the click, or Safari refuses it (no user activation).
+ * Resolves false when sharing a file isn't possible here; a cancel (AbortError) resolves true.
+ */
+export async function shareFile(file: File): Promise<boolean> {
+  if (!navigator.canShare?.({ files: [file] })) return false;
   try {
-    await navigator.share({ files: [file], title });
-    return true;
+    await navigator.share({ files: [file] });
   } catch (e) {
-    if ((e as DOMException).name === "AbortError") return false;
-    throw e;
+    if ((e as DOMException).name !== "AbortError") throw e;
   }
+  return true;
 }

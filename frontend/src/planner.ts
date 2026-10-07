@@ -1,9 +1,9 @@
 import { Marker } from "maplibre-gl";
 import type { Map, MapMouseEvent } from "maplibre-gl";
-import { cancelRoute, fetchRouteProgress, fetchRoutes } from "./api";
+import { cancelRoute, fetchRouteProgress, fetchRoutes, gpxUrl } from "./api";
 import type { LngLat, Preferences, RouteCollection, RouteFeature, RouteProgress } from "./api";
 import { fitTo } from "./activities";
-import { download, km, pct, shareableGpx, shareFile, toGpx } from "./format";
+import { GPX_TYPE, isMobile, km, pct, shareFile } from "./format";
 import { pointAt, renderProfile } from "./profile";
 
 const ROUTE_COLORS = ["#2563eb", "#ea580c", "#db2777"];
@@ -492,8 +492,8 @@ export class Planner {
           ${bar("Routes passantes", p.busy_roads, true)}
         </div>
         <div class="actions">
-          <button class="link-btn gpx">⤓ Exporter en GPX</button>
-          <button class="link-btn watch" hidden title="Ouvrir le parcours dans l'app COROS (ou une autre app)">⌚ Envoyer vers la montre</button>
+          <a class="link-btn gpx" href="${gpxUrl(p.route_id)}" download="${p.gpx_filename}">⤓ Exporter en GPX</a>
+          <button class="link-btn watch" hidden title="Ouvrir le parcours dans l'app COROS (ou une autre app GPX)">⌚ Envoyer vers la montre</button>
         </div>`;
       card.addEventListener("click", () => this.select(r.id));
       const profileBox = card.querySelector(".profile") as HTMLElement | null;
@@ -501,19 +501,24 @@ export class Planner {
         profileBox.addEventListener("click", (e) => e.stopPropagation());
         renderProfile(profileBox, p.profile, ROUTE_COLORS[r.id] ?? ROUTE_COLORS[2], (d) => this.showHoverPoint(r, d));
       }
-      const name = `Trail Map ${this.mode === "loop" ? "boucle" : "itinéraire"} ${km(p.distance_m)}`;
-      const filename = `${name.replace(/[ ,]+/g, "_")}.gpx`;
-      card.querySelector(".gpx")!.addEventListener("click", (e) => {
-        e.stopPropagation();
-        download(filename, toGpx(name, r.geometry.coordinates));
-      });
-      // Share sheet (mobile): pick the COROS app, which imports the route and syncs it to the watch.
-      const file = shareableGpx(filename, toGpx(name, r.geometry.coordinates));
+      card.querySelector(".gpx")!.addEventListener("click", (e) => e.stopPropagation());
+      // Phone: share sheet with the .gpx, where the COROS app imports the route and syncs it to the watch.
+      // The file is fetched now so that the click can share it right away (Safari needs the user's tap).
       const watch = card.querySelector(".watch") as HTMLButtonElement;
-      watch.hidden = !file;
+      watch.hidden = !isMobile();
+      let file: File | null = null;
+      if (!watch.hidden && "share" in navigator) {
+        fetch(gpxUrl(p.route_id))
+          .then((res) => (res.ok ? res.blob() : Promise.reject(new Error(`API ${res.status}`))))
+          .then((blob) => (file = new File([blob], p.gpx_filename, { type: GPX_TYPE })))
+          .catch(() => {}); // the click falls back to the download
+      }
       watch.addEventListener("click", (e) => {
         e.stopPropagation();
-        if (file) shareFile(file, name).catch(() => download(filename, toGpx(name, r.geometry.coordinates)));
+        // No file sharing here (e.g. Chrome on Android refuses .gpx): download it, then « Ouvrir dans… ».
+        const fallback = () => (location.href = gpxUrl(p.route_id));
+        if (!file) return fallback();
+        shareFile(file).then((shared) => shared || fallback(), fallback);
       });
       box.appendChild(card);
     });

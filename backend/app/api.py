@@ -12,15 +12,16 @@ import logging
 import math
 import os
 import time
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Path as PathParam
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from . import frequency
+from . import frequency, gpx
 from .ingest import load_zones, mask
 from .ingest.models import TrackPoint
 from .ingest.pipeline import ingest
@@ -34,6 +35,8 @@ from .routing.job import Cancelled, Job
 DATA_DIR = Path(os.environ.get("TRAILMAP_DATA", Path(__file__).parents[2] / "data"))
 SIMPLIFY_TOLERANCE_M = 5.0
 PREFETCH_OSM = os.environ.get("TRAILMAP_PREFETCH", "1") != "0"
+# Generated routes kept for GET /api/routes/{route_id}/gpx (the newest ones only).
+MAX_SAVED_ROUTES = 300
 # Built front (npm run build); served by the API when present, so production needs a single port.
 FRONTEND_DIST = Path(os.environ.get("TRAILMAP_FRONTEND_DIST", Path(__file__).parents[2] / "frontend" / "dist"))
 
@@ -194,7 +197,7 @@ def routes(req: RouteRequest) -> dict:
     # setdefault: a cancel that arrived before the request itself still applies.
     job = jobs.setdefault(req.request_id, Job()) if req.request_id else Job()
     try:
-        return state["routing"].generate(
+        out = state["routing"].generate(
             req.start,
             Preferences(**req.preferences.model_dump()),
             distance_m=req.distance_km * 1000 if req.distance_km else None,
@@ -209,6 +212,46 @@ def routes(req: RouteRequest) -> dict:
     finally:
         if req.request_id:
             jobs.pop(req.request_id, None)
+    kind = "boucle" if req.end is None else "itinéraire"
+    for f in out["features"]:
+        save_route(f, f"Trail Map {kind} {f['properties']['distance_m'] / 1000:.1f} km".replace(".", ","))
+    return out
+
+
+def save_route(feature: dict, name: str) -> None:
+    """Keeps the route in data/routes/ and gives it a `route_id`, a `name` and its GPX `gpx_filename`."""
+    route_id = uuid.uuid4().hex
+    feature["properties"].update(route_id=route_id, name=name, gpx_filename=gpx.filename(name))
+    folder = DATA_DIR / "routes"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{route_id}.json").write_text(json.dumps({"name": name, "coordinates": feature["geometry"]["coordinates"]}))
+    saved = sorted(folder.glob("*.json"), key=lambda p: p.stat().st_mtime)
+    for old in saved[:-MAX_SAVED_ROUTES]:
+        old.unlink(missing_ok=True)
+
+
+@app.get("/api/routes/{route_id}/gpx")
+def route_gpx(route_id: str = PathParam(pattern="^[0-9a-f]{32}$")):
+    """GPX of a generated route, as a download (what Safari on iOS turns into « Ouvrir dans… »)."""
+    file = DATA_DIR / "routes" / f"{route_id}.json"
+    if not file.is_file():
+        raise HTTPException(404, "itinéraire inconnu ou expiré, régénérez-le")
+    saved = json.loads(file.read_text())
+    return gpx.response(saved["name"], saved["coordinates"])
+
+
+class GpxRequest(BaseModel):
+    name: str = Field("Trail Map", min_length=1, max_length=100)
+    # [lon, lat] or [lon, lat, ele]
+    coordinates: list[tuple[float, float] | tuple[float, float, float]] = Field(min_length=2, max_length=50_000)
+
+
+@app.post("/api/routes/gpx")
+def gpx_of(req: GpxRequest):
+    """GPX of any proposed route sent by the client."""
+    if any(not (-180 <= c[0] <= 180 and -90 <= c[1] <= 90) for c in req.coordinates):
+        raise HTTPException(422, "coordonnées hors limites")
+    return gpx.response(req.name, req.coordinates)
 
 
 @app.get("/api/routes/{request_id}/progress")

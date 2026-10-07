@@ -14,14 +14,15 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 - Carte web : traces (rendu « Fréquentation » plus foncé selon le nombre de sorties distinctes,
   ou « Par type »), filtres, fiches, générateur d'itinéraires (boucle / aller simple le plus
   court ou à distance visée), dénivelé (tranche de D+, profil, relief 3D), export GPX,
-  bouton « Envoyer vers la montre » (partage du GPX vers l'app COROS, non testé sur téléphone).
+  bouton « Envoyer vers la montre » (téléphone : feuille de partage avec le .gpx produit par le backend,
+  sinon téléchargement ; à tester sur iPhone).
 - Génération d'itinéraires annulable, avec avancement ; tuiles OSM de Rhône-Alpes en local
   (plus de dépendance à Overpass dans la région). Accès téléphone via Tailscale (HTTPS, tailnet).
 - Auto-hébergement (`SELF-HOST.md`) : en production FastAPI sert aussi le front construit sur un seul port
   (8000, 127.0.0.1), service systemd `trailmap` dans WSL, WSL gardé allumé par une tâche planifiée Windows,
   `tailscale serve --bg http://localhost:8000`. Mise à jour : `./deploy-local.sh`. État : `GET /api/health`.
 - Prochaine grosse étape : map-matching (étape 2), puis notation des tronçons (étape 3).
-- Tests : 65 OK, 1 ignoré.
+- Tests : 69 OK, 1 ignoré.
 
 ## Architecture
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
@@ -65,6 +66,9 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 - GET  /api/routing/status : avancement du pré-téléchargement OSM
 - POST /api/routes : génère des itinéraires (boucle / aller simple, préférences, tranche de D+) ;
   `request_id` optionnel pour suivre / annuler ; `warning` si des tuiles OSM manquent
+  Chaque itinéraire reçoit `route_id`, `name`, `gpx_filename` et est gardé dans data/routes/ (300 derniers)
+- GET  /api/routes/{route_id}/gpx : GPX 1.1 (application/gpx+xml, attachment, nom ASCII .gpx)
+- POST /api/routes/gpx : GPX d'un itinéraire envoyé par le client ({name, coordinates})
 - GET  /api/routes/{request_id}/progress : étape (download_ends, download, graph, routes) et avancement
 - POST /api/routes/{request_id}/cancel : annule la génération
 
@@ -126,5 +130,6 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 - data/raw/strava/ : export Strava dézippé (activities.csv + activities/), archive d'origine data/raw/export_124148223.zip
 - data/raw/*.fit : exports Coros (18 fichiers)
 - data/privacy.json : zones de confidentialité (optionnel)
+- data/routes/ : itinéraires générés récemment (pour leur GPX)
 - data/osm/ : tuiles OSM (cache), data/dem/ : tuiles d'altitude, data/cache/ : activités prétraitées
 - Types importés : course, trail, randonnée (sport normalisé run / trail_run / hike)
