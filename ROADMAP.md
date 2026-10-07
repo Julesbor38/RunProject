@@ -376,6 +376,16 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
   onglet s'ouvre sur le lien, l'app ne bouge pas. À confirmer sur l'iPhone.
 - 67 tests OK, 1 ignoré.
 
+### 2026-10-07 — Page de téléchargement pour le navigateur intégré d'iOS
+- Retour du téléphone : le lien s'ouvre dans le navigateur intégré d'iOS (croix en haut à gauche pour revenir
+  à l'app : ça, c'est bien), mais la page reste vide : ce navigateur ne lance pas seul le téléchargement d'un
+  fichier ouvert directement.
+- Le lien signé ouvre maintenant une petite page (nom de l'itinéraire, gros bouton « Télécharger le GPX »,
+  marche à suivre jusqu'à COROS, et en secours : ouvrir la page dans Safari avec la boussole). Le bouton
+  pointe vers le même lien avec `dl=1` (le GPX en pièce jointe) : un téléchargement lancé par un tap.
+  Page sans script ni ressource externe (CSP `default-src 'none'`), pas de cache, pas de referrer.
+- À confirmer sur l'iPhone.
+
 ---
 
 ## État au 2026-10-07

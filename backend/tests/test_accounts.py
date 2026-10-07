@@ -113,7 +113,11 @@ def test_signed_gpx_link_works_without_session_for_its_route_only(data, monkeypa
         link = a.post(f"/api/routes/{route_id}/link").json()["url"]
         assert a.post(f"/api/routes/{'0' * 32}/link").status_code == 404
     with client() as safari:  # no cookie, like Safari next to the home-screen app
-        r = safari.get(link)
+        page = safari.get(link)  # a page with a download button: the iOS in-app browser stays blank on a bare file
+        assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
+        assert "Télécharger le GPX" in page.text and "default-src 'none'" in page.headers["content-security-policy"]
+        href = page.text.split('class="button" href="')[1].split('"')[0].replace("&amp;", "&")
+        r = safari.get(link.split("?")[0] + href)
         assert r.status_code == 200 and r.headers["content-type"] == "application/gpx+xml"
         assert "attachment" in r.headers["content-disposition"]
         assert safari.get(link.replace("sig=", "sig=0")).status_code == 403  # tampered

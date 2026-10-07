@@ -540,7 +540,7 @@ export class Planner {
           return;
         }
         window.open(url, "_blank"); // in the tap itself, or Safari blocks it
-        this.status("GPX ouvert dans Safari : Télécharger, puis Fichiers → Téléchargements → Partager ⬆ → COROS. Revenez ensuite ici : l'app n'a pas bougé.");
+        this.status("Une page s'ouvre : « Télécharger le GPX », puis Fichiers → Téléchargements → Partager ⬆ → COROS. La croix en haut à gauche ramène ici.");
       };
       watch.addEventListener("click", send);
       card.querySelector(".gpx")!.addEventListener("click", send);

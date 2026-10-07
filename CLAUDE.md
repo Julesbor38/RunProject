@@ -99,7 +99,8 @@ Chaque route ne lit et n'écrit que les données du compte connecté (data/users
   Chaque itinéraire reçoit `route_id`, `name`, `gpx_filename` et est gardé dans data/routes/ (300 derniers)
 - GET  /api/routes/{route_id}/gpx : GPX 1.1 (application/gpx+xml, attachment, nom ASCII .gpx)
 - POST /api/routes/{route_id}/link : lien signé (1 h) vers ce GPX, utilisable sans session :
-  GET /api/share/gpx/{compte}/{route_id}?expires=…&sig=… (préfixe /api/share/ : pas de session, signature vérifiée)
+  GET /api/share/gpx/{compte}/{route_id}?expires=…&sig=… (préfixe /api/share/ : pas de session, signature vérifiée) :
+  page avec un bouton « Télécharger le GPX » (le navigateur intégré d'iOS reste vide sur un fichier brut), `&dl=1` : le GPX
 - POST /api/routes/gpx : GPX d'un itinéraire envoyé par le client ({name, coordinates})
 - GET  /api/routes/{request_id}/progress : étape (download_ends, download, graph, routes) et avancement
 - POST /api/routes/{request_id}/cancel : annule la génération

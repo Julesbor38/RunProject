@@ -8,6 +8,7 @@ serves both the API and frontend/dist on a single port (see SELF-HOST.md).
 """
 from __future__ import annotations
 
+import html
 import json
 import logging
 import os
@@ -20,7 +21,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, HTTPException, Path as PathParam, Request, Response, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -406,18 +407,60 @@ def route_link(route_id: str = PathParam(pattern="^[0-9a-f]{32}$"), ws: Workspac
 
 @app.get(SIGNED_API + "gpx/{user}/{route_id}")
 def shared_gpx(
+    request: Request,
     user: str = PathParam(pattern=auth.USERNAME.pattern),
     route_id: str = PathParam(pattern="^[0-9a-f]{32}$"),
     expires: int = 0,
     sig: str = "",
+    dl: bool = False,
 ):
+    """A small page with a download button (`dl=1`: the GPX itself, as an attachment).
+
+    The in-app browser iOS opens over a home-screen app stays blank when the page is a file to
+    download: a page, and a download started by a tap, work there.
+    """
     if not auth.check_link(DATA_DIR, sig, expires, "gpx", user, route_id):
         raise HTTPException(403, "lien expiré ou invalide : relancez « Envoyer vers la montre » depuis l'app")
     file = user_dir(DATA_DIR, user) / "routes" / f"{route_id}.json"
     if not file.is_file():
         raise HTTPException(404, "itinéraire inconnu ou expiré, régénérez-le")
     saved = json.loads(file.read_text())
-    return gpx.response(saved["name"], saved["coordinates"])
+    if dl:
+        return gpx.response(saved["name"], saved["coordinates"])
+    download = f"?expires={expires}&sig={sig}&dl=1"
+    return HTMLResponse(
+        DOWNLOAD_PAGE.format(name=html.escape(saved["name"]), href=html.escape(download), filename=html.escape(gpx.filename(saved["name"]))),
+        headers={"Cache-Control": "no-store", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'", "Referrer-Policy": "no-referrer"},
+    )
+
+
+DOWNLOAD_PAGE = """<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{name}</title>
+<style>
+  body {{ margin: 0; padding: 28px 20px; font: 17px/1.5 -apple-system, system-ui, sans-serif; color: #1b2420; background: #f3f0ea; }}
+  main {{ max-width: 460px; margin: auto; padding: 24px 20px; border-radius: 20px; background: #fff; box-shadow: 0 8px 30px rgb(15 46 35 / .15); }}
+  h1 {{ margin: 0 0 4px; font-size: 22px; color: #143f30; }}
+  p.file {{ margin: 0 0 20px; color: #6a726d; font-size: 14px; word-break: break-all; }}
+  a.button {{ display: block; padding: 16px; border-radius: 14px; background: #e8692c; color: #fff; font-weight: 700;
+    font-size: 19px; text-align: center; text-decoration: none; }}
+  ol {{ margin: 22px 0 0; padding-left: 22px; }}
+  li {{ margin-bottom: 8px; }}
+  .note {{ margin-top: 18px; padding: 12px 14px; border-radius: 12px; background: #ecf5f0; font-size: 15px; }}
+</style></head>
+<body><main>
+  <h1>{name}</h1>
+  <p class="file">{filename}</p>
+  <a class="button" href="{href}" download="{filename}">Télécharger le GPX</a>
+  <ol>
+    <li>Touchez « Télécharger le GPX », puis confirmez « Télécharger ».</li>
+    <li>Ouvrez l'app <b>Fichiers</b> → <b>Téléchargements</b> → le fichier → <b>Partager</b> → <b>COROS</b>.</li>
+    <li>Revenez à Trail Map avec la croix en haut à gauche.</li>
+  </ol>
+  <p class="note">Rien ne se passe ? Touchez l'icône <b>Safari</b> (la boussole, en bas à droite) pour ouvrir cette
+    page dans Safari, puis « Télécharger le GPX ». Le lien reste valable une heure.</p>
+</main></body></html>
+"""
 
 
 class GpxRequest(BaseModel):
