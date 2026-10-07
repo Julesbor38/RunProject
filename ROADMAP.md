@@ -320,6 +320,16 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 - En-tête : résumé sur une ligne malgré le bouton de déconnexion (panneau un peu plus large).
 - 61 tests OK, 1 ignoré.
 
+### 2026-10-07 — Traces cliquables partout, évaluation depuis la carte
+- Les traces distinctes (2,5 px) étaient presque impossibles à toucher au doigt, et ne réagissaient que
+  dans l'onglet « Mes sorties ». Ajout d'une couche invisible large (10–20 px selon le zoom) qui reçoit
+  survol et clic.
+- Cliquables aussi dans l'onglet « Itinéraire », sauf quand le clic sert au planificateur (placer ou
+  déplacer un point, choisir un itinéraire proposé) : `Planner.claimsClick`.
+- La fiche d'une sortie garde son bouton « Évaluer cette sortie » / « ★ x · Modifier ».
+- Vérifié (ordinateur et vue iPhone) en cliquant sur de vraies traces : départ placé d'abord quand il
+  manque, puis fiche de la sortie et fiche d'évaluation, dans les deux onglets.
+
 ---
 
 ## État au 2026-10-07

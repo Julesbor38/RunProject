@@ -11,7 +11,8 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 ## État actuel (2026-10-07)
 - Étape 1 (import) : fonctionnelle. 254 activités (course, trail, randonnée), doublons Strava/Coros fusionnés.
   Reste : 3 .fit.gz Strava illisibles (`developer_data_index 0 not defined`).
-- Carte web : traces distinctes, une par sortie, colorées par type (le rendu « Fréquentation » unifié
+- Carte web : traces distinctes, une par sortie, colorées par type, cliquables dans les deux onglets
+  (couche invisible large ; fiche avec « Évaluer cette sortie ») (le rendu « Fréquentation » unifié
   sur les voies OSM a été retiré le 2026-10-07 : trop complexe, voir l'historique git), filtres, fiches, générateur d'itinéraires (boucle / aller simple le plus
   court ou à distance visée), dénivelé (tranche de D+, profil, relief 3D), export GPX,
   bouton « Envoyer vers la montre » (téléphone : télécharge le .gpx produit par le backend, à ouvrir

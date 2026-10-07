@@ -62,7 +62,8 @@ map.on("load", async () => {
     document.getElementById("tab-route")!.hidden = tab !== "route";
     document.getElementById("tab-activities")!.hidden = tab !== "activities";
     planner.setActive(tab === "route");
-    if (activities) activities.interactive = tab === "activities";
+    // Tracks open their sheet (and rating) on click in both tabs, unless the planner needs that click.
+    if (activities) activities.clickable = (point) => tab === "activities" || !planner.claimsClick(point);
   };
   document.querySelectorAll<HTMLButtonElement>(".tabs [role=tab]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab as Tab)));
   showTab(newKeys.size ? "activities" : "route"); // after an import: straight to the new activities

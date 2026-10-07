@@ -1,5 +1,5 @@
 import { Marker } from "maplibre-gl";
-import type { Map, MapMouseEvent } from "maplibre-gl";
+import type { Map, MapMouseEvent, PointLike } from "maplibre-gl";
 import { cancelRoute, fetchRouteProgress, fetchRoutes, gpxUrl } from "./api";
 import type { LngLat, Preferences, RouteCollection, RouteFeature, RouteProgress } from "./api";
 import { fitTo } from "./activities";
@@ -108,6 +108,13 @@ export class Planner {
       else this.setPicking(null);
     });
     this.updateButton();
+  }
+
+  /** Whether a map click there is the planner's: placing or moving a point, or picking a route. */
+  claimsClick(point: PointLike): boolean {
+    if (!this.active || this.busy) return false;
+    if (this.map.queryRenderedFeatures(point, { layers: ["routes"] }).length) return true;
+    return this.picking !== null || !this.start || (this.mode === "oneway" && !this.end);
   }
 
   setActive(active: boolean) {

@@ -1,5 +1,5 @@
 import { LngLatBounds, Popup } from "maplibre-gl";
-import type { Map, MapLayerMouseEvent } from "maplibre-gl";
+import type { Map, MapLayerMouseEvent, PointLike } from "maplibre-gl";
 import type { ActivityCollection, ActivityFeature, Sport } from "./api";
 import { duration, escape, formatDate, km } from "./format";
 import { forgetNewActivities } from "./importer";
@@ -12,6 +12,7 @@ export const SPORTS: Record<Sport, { label: string; color: string }> = {
 };
 
 const SOURCE = "activities";
+const HIT = "activities-hit"; // invisible wide lines: thin tracks are easy to tap, even with a finger
 /** The user's tracks layer and the "Mes sorties" tab. */
 export class ActivitiesView {
   private enabled = new Set<Sport>(Object.keys(SPORTS) as Sport[]);
@@ -20,7 +21,8 @@ export class ActivitiesView {
   private popup: Popup | null = null;
   private muted = false;
   private visibleLayers = true;
-  interactive = false; // only clickable while the "Mes sorties" tab is open
+  /** Whether a click / hover at this point is for the tracks (set by main.ts: not while the planner uses it). */
+  clickable: (point: PointLike) => boolean = () => true;
 
   constructor(
     private map: Map,
@@ -40,20 +42,23 @@ export class ActivitiesView {
         "line-width": ["case", ["boolean", ["feature-state", "highlight"], false], 5, 2.5],
       },
     });
-    map.on("mousemove", SOURCE, (e: MapLayerMouseEvent) => {
-      if (!this.interactive) return;
+    map.addLayer({
+      id: HIT,
+      type: "line",
+      source: SOURCE,
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": "#000", "line-opacity": 0, "line-width": ["interpolate", ["linear"], ["zoom"], 10, 10, 15, 20] },
+    });
+    map.on("mousemove", HIT, (e: MapLayerMouseEvent) => {
+      if (!this.clickable(e.point)) return this.leave();
       map.getCanvas().style.cursor = "pointer";
       const id = e.features?.[0]?.id as number | undefined;
       if (id !== undefined && id !== this.hovered) this.setHover(id);
     });
-    map.on("mouseleave", SOURCE, () => {
-      if (!this.interactive) return;
-      map.getCanvas().style.cursor = "";
-      this.setHover(null);
-    });
-    map.on("click", SOURCE, (e: MapLayerMouseEvent) => {
+    map.on("mouseleave", HIT, () => this.leave());
+    map.on("click", HIT, (e: MapLayerMouseEvent) => {
       const id = e.features?.[0]?.id as number | undefined;
-      if (this.interactive && id !== undefined && this.selected !== id) this.select(fc.features[id], e.lngLat.toArray() as [number, number]);
+      if (id !== undefined && this.selected !== id && this.clickable(e.point)) this.select(fc.features[id], e.lngLat.toArray() as [number, number]);
     });
     this.applyStyle();
     this.renderFilters();
@@ -77,12 +82,18 @@ export class ActivitiesView {
     this.applyStyle();
   }
 
+  private leave() {
+    if (this.hovered === null) return;
+    this.map.getCanvas().style.cursor = "";
+    this.setHover(null);
+  }
+
   /** Opacity (dimmed behind routes) and visibility of the tracks. */
   private applyStyle() {
     const { map } = this;
     const rest = this.muted ? 0.15 : 0.55; // non-highlighted tracks
     map.setPaintProperty(SOURCE, "line-opacity", ["case", ["boolean", ["feature-state", "highlight"], false], 1, rest]);
-    map.setLayoutProperty(SOURCE, "visibility", this.visibleLayers ? "visible" : "none");
+    for (const layer of [SOURCE, HIT]) map.setLayoutProperty(layer, "visibility", this.visibleLayers ? "visible" : "none");
   }
 
   /** Center of the ~5 km cell holding the most activity starts: the user's home area. */
@@ -151,7 +162,7 @@ export class ActivitiesView {
       label.innerHTML = `<input type="checkbox" checked> <span class="dot"></span>${SPORTS[sport].label} <small>${counts.get(sport) ?? 0}</small>`;
       label.querySelector("input")!.addEventListener("change", (e) => {
         (e.target as HTMLInputElement).checked ? this.enabled.add(sport) : this.enabled.delete(sport);
-        this.map.setFilter(SOURCE, ["in", ["get", "sport"], ["literal", [...this.enabled]]]);
+        for (const layer of [SOURCE, HIT]) this.map.setFilter(layer, ["in", ["get", "sport"], ["literal", [...this.enabled]]]);
         this.renderList();
         this.onSummary(this.summary());
       });
