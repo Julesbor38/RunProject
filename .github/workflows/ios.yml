@@ -1,0 +1,81 @@
+# iOS app (frontend/ios, Capacitor), built without a Mac and without signing: AltStore signs it with a free
+# Apple ID when installing it (IOS-ALTSTORE.md). macOS runners are free for this public repository.
+# Run it from the Actions tab (« Run workflow »), or push a tag v* (e.g. v0.2.0) to also get a GitHub Release.
+name: iOS (AltStore)
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # the Release for tags
+
+jobs:
+  ipa:
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Web build for the app, then Capacitor sync
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build:native
+          npx cap sync ios
+
+      - name: Version
+        id: version
+        run: |
+          # Build number: the run number, which grows on every build. Version: the tag, else package.json.
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then v="${GITHUB_REF_NAME#v}"; else v=$(node -p "require('./frontend/package.json').version"); fi
+          echo "marketing=$v" >> "$GITHUB_OUTPUT"
+          echo "build=$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "RunProject $v ($GITHUB_RUN_NUMBER)"
+
+      - name: Build for iPhone, unsigned
+        working-directory: frontend/ios/App
+        run: |
+          xcodebuild -project App.xcodeproj -scheme App -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            MARKETING_VERSION=${{ steps.version.outputs.marketing }} \
+            CURRENT_PROJECT_VERSION=${{ steps.version.outputs.build }} \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Package RunProject.ipa
+        working-directory: frontend/ios/App
+        run: |
+          rm -rf Payload && mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/App.app Payload/RunProject.app
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" -c "Print :CFBundleShortVersionString" -c "Print :CFBundleVersion" Payload/RunProject.app/Info.plist
+          zip -qry RunProject.ipa Payload
+          ls -la RunProject.ipa
+
+      - name: No personal data in the app (public repository and artifacts)
+        working-directory: frontend/ios/App
+        run: |
+          # The server's address is typed in the app at first launch: no host name, no tailnet, no token inside.
+          if grep -raEl "tailf52fab|jules-laptop|Bearer [A-Za-z0-9_-]{20,}" Payload; then
+            echo "::error::personal data found in the app bundle"; exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RunProject-ipa-${{ steps.version.outputs.marketing }}-${{ steps.version.outputs.build }}
+          path: frontend/ios/App/RunProject.ipa
+          retention-days: 30
+
+      - name: GitHub Release (tags)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: frontend/ios/App/RunProject.ipa
+          generate_release_notes: true

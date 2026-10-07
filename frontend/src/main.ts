@@ -6,6 +6,7 @@ import { ActivitiesView } from "./activities";
 import { fetchActivities, fetchRoutingStatus } from "./api";
 import { ensureLoggedIn, signOut } from "./auth";
 import { setupDebug } from "./debug";
+import { ensureServer } from "./native";
 import { openImporter, setupImporter, takeNewActivities } from "./importer";
 import { Planner } from "./planner";
 import { Ratings } from "./ratings";
@@ -35,7 +36,8 @@ map.addControl(new ScaleControl({ unit: "metric" }), "bottom-right");
 setupDebug(); // ?debug=1 or a long press on the title
 
 // Nothing of the user's data is requested before login (the base map is public).
-const loggedIn = ensureLoggedIn();
+// Native app: first make sure the server answers (its address, or « Active Tailscale sur ton iPhone »).
+const loggedIn = ensureServer().then(ensureLoggedIn);
 const data = loggedIn.then(fetchActivities);
 const ratings = new Ratings();
 const ratingsLoaded = loggedIn.then(() => ratings.load()).catch(() => undefined); // the map works without them

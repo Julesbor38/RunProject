@@ -21,6 +21,10 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   Jamais de navigation de la page de l'app vers un fichier ; aucune app de montre n'est proposée dans la feuille de
   partage web (essayé : « Ouvrir avec COROS » via /dl ne marche pas sur l'iPhone). Debug : ?debug=1 ou appui long sur le titre.
 - Front servi sous **/app/** (scope de la PWA ; / redirige vers /app/) : /api et /dl restent hors scope.
+- **App iOS native** (Capacitor 8, `frontend/ios/`, « RunProject », com.julesbor38.runproject) compilée sans Mac ni
+  signature par GitHub Actions (`.github/workflows/ios.yml`, à la main ou tag v*), installée avec AltStore
+  (IOS-ALTSTORE.md). Adresse du serveur tapée au 1er lancement ; session par jeton Bearer ; GPX partagé en vrai
+  fichier (Filesystem + Share).
 - Interface : identité « trail » (logo `frontend/public/logo.svg`, palette forêt / braise, Barlow Condensed),
   icônes SVG, réglages fins repliables, bouton Générer collant, panneau du bas compact sur téléphone,
   icônes d'écran d'accueil + manifest.
@@ -40,7 +44,7 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   import en arrière-plan, bandeau des nouvelles sorties) ; évaluation de chaque sortie de 1 à 5 sur
   8 critères (sécurité, éclairage, beauté du paysage, plaisir, entretien, abri, tranquillité,
   peu de circulation) + commentaire, en attendant de les reporter sur les tronçons (étape 3).
-- Tests : 69 OK, 1 ignoré.
+- Tests : 71 OK, 1 ignoré.
 
 ## Architecture
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
@@ -57,7 +61,8 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 - frontend/ : TypeScript + Vite + MapLibre GL 6 (PWA à venir), fond OpenFreeMap
   - `index.html` (structure + sprite d'icônes SVG `#i-…`), `src/style.css` (variables de couleurs en tête),
     `public/` (logo, icônes PNG, manifest ; copiés tels quels dans dist/)
-  - `main.ts`, `share.ts` (GPX sur téléphone : partage, repli /dl), `debug.ts` (panneau de debug),
+  - `main.ts`, `share.ts` (GPX sur téléphone : partage, repli /dl ; app native : Filesystem + Share),
+    `native.ts` (app native : adresse du serveur, jeton de session, `apiUrl()`), `debug.ts` (panneau de debug),
     `auth.ts` (écran de connexion), `importer.ts` (mise à jour des données), `ratings.ts`
     (fiche d'évaluation), `activities.ts` (onglet Mes sorties), `planner.ts` (onglet Itinéraire),
     `profile.ts` (profil altimétrique), `terrain.ts` (relief 3D), `api.ts`, `format.ts`
@@ -86,7 +91,9 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 - Les notes seront attachées à des tronçons OSM (après map-matching), pas aux traces brutes.
 
 ## API
-Toutes les routes exigent une session (cookie), sauf /api/health et /api/auth/login|logout|signup|options.
+Toutes les routes exigent une session (cookie, ou `Authorization: Bearer <jeton>` pour l'app native), sauf
+/api/health et /api/auth/login|logout|signup|options. CORS : seulement capacitor://localhost (app native) et Vite.
+Connexion / création de compte avec `token: true` : le jeton est renvoyé (app native).
 Chaque route ne lit et n'écrit que les données du compte connecté (data/users/<nom>/).
 - POST /api/auth/login {username, password}, POST /api/auth/signup (même corps : crée le compte et connecte),
   GET /api/auth/options ({signup}), POST /api/auth/logout, GET /api/auth/me
@@ -150,6 +157,8 @@ Chaque route ne lit et n'écrit que les données du compte connecté (data/users
 - pytest
 - API : cd backend && uvicorn app.api:app --reload  (port 8000, lit data/raw, cache data/cache/)
 - Front : cd frontend && npm install && npm run dev  (http://localhost:5173/app/, proxy /api et /dl -> 8000)
+- App iOS : cd frontend && npm run build:native && npx cap sync ios ; compilation : GitHub Actions « iOS (AltStore) »
+  (Run workflow, ou tag v*) ; .ipa dans les Artifacts / la Release ; installation : IOS-ALTSTORE.md
   Vite 8 demande Node >= 20 ; si le Node système est trop vieux : Node LTS dans ~/.local/node
   et `export PATH=~/.local/node/bin:$PATH`
 - Production (voir SELF-HOST.md) : `./deploy-local.sh` (pull, dépendances, build, tests, redémarrage du

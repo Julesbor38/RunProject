@@ -135,26 +135,48 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Trail Map", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_methods=["GET", "POST", "PUT", "DELETE"])
-
 PUBLIC_API = {"/api/health", "/api/auth/login", "/api/auth/logout", "/api/auth/signup", "/api/auth/options"}
+
+
+# The native iOS app (Capacitor) runs at capacitor://localhost: the server is another origin, whose cookies
+# iOS's web view blocks. It sends its session token in the Authorization header instead, from that origin only.
+NATIVE_ORIGINS = ["capacitor://localhost"]
+
+
+def session_token(request: Request) -> str | None:
+    """The session token: `Authorization: Bearer …` (native app), else the cookie (web)."""
+    header = request.headers.get("authorization", "")
+    if header.lower().startswith("bearer "):
+        return header[7:].strip() or None
+    return request.cookies.get(COOKIE)
 
 
 @app.middleware("http")
 async def require_login(request: Request, call_next):
     """Every /api route needs a session, except the few public ones: new routes are protected by default."""
     path = request.url.path
-    if (path == "/api" or path.startswith("/api/")) and path not in PUBLIC_API:
-        user = session_user(DATA_DIR, request.cookies.get(COOKIE))
+    if (path == "/api" or path.startswith("/api/")) and path not in PUBLIC_API and request.method != "OPTIONS":
+        user = session_user(DATA_DIR, session_token(request))
         if user is None:
             return JSONResponse({"detail": "connexion requise"}, status_code=401)
         request.state.user = user
     return await call_next(request)
 
 
+# Added after require_login, so it wraps it: CORS preflights are answered, and refusals (401) carry the CORS
+# headers the native app needs to read them. Only these origins: the API is not opened to other sites.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", *NATIVE_ORIGINS],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+
+
 class LoginIn(BaseModel):
     username: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=1, max_length=256)
+    token: bool = False  # native app: return the session token (sent back as `Authorization: Bearer`)
 
 
 def _client(request: Request) -> str:
@@ -168,8 +190,12 @@ def _set_session(response: Response, token: str) -> None:
 
 @app.post("/api/auth/login")
 def login(body: LoginIn, request: Request, response: Response) -> dict:
-    _set_session(response, auth.login(DATA_DIR, body.username, body.password, _client(request)))
-    return {"user": auth.normalize(body.username)}
+    return _session_response(response, auth.login(DATA_DIR, body.username, body.password, _client(request)), auth.normalize(body.username), body.token)
+
+
+def _session_response(response: Response, token: str, user: str, give_token: bool) -> dict:
+    _set_session(response, token)
+    return {"user": user, "token": token} if give_token else {"user": user}
 
 
 @app.get("/api/auth/options")
@@ -186,13 +212,12 @@ def signup(body: LoginIn, request: Request, response: Response) -> dict:
         name = auth.create_user(DATA_DIR, body.username, body.password, _client(request))
     except ValueError as e:
         raise HTTPException(422, str(e)) from e
-    _set_session(response, auth.new_session(DATA_DIR, name))
-    return {"user": name}
+    return _session_response(response, auth.new_session(DATA_DIR, name), name, body.token)
 
 
 @app.post("/api/auth/logout")
 def logout(request: Request, response: Response) -> dict:
-    auth.logout(DATA_DIR, request.cookies.get(COOKIE))
+    auth.logout(DATA_DIR, session_token(request))
     response.delete_cookie(COOKIE, path="/", secure=True, httponly=True, samesite="strict")
     return {"ok": True}
 

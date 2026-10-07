@@ -33,6 +33,20 @@
 
     <div id="map"></div>
 
+    <!-- Native app only: the server's address (first launch), or « Active Tailscale sur ton iPhone » -->
+    <div id="server-setup" class="fullscreen" hidden>
+      <form class="login-card" autocomplete="off">
+        <img src="logo.svg" alt="" width="64" height="64" />
+        <h1>RunProject</h1>
+        <p class="muted server-intro"></p>
+        <label>Adresse du serveur<input name="server" type="url" inputmode="url" autocapitalize="none" spellcheck="false"
+          placeholder="mon-pc.mon-tailnet.ts.net" required /></label>
+        <p class="hint">Avec Tailscale : l'adresse « … .ts.net » du PC qui fait tourner RunProject.</p>
+        <p class="server-error status error" hidden></p>
+        <button class="primary" type="submit">Continuer</button>
+      </form>
+    </div>
+
     <!-- Login: everything of the user's data needs a session -->
     <div id="login" hidden>
       <form class="login-card" autocomplete="on" data-mode="login">

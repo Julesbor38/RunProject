@@ -4,6 +4,7 @@
  * sharing accepts, and a journal of the last share attempts — kept in localStorage, since a stuck app
  * may have to be relaunched before one can read it.
  */
+import { isNative, serverUrl } from "./native";
 import { GPX_MIME_TYPES, shareableFile } from "./share";
 
 const LOG_KEY = "trailmap.debugLog";
@@ -66,7 +67,8 @@ function render() {
   const nav = navigator as Navigator & { standalone?: boolean };
   const test = shareableFile("<gpx/>", "test.gpx").checks;
   const rows: [string, string][] = [
-    ["App native iOS (Capacitor)", String(!!(window as Window & { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.())],
+    ["App native iOS (Capacitor)", String(isNative())],
+    ["Serveur (app native)", serverUrl() ?? "—"],
     ["Mode écran d'accueil (navigator.standalone)", String(nav.standalone)],
     ["display-mode: standalone", String(matchMedia("(display-mode: standalone)").matches)],
     ["iOS", /OS (\d+[_\d]*) like Mac OS X/.exec(navigator.userAgent)?.[1]?.replace(/_/g, ".") ?? "?"],

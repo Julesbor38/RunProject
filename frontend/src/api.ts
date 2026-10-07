@@ -1,12 +1,14 @@
+import { apiUrl, authHeader, authInit, isNative, setSessionToken } from "./native";
+
 /** Called when the session is missing or expired (set by auth.ts: shows the login screen). */
 let onUnauthorized: () => void = () => {};
 export function setUnauthorizedHandler(handler: () => void) {
   onUnauthorized = handler;
 }
 
-/** fetch() for /api: same-origin cookies, and a 401 brings the login screen back. */
+/** fetch() for /api: the session (cookie, or token in the native app), and a 401 brings the login screen back. */
 export async function apiFetch(input: string, init?: RequestInit): Promise<Response> {
-  const r = await fetch(input, { credentials: "same-origin", ...init });
+  const r = await fetch(apiUrl(input), authInit(init));
   if (r.status === 401 && !input.startsWith("/api/auth/")) {
     onUnauthorized();
     throw new Error("connexion requise");
@@ -149,40 +151,39 @@ export const gpxUrl = (routeId: string) => `/api/routes/${encodeURIComponent(rou
 // --- account ---
 
 export async function currentUser(): Promise<string | null> {
-  const r = await fetch("/api/auth/me", { credentials: "same-origin" });
+  const r = await fetch(apiUrl("/api/auth/me"), authInit());
   return r.ok ? (await r.json()).user : null;
 }
 
-export async function login(username: string, password: string): Promise<string> {
-  const r = await fetch("/api/auth/login", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ username, password }),
-  });
+/** Log in (or sign up): the native app asks for the session token, the web gets the cookie. */
+async function openSession(path: string, username: string, password: string): Promise<string> {
+  const r = await fetch(
+    apiUrl(path),
+    authInit({
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username, password, token: isNative() }),
+    }),
+  );
   if (!r.ok) throw new Error(await errorText(r));
-  return (await r.json()).user;
+  const body = await r.json();
+  if (body.token) setSessionToken(body.token);
+  return body.user;
 }
+
+export const login = (username: string, password: string) => openSession("/api/auth/login", username, password);
 
 /** Create an account (its data starts empty); logged in on success. */
-export async function signup(username: string, password: string): Promise<string> {
-  const r = await fetch("/api/auth/signup", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ username, password }),
-  });
-  if (!r.ok) throw new Error(await errorText(r));
-  return (await r.json()).user;
-}
+export const signup = (username: string, password: string) => openSession("/api/auth/signup", username, password);
 
 export async function signupOpen(): Promise<boolean> {
-  const r = await fetch("/api/auth/options").catch(() => null);
+  const r = await fetch(apiUrl("/api/auth/options")).catch(() => null);
   return r?.ok ? (await r.json()).signup : false;
 }
 
 export async function logout(): Promise<void> {
-  await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
+  await fetch(apiUrl("/api/auth/logout"), authInit({ method: "POST" })).catch(() => null);
+  setSessionToken(null);
 }
 
 // --- ratings ---
@@ -235,7 +236,8 @@ export function uploadImport(files: File[], onProgress: (fraction: number) => vo
     const form = new FormData();
     files.forEach((f) => form.append("files", f, f.name));
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/import");
+    xhr.open("POST", apiUrl("/api/import"));
+    for (const [k, v] of Object.entries(authHeader())) xhr.setRequestHeader(k, v);
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
     xhr.onload = () => {
       if (xhr.status === 401) {

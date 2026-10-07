@@ -1092,7 +1092,8 @@ input[type="range"] {
 
 /* --- login --- */
 
-#login {
+#login,
+#server-setup {
   position: fixed;
   inset: 0;
   z-index: 10;
@@ -1104,7 +1105,8 @@ input[type="range"] {
     linear-gradient(160deg, var(--pine-700), var(--pine-900));
 }
 
-#login[hidden] {
+#login[hidden],
+#server-setup[hidden] {
   display: none;
 }
 

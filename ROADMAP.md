@@ -486,6 +486,31 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
   (partage de fichiers impossible, ex. Android). Ordinateur : « Exporter le GPX ».
 - Vérifié en simulation (partage dans le geste, app jamais quittée, message sous le bouton).
 
+### 2026-10-07 — App iOS native (Capacitor) compilée sur GitHub Actions pour AltStore
+- Étude de la piste app native (pas de Mac) : compilation macOS gratuite sur GitHub Actions (dépôt public),
+  installation par AltStore avec un identifiant Apple gratuit (signature 7 jours, renouvelée par AltServer sur
+  le PC). Un premier prototype (dossier mobile/, menu « Ouvrir dans… » natif) a validé la compilation sans
+  signature (run réussi, .ipa de 554 Ko) ; remplacé par l'intégration ci-dessous.
+- **Capacitor 8 dans `frontend/`** (Swift Package Manager, pas de CocoaPods) : projet `frontend/ios/` versionné,
+  app « RunProject », `com.julesbor38.runproject`, icône et écran de lancement d'après le logo. Build web de
+  l'app à part (`npm run build:native` : base « / », dist-native/) : le web et la PWA (/app/) ne changent pas.
+- **Serveur** : adresse tapée au premier lancement, gardée sur le téléphone (rien de personnel dans le .ipa
+  public) ; serveur injoignable : « Active Tailscale sur ton iPhone » + Réessayer (`src/native.ts`).
+- **Session** : la page de l'app (capacitor://localhost) n'a pas les cookies du serveur (bloqués par iOS) :
+  connexion avec `token: true` -> jeton renvoyé, puis `Authorization: Bearer` ; même stockage de sessions
+  (SHA-256 seulement). **CORS** limité à `capacitor://localhost` (et Vite en dev) ; le middleware de connexion
+  laisse passer les pré-requêtes OPTIONS et ses 401 portent les en-têtes CORS.
+- **GPX natif** : écrit dans le cache de l'app (plugin Filesystem), puis feuille de partage native sur ce fichier
+  (plugin Share) ; jamais d'aperçu à la place de l'app.
+- **Workflow** `.github/workflows/ios.yml` (macos-latest, à la main ou sur tag v*) : npm ci, build native,
+  cap sync, xcodebuild Release iphoneos sans signature, numéro de build = numéro du run, version = tag ou
+  package.json, `Payload/RunProject.app` -> `RunProject.ipa` (artifact ; Release GitHub pour les tags) ;
+  échoue si l'app contient un nom de machine, de tailnet ou un jeton.
+- Vérifié : build native simulée dans un navigateur (autre origine, pont iOS simulé) : écran d'adresse,
+  « Active Tailscale », connexion par jeton sans aucun cookie, relance directe ; web et PWA inchangés ;
+  71 tests OK (jeton, CORS). Les plugins natifs et la compilation se vérifient sur GitHub puis sur l'iPhone.
+- Documentation : IOS-ALTSTORE.md (compiler, récupérer le .ipa, AltStore, limites).
+
 ---
 
 ## État au 2026-10-07

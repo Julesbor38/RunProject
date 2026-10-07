@@ -1,0 +1,8 @@
+{
+  "appId": "com.julesbor38.runproject",
+  "appName": "RunProject",
+  "webDir": "dist-native",
+  "ios": {
+    "contentInset": "never"
+  }
+}

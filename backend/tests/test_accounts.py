@@ -147,3 +147,34 @@ def test_dl_link_refused_for_another_user(data, monkeypatch):
         assert b.get(link.replace(tester_route, marie_route)).status_code == 403  # and to its route
         assert b.get(link.replace("sig=", "sig=0")).status_code == 403  # tampered
         assert b.get(link.replace("user=tester", "user=../tester")).status_code == 403
+
+
+def test_native_app_session_token(data):
+    """The native app (capacitor://localhost) can't use the cookie: it sends the token as a Bearer header."""
+    with client() as app_:
+        r = app_.post("/api/auth/login", json={"username": "tester", "password": "tester password", "token": True})
+        token = r.json()["token"]
+        assert r.json()["user"] == "tester" and len(token) > 30
+    with client() as native:  # no cookie at all
+        assert native.get("/api/activities").status_code == 401
+        bearer = {"Authorization": f"Bearer {token}"}
+        assert native.get("/api/auth/me", headers=bearer).json() == {"user": "tester"}
+        assert native.get("/api/activities", headers=bearer).json()["stats"]["activities"] == 2
+        assert native.get("/api/activities", headers={"Authorization": "Bearer nope"}).status_code == 401
+        native.post("/api/auth/logout", headers=bearer)
+        assert native.get("/api/activities", headers=bearer).status_code == 401
+    with client() as web:  # without the flag, no token in the answer (the web app uses the cookie)
+        assert "token" not in web.post("/api/auth/login", json={"username": "tester", "password": "tester password"}).json()
+
+
+def test_cors_only_for_the_native_app(data):
+    with client() as c:
+        native = {"Origin": "capacitor://localhost"}
+        pre = c.options("/api/activities", headers={**native, "Access-Control-Request-Method": "GET", "Access-Control-Request-Headers": "authorization"})
+        assert pre.status_code == 200 and pre.headers["access-control-allow-origin"] == "capacitor://localhost"
+        assert "authorization" in pre.headers["access-control-allow-headers"].lower()
+        refused = c.get("/api/activities", headers=native)  # a 401 the app can read
+        assert refused.status_code == 401 and refused.headers["access-control-allow-origin"] == "capacitor://localhost"
+        other = c.options("/api/activities", headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "GET"})
+        assert "access-control-allow-origin" not in other.headers
+        assert "access-control-allow-origin" not in c.get("/api/health", headers={"Origin": "https://evil.example"}).headers

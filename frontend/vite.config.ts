@@ -2,8 +2,11 @@ import { defineConfig } from "vite";
 
 // The app lives under /app/, which is also the PWA scope (manifest): /dl/ (signed GPX links) stays outside
 // it, so the iOS home-screen app opens it in a window over the app instead of in place of the app.
-export default defineConfig({
-  base: "/app/",
+// `--mode native` (npm run build:native): the iOS app (Capacitor) serves the build from capacitor://localhost/,
+// so at the root, into dist-native/ (dist/ stays the web build that the API serves).
+export default defineConfig(({ mode }) => ({
+  base: mode === "native" ? "/" : "/app/",
+  build: { outDir: mode === "native" ? "dist-native" : "dist" },
   plugins: [
     {
       name: "root-to-app", // dev: / -> /app/, as the API does in production
@@ -25,4 +28,4 @@ export default defineConfig({
     allowedHosts: [".ts.net"], // the phone, through `tailscale serve` on the PC (tailnet only)
     proxy: { "/api": "http://localhost:8000", "/dl": "http://localhost:8000" },
   },
-});
+}));

@@ -1,11 +1,15 @@
 import { currentUser, login, logout, setUnauthorizedHandler, signup, signupOpen } from "./api";
+import { setSessionToken } from "./native";
 
 /**
  * Resolves with the user name once logged in: right away with a valid session cookie,
  * else after the login screen. A later 401 (session expired) shows it again, then reloads.
  */
 export async function ensureLoggedIn(): Promise<string> {
-  setUnauthorizedHandler(() => showLogin().then(() => location.reload()));
+  setUnauthorizedHandler(() => {
+    setSessionToken(null); // native app: an expired token
+    showLogin().then(() => location.reload());
+  });
   const user = await currentUser().catch(() => null);
   return user ?? showLogin();
 }
