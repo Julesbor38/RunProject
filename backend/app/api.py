@@ -1,7 +1,9 @@
 """HTTP API: serves the ingested activities as privacy-masked GeoJSON.
 
 No database yet: activities are read from data/raw at startup (cached in data/cache/) and kept in memory.
-Run with: uvicorn app.api:app --reload
+Dev: uvicorn app.api:app --reload (the front is served by Vite on :5173).
+Production: build the front (npm run build), then uvicorn app.api:app --host 127.0.0.1 --port 8000
+serves both the API and frontend/dist on a single port (see SELF-HOST.md).
 """
 from __future__ import annotations
 
@@ -9,10 +11,12 @@ import json
 import logging
 import math
 import os
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -30,6 +34,8 @@ from .routing.job import Cancelled, Job
 DATA_DIR = Path(os.environ.get("TRAILMAP_DATA", Path(__file__).parents[2] / "data"))
 SIMPLIFY_TOLERANCE_M = 5.0
 PREFETCH_OSM = os.environ.get("TRAILMAP_PREFETCH", "1") != "0"
+# Built front (npm run build); served by the API when present, so production needs a single port.
+FRONTEND_DIST = Path(os.environ.get("TRAILMAP_FRONTEND_DIST", Path(__file__).parents[2] / "frontend" / "dist"))
 
 state: dict = {}
 logging.getLogger("app").setLevel(logging.INFO)
@@ -114,11 +120,27 @@ async def lifespan(_: FastAPI):
     if PREFETCH_OSM:
         # New OSM tiles let more of the tracks be drawn on the streets themselves.
         state["routing"].start_prefetch(on_done=lambda: state.update(frequency=load_frequency(DATA_DIR, state["activities"])))
+    state["started_at"] = time.time()
     yield
 
 
 app = FastAPI(title="Trail Map", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_methods=["GET", "POST"])
+
+
+@app.api_route("/api/health", methods=["GET", "HEAD"])
+def health() -> dict:
+    """Liveness and a summary of what is loaded (no track data). Used by deploy-local.sh and monitoring."""
+    stats = state["activities"]["stats"]
+    return {
+        "status": "ok",
+        "uptime_s": round(time.time() - state["started_at"]),
+        "activities": stats["activities"],
+        "ingest_errors": len(stats["errors"]),
+        "frequency_ways": len(state["frequency"]["features"]),
+        "routing": {**state["routing"].status(), "jobs_running": len(state.get("jobs", {}))},
+        "frontend": (FRONTEND_DIST / "index.html").is_file(),
+    }
 
 
 @app.get("/api/activities")
@@ -211,3 +233,20 @@ def _ascent_range(req: RouteRequest) -> tuple[float, float] | None:
     if hi < lo:
         raise HTTPException(422, "D+ max inférieur au D+ min")
     return lo, hi
+
+
+# Production front: registered last so that every /api route above wins.
+@app.api_route("/{path:path}", methods=["GET", "HEAD"], include_in_schema=False)  # HEAD: `curl -I` checks
+def frontend(path: str) -> FileResponse:
+    """Files of the built front, and index.html for any other page so the front handles its own routes."""
+    if path == "api" or path.startswith("api/"):
+        raise HTTPException(404, "Not Found")
+    root = FRONTEND_DIST.resolve()
+    if not (root / "index.html").is_file():
+        raise HTTPException(404, "front non construit (cd frontend && npm run build), ou utiliser Vite en dev")
+    file = (root / path).resolve()
+    if path and file.is_relative_to(root) and file.is_file():
+        # Vite fingerprints everything under assets/: it never changes under the same name.
+        immutable = file.is_relative_to(root / "assets")
+        return FileResponse(file, headers={"Cache-Control": "public, max-age=31536000, immutable" if immutable else "no-cache"})
+    return FileResponse(root / "index.html", headers={"Cache-Control": "no-cache"})

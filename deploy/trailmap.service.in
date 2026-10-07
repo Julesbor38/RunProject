@@ -1,0 +1,23 @@
+# Template: deploy/install-service.sh fills in @USER@, @REPO@ and @DATA@, then installs it as
+# /etc/systemd/system/trailmap.service. Works the same on the home PC (WSL) and on a VPS.
+[Unit]
+Description=Trail Map (FastAPI + built front, single port)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@REPO@/backend
+Environment=TRAILMAP_DATA=@DATA@
+Environment=PYTHONUNBUFFERED=1
+# 127.0.0.1 only: reachable from Windows (WSL localhost forwarding) and from a local reverse proxy,
+# never from the LAN or the Internet. Remote access goes through `tailscale serve`.
+ExecStart=@REPO@/backend/.venv/bin/uvicorn app.api:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+# Startup reads the activity cache and may rebuild it (~20 s on a cold cache).
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

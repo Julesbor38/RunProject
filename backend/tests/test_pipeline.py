@@ -52,3 +52,40 @@ def test_api_routes_validation_and_errors(tmp_path: Path, monkeypatch):
         assert client.post("/api/routes", json={"start": [4.65, 45.0]}).status_code == 422  # loop without distance
         bad = {"start": [4.65, 45.0], "distance_km": 5, "preferences": {"nature": 2}}
         assert client.post("/api/routes", json=bad).status_code == 422
+
+
+def test_api_health(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(api, "DATA_DIR", make_data(tmp_path))
+    monkeypatch.setattr(api, "FRONTEND_DIST", tmp_path / "no-dist")
+    with TestClient(api.app) as client:
+        health = client.get("/api/health").json()
+    assert health["status"] == "ok" and health["activities"] == 2
+    assert {"tiles_total", "tiles_cached", "running", "jobs_running"} <= health["routing"].keys()
+    assert health["frontend"] is False
+
+
+def test_api_serves_built_front_with_spa_fallback(tmp_path: Path, monkeypatch):
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<html>app</html>")
+    (dist / "assets" / "main-abc.js").write_text("console.log(1)")
+    (tmp_path / "secret.txt").write_text("nope")
+    monkeypatch.setattr(api, "DATA_DIR", make_data(tmp_path))
+    monkeypatch.setattr(api, "FRONTEND_DIST", dist)
+    with TestClient(api.app) as client:
+        assert client.get("/").text == "<html>app</html>"
+        assert client.head("/").status_code == 200
+        asset = client.get("/assets/main-abc.js")
+        assert asset.text == "console.log(1)" and "immutable" in asset.headers["cache-control"]
+        assert client.get("/itineraire/42").text == "<html>app</html>"  # front route
+        assert client.get("/..%2Fsecret.txt").text == "<html>app</html>"  # no escape from dist
+        assert client.get("/api/nope").status_code == 404  # unknown API path: never index.html
+        assert client.get("/api/health").json()["frontend"] is True
+
+
+def test_api_without_built_front_serves_only_the_api(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(api, "DATA_DIR", make_data(tmp_path))
+    monkeypatch.setattr(api, "FRONTEND_DIST", tmp_path / "no-dist")
+    with TestClient(api.app) as client:
+        assert client.get("/").status_code == 404
+        assert client.get("/api/activities").status_code == 200

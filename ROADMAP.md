@@ -196,12 +196,30 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 - HTTPS : géolocalisation et « Envoyer vers la montre » deviennent testables sur le téléphone.
 - Ne jamais utiliser `tailscale funnel` (rendrait l'app publique).
 
+### 2026-10-07 — Auto-hébergement sur le PC de la maison
+- Mode production sur un seul port : `npm run build` puis FastAPI sert `frontend/dist` (fichiers +
+  `index.html` pour toute autre page hors `/api` ; une route `/api` inconnue reste un 404 JSON).
+  Assets Vite en cache longue durée, `index.html` en `no-cache`. Mode dev inchangé (Vite 5173 + `--reload`).
+- Correctif build : MapLibre cherchait son worker à côté du bundle, absent de `dist/` (la carte serait restée
+  vide) → worker empaqueté par Vite (`?worker&url`) et `setWorkerUrl` en production.
+- `GET|HEAD /api/health` : activités chargées, erreurs d'import, fréquentation, état du routage, front présent.
+- Service systemd `trailmap` (`deploy/trailmap.service.in`, installé par `deploy/install-service.sh`) :
+  uvicorn sans `--reload` sur `127.0.0.1:8000`, `Restart=always`, logs dans journald.
+  Vérifié : depuis Windows, `localhost:8000` et `127.0.0.1:8000` atteignent un uvicorn lié à 127.0.0.1
+  dans WSL (mode `nat`) ; Vite (IPv6) seulement `localhost`.
+- `deploy-local.sh` : pull, dépendances, build du front, tests, redémarrage, attente de `/api/health`.
+- `SELF-HOST.md` : tâche planifiée Windows qui garde WSL allumé (`conhost --headless wsl ... sleep infinity`),
+  Tailscale vers `http://localhost:8000`, jamais `funnel`, alimentation (capot fermé = rien), vérifications,
+  transposition sur un VPS.
+- 65 tests OK, 1 ignoré.
+
 ---
 
 ## État au 2026-10-07
 - Tuiles OSM : toute la région Rhône-Alpes en local (extrait Geofabrik du 2026-10-07, à rafraîchir
   avec `--force`) ; Overpass seulement en bordure et hors région, souvent saturé.
-- Accès téléphone via Tailscale configuré côté projet ; à tester réellement depuis le téléphone.
+- Auto-hébergement prêt côté code (service systemd, `deploy-local.sh`, `SELF-HOST.md`). Côté Windows à faire
+  à la main : tâche planifiée « WSL keep-alive », `tailscale serve --bg http://localhost:8000`, alimentation.
 - Rien n'utilise encore PostGIS ni GraphHopper.
 
 ## Prochaines tâches

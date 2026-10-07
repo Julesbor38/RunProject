@@ -1,10 +1,15 @@
-import { Map, NavigationControl, ScaleControl, GeolocateControl } from "maplibre-gl";
+import { Map, NavigationControl, ScaleControl, GeolocateControl, setWorkerUrl } from "maplibre-gl";
+import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./style.css";
 import { ActivitiesView } from "./activities";
 import { fetchActivities, fetchFrequency, fetchRoutingStatus } from "./api";
 import { Planner } from "./planner";
 import { addTerrain } from "./terrain";
+
+// The production bundle doesn't ship MapLibre's sibling worker file: point it at the one Vite bundles.
+// (In dev, MapLibre isn't pre-bundled and finds its worker next to itself.)
+if (import.meta.env.PROD) setWorkerUrl(maplibreWorkerUrl);
 
 type Tab = "route" | "activities";
 

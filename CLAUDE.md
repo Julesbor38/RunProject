@@ -17,8 +17,11 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   bouton « Envoyer vers la montre » (partage du GPX vers l'app COROS, non testé sur téléphone).
 - Génération d'itinéraires annulable, avec avancement ; tuiles OSM de Rhône-Alpes en local
   (plus de dépendance à Overpass dans la région). Accès téléphone via Tailscale (HTTPS, tailnet).
+- Auto-hébergement (`SELF-HOST.md`) : en production FastAPI sert aussi le front construit sur un seul port
+  (8000, 127.0.0.1), service systemd `trailmap` dans WSL, WSL gardé allumé par une tâche planifiée Windows,
+  `tailscale serve --bg http://localhost:8000`. Mise à jour : `./deploy-local.sh`. État : `GET /api/health`.
 - Prochaine grosse étape : map-matching (étape 2), puis notation des tronçons (étape 3).
-- Tests : 62 OK, 1 ignoré.
+- Tests : 65 OK, 1 ignoré.
 
 ## Architecture
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
@@ -33,7 +36,8 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 - frontend/ : TypeScript + Vite + MapLibre GL 6 (PWA à venir), fond OpenFreeMap
   - `main.ts`, `activities.ts` (onglet Mes sorties), `planner.ts` (onglet Itinéraire),
     `profile.ts` (profil altimétrique), `terrain.ts` (relief 3D), `api.ts`, `format.ts`
-  - Vite ne pré-empaquette pas MapLibre (sinon le worker est perdu et la carte ne charge pas)
+  - Vite ne pré-empaquette pas MapLibre (sinon le worker est perdu et la carte ne charge pas) ;
+    en build de production, le worker est empaqueté à part et donné à `setWorkerUrl`
 - Routage actuel : graphe OSM par tuiles 0,05° en cache dans data/osm/. En Rhône-Alpes, tuiles
   découpées localement depuis l'extrait Geofabrik (`app/routing/extract.py`, seulement les tuiles
   entièrement dans la région) ; ailleurs et en bordure, Overpass (plusieurs instances en secours,
@@ -54,6 +58,7 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 - Les notes seront attachées à des tronçons OSM (après map-matching), pas aux traces brutes.
 
 ## API
+- GET  /api/health : état (activités, fréquentation, routage, front construit), sans données de trace
 - GET  /api/activities : traces masquées + simplifiées (~700 Ko), cache data/cache/
 - GET  /api/frequency : voies OSM (ou traces) parcourues avec leur nombre de passages, cache data/cache/
 - POST /api/reload : relit data/raw
@@ -100,8 +105,11 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 - Front : cd frontend && npm install && npm run dev  (http://localhost:5173, proxy /api -> 8000)
   Vite 8 demande Node >= 20 ; si le Node système est trop vieux : Node LTS dans ~/.local/node
   et `export PATH=~/.local/node/bin:$PATH`
+- Production (voir SELF-HOST.md) : `./deploy-local.sh` (pull, dépendances, build, tests, redémarrage du
+  service systemd `trailmap`) ; `journalctl -u trailmap -f` ; `sudo systemctl stop trailmap` avant le mode dev
+  (même port 8000). Tailscale vise alors `http://localhost:8000` (pas 127.0.0.1 pour Vite : IPv6 seulement).
 - Accès depuis le téléphone (Tailscale) : https://jules-laptop.tailf52fab.ts.net
-  - Côté Windows, dans PowerShell : `tailscale serve --bg 5173` (relaie le tailnet en HTTPS vers Vite ;
+  - En dev, côté Windows, dans PowerShell : `tailscale serve --bg 5173` (relaie le tailnet en HTTPS vers Vite ;
     `tailscale serve status` pour vérifier, `tailscale serve --https=443 off` pour arrêter)
   - Vite n'accepte que les hôtes `.ts.net` en plus de localhost (`allowedHosts` dans vite.config.ts,
     jamais `allowedHosts: true`) ; le front n'appelle que des chemins relatifs /api, relayés au backend.
