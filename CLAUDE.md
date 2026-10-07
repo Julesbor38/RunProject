@@ -8,7 +8,7 @@ et génère des itinéraires selon ces critères. D'abord perso, puis communauta
 À chaque fin de session de travail : mettre à jour `ROADMAP.md` (ce qui a été fait, état,
 prochaines étapes) et la section « État actuel » ci-dessous, puis committer et pousser.
 
-## État actuel (2026-10-07)
+## État actuel (2026-10-08)
 - Étape 1 (import) : fonctionnelle. 254 activités (course, trail, randonnée), doublons Strava/Coros fusionnés.
   Reste : 3 .fit.gz Strava illisibles (`developer_data_index 0 not defined`).
 - Carte web : traces distinctes, une par sortie, colorées par type, cliquables dans les deux onglets
@@ -45,7 +45,9 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   et badges (annoncés seulement après un import, les rattrapages sont silencieux), mode « Brouillard » (voile
   percé sur la superficie découverte, contours arrondis, chemins courus en jaune au zoom ≥ 13), suggestions de zones jamais courues -> générateur en
   mode Découverte. Tables prêtes pour un classement (opt-in désactivé par défaut), rien d'exposé aux autres.
-- Prochaine grosse étape : notation des tronçons (étape 3) sur les tronçons de l'Exploration.
+- **Prochaine direction (à la prochaine session) : les crédits** — gagnés en courant (km, succès, % de commune,
+  lieux visités), dépensés dans l'app (génération d'itinéraires, collection, rareté, trophées). Idée à mûrir :
+  voir la tâche 1 de ROADMAP.md, présenter un plan d'abord. Ensuite : notation des tronçons (étape 3).
 - **Lieux notables** (`app/pois/`, `src/pois.ts`) : extraits de l'extrait OSM France dans data/pois/pois.sqlite
   (commun à tous), Overpass hors de France, Wikidata (photo créditée) ; fiche + « Passer par ici » (points de
   passage du générateur, 3 max) ; lieux à ~50 m listés sous chaque itinéraire.
@@ -140,7 +142,7 @@ Chaque route ne lit et n'écrit que les données du compte connecté (data/users
 
 ## Étapes
 1. [fait, reste 3 FIT illisibles] Import des activités (export Strava + .fit Coros) -> traces normalisées
-2. [à faire] Map-matching des traces sur OSM -> tronçons parcourus
+2. [première version : Exploration] Map-matching des traces sur OSM -> tronçons parcourus
 3. [à faire] Interface de notation des tronçons
 4. [prototype] Itinéraires pondérés par les notes (custom model GraphHopper)
    Prototype en place : boucles / aller simple selon critères OSM + D+, sans les notes

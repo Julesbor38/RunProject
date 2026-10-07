@@ -638,27 +638,78 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 
 ---
 
-## État au 2026-10-07
+## Bilan des 7 et 8 octobre 2026
+Deux journées chargées, détaillées dans le journal ci-dessus :
+- **Auto-hébergement** sur le PC (service systemd `trailmap`, Tailscale, `/api/health`, `deploy-local.sh`).
+- **Interface** refaite (identité « trail », logo) ; **« Le plus plat »** (pétales, aller-retour) ;
+  **tuiles OSM de toute la France** en local.
+- **Comptes** (connexion, création, données par compte), **imports** depuis la page (archive Strava, .fit/.gpx/.tcx),
+  **évaluation des sorties** ; retour aux traces distinctes et cliquables.
+- **Envoi vers la montre** sur iPhone : bouton générique « Envoyer à ma montre » (feuille de partage) ; front
+  déplacé sous /app/ ; panneau de debug ; **app iOS native** (Capacitor, GitHub Actions, AltStore, menu
+  « Ouvrir avec… ») — reste à l'installer sur le téléphone (câble USB).
+- **Lieux notables** : 479 026 lieux de France (nature, eau, patrimoine, parcs, points utiles), fiches Wikidata,
+  « Passer par ici » dans le générateur.
+- **Exploration** (première version de l'étape 2, map-matching) : 545 km de chemins découverts, 34 770 communes
+  extraites, % des chemins et **% de la superficie** de chaque commune (bande de 50 m de chaque côté des
+  passages : 52,9 km² découverts, 83 communes), lieux découverts, paliers et badges, suggestions de zones jamais
+  courues, **brouillard** arrondi éclairci sur la superficie découverte ; réponses compressées (gzip).
+- Tests : 104 OK, 1 ignoré.
+
+## État au 2026-10-08
 - Tuiles OSM : toute la France en local (extrait Geofabrik du 2026-10-07, à rafraîchir avec `--force`) ;
-  Overpass seulement hors de France.
+  Overpass seulement hors de France. Lieux notables et communes extraits du même extrait.
 - Auto-hébergement en service : systemd `trailmap` (port 8000), tâche Windows « WSL keep-alive », Tailscale vers
-  le port 8000, alimentation réglée. Mise à jour : `./deploy-local.sh`.
+  le port 8000, alimentation réglée. Mise à jour : `./deploy-local.sh` (ou redémarrage du service).
+- ⚠️ Sauvegarde : `data/explore/explore.sqlite` (~500 Mo, surtout les contours des communes, recalculables) n'est
+  pas sur Run-Project-Data (limite GitHub de 100 Mo par fichier) ; la progression de chaque compte est
+  recalculable depuis ses sorties, mais un export des seules données des comptes serait plus sûr.
 - Rien n'utilise encore PostGIS ni GraphHopper.
 
 ## Prochaines tâches
-1. **Corriger les 3 .fit.gz illisibles** (`10708302692`, `10690331142`, `10690331477`) :
+
+> **Au lancement de la prochaine session : partir sur les crédits (tâche 1 ci-dessous).** Commencer par
+> présenter un plan (gains, dépenses, équilibre, écrans) et le faire valider avant de coder.
+
+1. **Crédits : gagner en courant, dépenser dans l'app** (prochaine direction du projet, idée à mûrir).
+   - **Gagner des crédits** :
+     - selon les **kilomètres parcourus** (sorties horodatées seulement, mêmes règles que l'Exploration : parties
+       visibles, ≤ 25 km/h ; peut-être un bonus pour les km nouveaux par rapport aux km déjà connus) ;
+     - en complétant des **succès** (les paliers et badges existants, et de nouveaux) ;
+     - en atteignant un **% de la superficie ou des chemins d'une commune** (10 / 25 / 50 / 75 / 90 %) ;
+     - en **visitant des lieux** : tel nombre de monuments, sommets, cascades, points de vue… ; et pourquoi pas des
+       **bâtiments** (attention : les bâtiments OSM ne sont pas dans nos tuiles de routage ni dans les lieux
+       notables ; il faudrait les compter depuis l'extrait France, des dizaines de millions d'éléments, peut-être
+       seulement leur nombre par cellule de la grille de l'Exploration).
+   - **Dépenser des crédits** (à réfléchir) : générer un itinéraire coûte tant de crédits (la boucle simple
+     gratuite ? les options avancées payantes : points de passage, « Le plus plat », Découverte…) ; **collection**
+     (cartes des lieux ou des communes découverts, avec une **rareté** : commune peu courue, sommet élevé,
+     monument classé, cascade…) ; **trophées** ; personnalisation (couleurs du brouillard, thèmes de carte, icônes).
+   - **Questions à trancher** : barème (crédits par km, par succès, par %), plafonds anti-abus (une même sortie
+     importée deux fois, une trace de vélo, des allers-retours devant chez soi), rétroactivité sur l'historique
+     (crédits de bienvenue d'après les sorties passées ?), ce qu'on obtient en dépensant, s'il y a des échanges
+     plus tard entre comptes (classement, opt-in déjà prévu dans la table `settings`, désactivé par défaut).
+   - **Pistes techniques** : un **journal des crédits** par compte (table SQLite à côté de data/explore :
+     une ligne par gain / dépense, avec sa source — sortie, succès, palier, lieu — et une clé unique pour qu'un
+     retraitement ou un réimport ne crédite jamais deux fois) ; solde = somme du journal ; s'appuyer sur ce qui
+     existe : `processed` (sorties traitées), `traversed` / `area_cells` (km et superficie nouveaux),
+     `discovered_pois` (lieux), `Explorer.achievements()` (succès) et les annonces « Nouveau palier » (à étendre
+     avec « +N crédits ») ; coût d'un itinéraire vérifié côté serveur dans POST /api/routes.
+2. **Corriger les 3 .fit.gz illisibles** (`10708302692`, `10690331142`, `10690331477`) :
    erreur `developer_data_index 0 not defined`, assouplir le parseur FIT.
-2. **Performances** : ~6 s pour 30 km graphe en mémoire, mais ~20–30 s pour construire un grand
+3. **Performances** : ~6 s pour 30 km graphe en mémoire, mais ~20–30 s pour construire un grand
    graphe (beaucoup de zones). Pistes : un seul Dijkstra depuis le départ partagé entre candidats,
    graphe plus compact, ou GraphHopper (qui peut lire le même extrait .osm.pbf).
-3. (Rendu « Fréquentation » abandonné le 2026-10-07 ; son comptage par portion de voie OSM, dans
+4. (Rendu « Fréquentation » abandonné le 2026-10-07 ; son comptage par portion de voie OSM, dans
    l'historique git, peut resservir d'idée pour le map-matching de l'étape 2.)
-4. **Profil altimétrique des sorties passées** dans « Mes sorties » (seul le D+ montre est affiché).
-5. **Étape 2 — map-matching** : première version en place (Exploration, moteur Python) ; à affiner (GPS en
+5. **Profil altimétrique des sorties passées** dans « Mes sorties » (seul le D+ montre est affiché).
+6. **Étape 2 — map-matching** : première version en place (Exploration, moteur Python) ; à affiner (GPS en
    ville dense, chemins absents d'OSM) ou à remplacer par GraphHopper.
-6. **Étape 3 — notation des tronçons** : reporter les évaluations des sorties sur les tronçons OSM parcourus
+7. **Étape 3 — notation des tronçons** : reporter les évaluations des sorties sur les tronçons OSM parcourus
    (après map-matching), puis noter directement un tronçon.
-7. **Étape 4 — itinéraires pondérés par les notes.**
-8. **Étape 5 — communautaire** : comptes, agrégation, modération.
-9. **Téléphone** : envoi vers COROS en un geste (service synchronisé par COROS, ou app iOS native) ; aujourd'hui
-   le téléchargement oblige à relancer l'app d'écran d'accueil iOS. Puis PWA (installation, hors ligne).
+8. **Étape 4 — itinéraires pondérés par les notes.**
+9. **Étape 5 — communautaire** : comptes, agrégation, modération.
+10. **Téléphone** : installer l'app iOS native (AltStore, câble USB : IOS-ALTSTORE.md) et vérifier « Envoyer à ma
+   montre » avec le menu « Ouvrir avec… » ; puis hors ligne.
+11. **Sauvegarde de l'Exploration** : exporter les données des comptes de data/explore/explore.sqlite (sans les
+   communes) vers Run-Project-Data.
