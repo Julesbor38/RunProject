@@ -386,6 +386,17 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
   Page sans script ni ressource externe (CSP `default-src 'none'`), pas de cache, pas de referrer.
 - À confirmer sur l'iPhone.
 
+### 2026-10-07 — Le GPX part dans le vrai Safari, l'app d'écran d'accueil n'est plus touchée
+- Retour du téléphone : la page intermédiaire marche mais n'apporte rien ; surtout, après Fichiers → COROS,
+  le navigateur intégré reste affiché dans Trail Map **sans sa croix** : app à fermer entièrement.
+- Dans l'app d'écran d'accueil iOS (`navigator.standalone`), le bouton confie le lien direct du GPX
+  (`…&dl=1`, signé) au **vrai Safari** via `x-safari-https://…` (iOS 17+) : Safari le télécharge comme avant,
+  et Trail Map n'ouvre rien (ni navigation, ni navigateur intégré) ; on y revient par son icône.
+  Si l'app est encore au premier plan 2,5 s après (iOS trop ancien), un bouton propose la page de
+  téléchargement en secours. Dans un onglet de navigateur : le GPX directement dans un nouvel onglet.
+- Vérifié en simulation : app inchangée, bon lien confié au système, secours affiché quand Safari ne prend
+  pas la main ; onglet de navigateur : lien direct. À confirmer sur l'iPhone.
+
 ---
 
 ## État au 2026-10-07

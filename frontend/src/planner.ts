@@ -524,9 +524,11 @@ export class Planner {
         profileBox.addEventListener("click", (e) => e.stopPropagation());
         renderProfile(profileBox, p.profile, ROUTE_COLORS[r.id] ?? ROUTE_COLORS[2], (d) => this.showHoverPoint(r, d));
       }
-      // Phone: the GPX opens in Safari next to the app (never in place of it: in an app added to the iOS home
-      // screen there would be no way back). Safari downloads it, then Fichiers -> Partager -> COROS, the only
-      // way COROS takes a GPX. Safari has no session there: the link is signed and valid for an hour.
+      // Phone: the app never shows the GPX itself. In an app added to the iOS home screen, both a navigation
+      // and the in-app browser stay stuck on the file once one has gone to Fichiers / COROS. There, the real
+      // Safari downloads it (iOS 17+ hands « x-safari-https:// » links to Safari); elsewhere, a new tab does.
+      // Then Fichiers -> Partager -> COROS, the only way COROS takes a GPX. The link is signed (Safari has no
+      // session of the home-screen app) and valid for an hour.
       const watch = card.querySelector(".watch") as HTMLButtonElement;
       watch.hidden = !isMobile();
       const link = isMobile() ? prefetchLink(p.route_id) : null;
@@ -534,13 +536,32 @@ export class Planner {
         e.stopPropagation();
         if (!link) return; // desktop: the link downloads the file
         e.preventDefault();
-        const url = link.fresh();
-        if (!url) {
+        const page = link.fresh();
+        if (!page) {
           this.status(link.failed ? "GPX indisponible : régénérez l'itinéraire." : "GPX en préparation : réessayez dans un instant.", link.failed);
           return;
         }
-        window.open(url, "_blank"); // in the tap itself, or Safari blocks it
-        this.status("Une page s'ouvre : « Télécharger le GPX », puis Fichiers → Téléchargements → Partager ⬆ → COROS. La croix en haut à gauche ramène ici.");
+        const file = `${page}&dl=1`;
+        const next = "Fichiers → Téléchargements → le fichier → Partager ⬆ → COROS.";
+        if (!iosHomeScreenApp()) {
+          window.open(file, "_blank"); // in the tap itself, or the browser blocks it
+          this.status(`GPX téléchargé : ${next}`);
+          return;
+        }
+        // Did Safari take over? If the app is still in front after a moment, offer the download page instead.
+        const leftApp = new Promise<boolean>((resolve) => {
+          const timer = setTimeout(() => resolve(false), 2500);
+          document.addEventListener("visibilitychange", () => document.hidden && (clearTimeout(timer), resolve(true)), { once: true });
+        });
+        location.href = `x-safari-${location.origin}${file}`;
+        this.status(`Safari télécharge le GPX : ${next} Revenez ensuite sur Trail Map par son icône : l'app n'a pas bougé.`);
+        leftApp.then((left) => {
+          if (!left)
+            this.status("Safari ne s'est pas ouvert (iOS trop ancien ?).", true, {
+              label: "Ouvrir la page de téléchargement",
+              run: () => window.open(page, "_blank"),
+            });
+        });
       };
       watch.addEventListener("click", send);
       card.querySelector(".gpx")!.addEventListener("click", send);
@@ -570,11 +591,18 @@ export class Planner {
     b.textContent = this.generation ? "Annuler le calcul" : this.routes.length ? "Régénérer" : "Générer l'itinéraire";
   }
 
-  private status(text: string | null, error = false) {
+  private status(text: string | null, error = false, action?: { label: string; run: () => void }) {
     const el = document.getElementById("route-status")!;
     el.hidden = !text;
     el.textContent = text ?? "";
     el.classList.toggle("error", error);
+    if (action) {
+      const b = document.createElement("button");
+      b.className = "text-btn";
+      b.textContent = action.label;
+      b.addEventListener("click", action.run);
+      el.append(" ", b);
+    }
   }
 
   // --- persistence (per-browser convenience only) ---
@@ -619,6 +647,11 @@ export class Planner {
   get startPoint(): LngLat | null {
     return this.start ? (this.start.getLngLat().toArray() as LngLat) : null;
   }
+}
+
+/** Running as an app added to the iOS home screen (no browser tabs, no address bar). */
+function iosHomeScreenApp(): boolean {
+  return (navigator as Navigator & { standalone?: boolean }).standalone === true;
 }
 
 /** A signed link to the route's GPX, fetched in the background so that a tap can open it at once. */
