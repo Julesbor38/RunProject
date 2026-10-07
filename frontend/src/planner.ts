@@ -524,29 +524,39 @@ export class Planner {
         profileBox.addEventListener("click", (e) => e.stopPropagation());
         renderProfile(profileBox, p.profile, ROUTE_COLORS[r.id] ?? ROUTE_COLORS[2], (d) => this.showHoverPoint(r, d));
       }
-      // Phone: a download page opens over the app (iOS: an in-app browser with its ✕), never the file in place
-      // of the app, which left no way back. The page stays during and after the download, with a button that
-      // closes it to get back here. Then Fichiers -> Partager -> COROS, the only way COROS takes a GPX.
-      // The link is signed (that view has no session of the home-screen app) and valid for an hour.
+      // Phone: the system share sheet with the .gpx, over the app (it can never leave the app stuck, unlike a
+      // download, whose iOS file preview has no way back). COROS is not in that sheet (it only takes a GPX from
+      // the Files app): « Enregistrer dans Fichiers », then Fichiers -> Partager -> COROS. A short guide says so
+      // first; where files can't be shared (Chrome on Android refuses .gpx), the file is downloaded.
       const watch = card.querySelector(".watch") as HTMLButtonElement;
       watch.hidden = !isMobile();
-      const link = isMobile() ? prefetchLink(p.route_id) : null;
+      const file = isMobile() ? prefetchGpx(gpxUrl(p.route_id), p.gpx_filename) : null;
       const send = (e: Event) => {
         e.stopPropagation();
-        if (!link) return; // desktop: the link downloads the file
+        if (!file) return; // desktop: the link downloads the file
         e.preventDefault();
-        const page = link.fresh();
-        if (!page) {
-          this.status(link.failed ? "GPX indisponible : régénérez l'itinéraire." : "GPX en préparation : réessayez dans un instant.", link.failed);
+        const ready = file.current;
+        if (!ready) {
+          this.status(file.failed ? "GPX indisponible : régénérez l'itinéraire." : "GPX en préparation : réessayez dans un instant.", file.failed);
           return;
         }
-        window.open(page, "_blank"); // in the tap itself, or it is blocked
-        this.status("« Télécharger le GPX », puis Fichiers → Téléchargements → Partager ⬆ → COROS. « Revenir à Trail Map » ramène ici.");
+        if (!navigator.canShare?.({ files: [ready] })) return downloadFile(ready);
+        if (guideSeen()) return this.shareGpx(ready); // in the tap itself
+        corosGuide(ready.name).then((go) => go && this.shareGpx(ready));
       };
       watch.addEventListener("click", send);
       card.querySelector(".gpx")!.addEventListener("click", send);
       box.appendChild(card);
     });
+  }
+
+  /** Called from the guide's « Continuer » tap: Safari only opens the share sheet within a tap. */
+  private shareGpx(file: File) {
+    // Only the file: a title would add text to the share and hide the apps that take files.
+    navigator
+      .share({ files: [file] })
+      .then(() => this.status("Ensuite : Fichiers → le fichier → Partager ⬆ → COROS. (Dans le menu : « Enregistrer dans Fichiers ».)"))
+      .catch((err: DOMException) => err.name !== "AbortError" && this.status(`Partage impossible : ${err.message}`, true));
   }
 
   private showHoverPoint(r: RouteFeature, distanceM: number | null) {
@@ -629,29 +639,53 @@ export class Planner {
   }
 }
 
-/** A signed link to the route's GPX, fetched in the background so that a tap can open it at once. */
-function prefetchLink(routeId: string) {
-  const out = {
-    url: null as string | null,
-    failed: false,
-    expires: 0,
-    /** The link, or null (and a new one on its way) when missing or about to expire. */
-    fresh(): string | null {
-      if (this.url && this.expires - Date.now() / 1000 > 60) return this.url;
-      if (this.url) this.refresh();
-      return null;
-    },
-    refresh() {
-      this.url = null;
-      this.failed = false;
-      apiFetch(`/api/routes/${encodeURIComponent(routeId)}/link`, { method: "POST" })
-        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`erreur ${r.status}`))))
-        .then((body: { url: string; expires: number }) => Object.assign(this, { url: body.url, expires: body.expires }))
-        .catch(() => (this.failed = true));
-    },
-  };
-  out.refresh();
+/** The GPX fetched in the background (with the session), so that a tap can share it at once. */
+function prefetchGpx(url: string, filename: string) {
+  const out: { current: File | null; failed: boolean } = { current: null, failed: false };
+  apiFetch(url)
+    .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`erreur ${r.status}`))))
+    .then((blob) => (out.current = new File([blob], filename, { type: "application/gpx+xml" })))
+    .catch(() => (out.failed = true));
   return out;
+}
+
+const GUIDE_KEY = "trailmap.corosGuideSeen";
+
+function guideSeen(): boolean {
+  try {
+    return localStorage.getItem(GUIDE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** The how-to before the first share sheet; resolves true on « Continuer » (a tap, so the sheet may open). */
+function corosGuide(filename: string): Promise<boolean> {
+  const dialog = document.getElementById("coros-guide") as HTMLDialogElement;
+  dialog.querySelector(".guide-file")!.textContent = filename;
+  dialog.returnValue = "";
+  dialog.showModal();
+  return new Promise((resolve) => {
+    const go = dialog.querySelector("button[value=go]") as HTMLButtonElement;
+    // Resolve in the click itself: navigator.share must run within the user's tap.
+    go.onclick = () => {
+      try {
+        localStorage.setItem(GUIDE_KEY, "1");
+      } catch {
+        /* shown again next time */
+      }
+      resolve(true);
+    };
+    dialog.addEventListener("close", () => resolve(false), { once: true });
+  });
+}
+
+/** Save the file without leaving the page (where it can't be shared, e.g. Chrome on Android). */
+function downloadFile(file: File) {
+  const url = URL.createObjectURL(file);
+  const a = Object.assign(document.createElement("a"), { href: url, download: file.name });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
 function makeMarker(label: string, kind: "start" | "end") {

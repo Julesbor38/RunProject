@@ -411,6 +411,22 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 - Vérifié en simulation : l'app ne bouge pas, la page reste pendant le téléchargement (bon fichier .gpx),
   « Revenir à Trail Map » ferme la vue et l'app est intacte. À confirmer sur l'iPhone.
 
+### 2026-10-07 — Feuille de partage avec guide : l'app ne peut plus se bloquer
+- Constat sur l'iPhone : après « Télécharger le GPX », iOS affiche son propre aperçu du fichier (avec le partage
+  vers COROS) dans la vue ouverte par-dessus l'app, **sans aucun retour possible**. Cet écran appartient à iOS :
+  une page web ne peut ni y ajouter de bouton, ni le fermer, ni l'éviter. Gênant pour de futurs utilisateurs.
+- Choix de l'utilisateur : la **feuille de partage** du système, qui s'ouvre et se referme par-dessus l'app,
+  la seule voie qui ne peut jamais bloquer. COROS n'y figure pas (il ne prend un GPX que depuis Fichiers) :
+  la première fois, un guide en 2 étapes (« Enregistrer dans Fichiers », puis Fichiers → le fichier → Partager
+  → COROS), ensuite la feuille directement ; rappel des étapes dans l'app après le partage.
+  Le GPX est préchargé (avec la session) et partagé dans le geste ; sans partage de fichiers (Chrome sur Android),
+  il est téléchargé sans quitter la page.
+- Supprimés : lien signé, `/api/share/gpx`, page de téléchargement, `data/auth/link-secret` (plus rien
+  d'accessible sans session à part la connexion et /api/health).
+- Vérifié en simulation (avec la règle de Safari : partage seulement dans un geste) : guide la 1re fois, plus
+  ensuite, bon fichier partagé, app inchangée ; sans partage : téléchargement, app inchangée.
+- 66 tests OK, 1 ignoré.
+
 ---
 
 ## État au 2026-10-07

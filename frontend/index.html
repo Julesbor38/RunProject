@@ -54,6 +54,24 @@
       </form>
     </div>
 
+    <!-- Before the share sheet: how a GPX gets to the COROS app (it only takes one from the Files app) -->
+    <dialog id="coros-guide">
+      <form method="dialog">
+        <h3><svg class="i"><use href="#i-watch" /></svg>Envoyer vers votre montre</h3>
+        <ol>
+          <li>Dans le menu qui s'ouvre, choisissez <b>«&nbsp;Enregistrer dans Fichiers&nbsp;»</b> (faites défiler la liste si besoin),
+            puis <b>Enregistrer</b>.</li>
+          <li>Ouvrez l'app <b>Fichiers</b> → le fichier <span class="guide-file">.gpx</span> → <b>Partager</b> ⬆ → <b>COROS</b>.
+            L'app COROS l'importe et l'envoie à la montre.</li>
+        </ol>
+        <p class="muted small">Trail Map reste ouverte derrière : revenez-y quand vous voulez.</p>
+        <footer>
+          <button value="cancel" class="link-btn">Annuler</button>
+          <button value="go" class="primary">Continuer</button>
+        </footer>
+      </form>
+    </dialog>
+
     <!-- Rating sheet of one activity -->
     <dialog id="rate-dialog">
       <form>

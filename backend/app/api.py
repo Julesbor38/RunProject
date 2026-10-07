@@ -8,11 +8,9 @@ serves both the API and frontend/dist on a single port (see SELF-HOST.md).
 """
 from __future__ import annotations
 
-import html
 import json
 import logging
 import os
-import secrets
 import shutil
 import tempfile
 import threading
@@ -22,7 +20,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, HTTPException, Path as PathParam, Request, Response, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -138,15 +136,13 @@ app = FastAPI(title="Trail Map", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_methods=["GET", "POST", "PUT", "DELETE"])
 
 PUBLIC_API = {"/api/health", "/api/auth/login", "/api/auth/logout", "/api/auth/signup", "/api/auth/options"}
-SIGNED_API = "/api/share/"  # no session, but a signed, expiring link (checked by the route itself)
-LINK_TTL_S = 3600
 
 
 @app.middleware("http")
 async def require_login(request: Request, call_next):
     """Every /api route needs a session, except the few public ones: new routes are protected by default."""
     path = request.url.path
-    if (path == "/api" or path.startswith("/api/")) and path not in PUBLIC_API and not path.startswith(SIGNED_API):
+    if (path == "/api" or path.startswith("/api/")) and path not in PUBLIC_API:
         user = session_user(DATA_DIR, request.cookies.get(COOKIE))
         if user is None:
             return JSONResponse({"detail": "connexion requise"}, status_code=401)
@@ -393,101 +389,6 @@ def route_gpx(route_id: str = PathParam(pattern="^[0-9a-f]{32}$"), ws: Workspace
         raise HTTPException(404, "itinéraire inconnu ou expiré, régénérez-le")
     saved = json.loads(file.read_text())
     return gpx.response(saved["name"], saved["coordinates"])
-
-
-@app.post("/api/routes/{route_id}/link")
-def route_link(route_id: str = PathParam(pattern="^[0-9a-f]{32}$"), ws: Workspace = Depends(workspace)) -> dict:
-    """A link to the route's GPX that works without the session for an hour (opened in Safari from the
-    iOS home-screen app, which keeps its own cookies: Safari downloads it, then Fichiers -> COROS)."""
-    if not (ws.dir / "routes" / f"{route_id}.json").is_file():
-        raise HTTPException(404, "itinéraire inconnu ou expiré, régénérez-le")
-    expires = int(time.time()) + LINK_TTL_S
-    sig = auth.sign_link(DATA_DIR, "gpx", ws.user, route_id, expires)
-    return {"url": f"{SIGNED_API}gpx/{ws.user}/{route_id}?expires={expires}&sig={sig}", "expires": expires}
-
-
-@app.get(SIGNED_API + "gpx/{user}/{route_id}")
-def shared_gpx(
-    request: Request,
-    user: str = PathParam(pattern=auth.USERNAME.pattern),
-    route_id: str = PathParam(pattern="^[0-9a-f]{32}$"),
-    expires: int = 0,
-    sig: str = "",
-    dl: bool = False,
-):
-    """A small page with a download button (`dl=1`: the GPX itself, as an attachment).
-
-    The in-app browser iOS opens over a home-screen app stays blank when the page is a file to
-    download: a page, and a download started by a tap, work there.
-    """
-    if not auth.check_link(DATA_DIR, sig, expires, "gpx", user, route_id):
-        raise HTTPException(403, "lien expiré ou invalide : relancez « Envoyer vers la montre » depuis l'app")
-    file = user_dir(DATA_DIR, user) / "routes" / f"{route_id}.json"
-    if not file.is_file():
-        raise HTTPException(404, "itinéraire inconnu ou expiré, régénérez-le")
-    saved = json.loads(file.read_text())
-    if dl:
-        return gpx.response(saved["name"], saved["coordinates"])
-    download = f"?expires={expires}&sig={sig}&dl=1"
-    nonce = secrets.token_urlsafe(16)
-    return HTMLResponse(
-        DOWNLOAD_PAGE.format(
-            name=html.escape(saved["name"]), href=html.escape(download), filename=html.escape(gpx.filename(saved["name"])), nonce=nonce
-        ),
-        headers={
-            "Cache-Control": "no-store",
-            "Content-Security-Policy": f"default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-{nonce}'",
-            "Referrer-Policy": "no-referrer",
-        },
-    )
-
-
-# Opened over the app (iOS in-app browser): the download (an <a download>) leaves this page in place, so
-# coming back from Fichiers / COROS shows it again, with its button to close the view and get back to the app.
-DOWNLOAD_PAGE = """<!doctype html>
-<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{name}</title>
-<style>
-  body {{ margin: 0; padding: 16px 16px 28px; font: 17px/1.5 -apple-system, system-ui, sans-serif; color: #1b2420; background: #f3f0ea; }}
-  main {{ max-width: 460px; margin: auto; }}
-  .back {{ display: block; width: 100%; margin-bottom: 14px; padding: 15px; border: none; border-radius: 14px; background: #143f30;
-    color: #fff; font: inherit; font-size: 18px; font-weight: 700; text-align: center; }}
-  .card {{ padding: 22px 20px; border-radius: 20px; background: #fff; box-shadow: 0 8px 30px rgb(15 46 35 / .15); }}
-  h1 {{ margin: 0 0 4px; font-size: 22px; color: #143f30; }}
-  p.file {{ margin: 0 0 18px; color: #6a726d; font-size: 14px; word-break: break-all; }}
-  a.button {{ display: block; padding: 16px; border-radius: 14px; background: #e8692c; color: #fff; font-weight: 700;
-    font-size: 19px; text-align: center; text-decoration: none; }}
-  .done {{ margin: 14px 0 0; padding: 12px 14px; border-radius: 12px; background: #ecf5f0; color: #143f30; font-weight: 600; }}
-  ol {{ margin: 18px 0 0; padding-left: 22px; }}
-  li {{ margin-bottom: 6px; }}
-  .hint {{ margin: 12px 0 0; color: #6a726d; font-size: 14px; }}
-  [hidden] {{ display: none; }}
-</style></head>
-<body><main>
-  <button class="back" id="back" type="button">← Revenir à Trail Map</button>
-  <p class="hint" id="close-hint" hidden>La page reste ouverte ? Touchez tout en haut de l'écran pour faire
-    réapparaître la croix ✕, puis touchez-la.</p>
-  <div class="card">
-    <h1>{name}</h1>
-    <p class="file">{filename}</p>
-    <a class="button" id="download" href="{href}" download="{filename}">Télécharger le GPX</a>
-    <p class="done" id="done" hidden>Téléchargement lancé ✓ Le fichier est dans Fichiers → Téléchargements.</p>
-    <ol>
-      <li>« Télécharger le GPX », puis « Télécharger » si iOS le demande.</li>
-      <li>App <b>Fichiers</b> → <b>Téléchargements</b> → le fichier → <b>Partager</b> → <b>COROS</b>.</li>
-      <li>De retour ici : « Revenir à Trail Map ».</li>
-    </ol>
-  </div>
-</main>
-<script nonce="{nonce}">
-  document.getElementById("download").addEventListener("click", () => (document.getElementById("done").hidden = false));
-  document.getElementById("back").addEventListener("click", () => {{
-    window.close(); // closes the view the app opened
-    setTimeout(() => (document.getElementById("close-hint").hidden = false), 500);
-  }});
-</script>
-</body></html>
-"""
 
 
 class GpxRequest(BaseModel):

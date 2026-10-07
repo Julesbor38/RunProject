@@ -193,29 +193,6 @@ def session_user(data_dir: Path, token: str | None) -> str | None:
     return s["user"] if s and s["user"] in users(data_dir) else None
 
 
-# --- signed links: a file reachable without the session cookie, for a short time ---
-# (Safari, opened from the app added to the iOS home screen, does not share that app's cookies.)
-
-
-def _secret(data_dir: Path) -> bytes:
-    path = _dir(data_dir) / "link-secret"
-    with _lock:
-        if not path.exists():
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with open(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as f:
-                f.write(secrets.token_hex(32))
-        return bytes.fromhex(path.read_text().strip())
-
-
-def sign_link(data_dir: Path, *parts: str | int) -> str:
-    message = "\n".join(map(str, parts)).encode()
-    return hmac.new(_secret(data_dir), message, hashlib.sha256).hexdigest()
-
-
-def check_link(data_dir: Path, sig: str, expires: int, *parts: str | int) -> bool:
-    return expires > time.time() and hmac.compare_digest(sig, sign_link(data_dir, *parts, expires))
-
-
 # --- command line ---
 
 
