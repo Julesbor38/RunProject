@@ -397,6 +397,20 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 - Vérifié en simulation : app inchangée, bon lien confié au système, secours affiché quand Safari ne prend
   pas la main ; onglet de navigateur : lien direct. À confirmer sur l'iPhone.
 
+### 2026-10-07 — Rester dans l'app : page de téléchargement avec « Revenir à Trail Map »
+- Retour : être envoyé dans Safari ne plaît pas (on veut rester dans l'app) et le téléchargement y est peu
+  visible. Abandon de `x-safari-https://`, retour à la page ouverte **par-dessus l'app** (navigateur intégré
+  d'iOS), celle avec laquelle le téléchargement marchait.
+- Le problème de retour venait de ce que la vue restait sur le fichier, sans croix. Désormais :
+  - le téléchargement est un `<a download>` : la page reste affichée pendant et après, avec « Téléchargement
+    lancé ✓ » ; en revenant de Fichiers / COROS, c'est elle qu'on retrouve ;
+  - grand bouton **« ← Revenir à Trail Map »** en haut, qui ferme la vue (`window.close()` : elle a été ouverte
+    par l'app) ; s'il ne la ferme pas, la page explique de toucher le haut de l'écran pour faire réapparaître
+    la croix (la barre de cette vue se replie) ;
+  - un seul petit script autorisé (CSP avec nonce), toujours sans ressource externe.
+- Vérifié en simulation : l'app ne bouge pas, la page reste pendant le téléchargement (bon fichier .gpx),
+  « Revenir à Trail Map » ferme la vue et l'app est intacte. À confirmer sur l'iPhone.
+
 ---
 
 ## État au 2026-10-07

@@ -1,4 +1,5 @@
 """Sign-up from the page, and each account seeing only its own data."""
+import re
 from pathlib import Path
 
 import pytest
@@ -115,8 +116,11 @@ def test_signed_gpx_link_works_without_session_for_its_route_only(data, monkeypa
     with client() as safari:  # no cookie, like Safari next to the home-screen app
         page = safari.get(link)  # a page with a download button: the iOS in-app browser stays blank on a bare file
         assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
-        assert "Télécharger le GPX" in page.text and "default-src 'none'" in page.headers["content-security-policy"]
-        href = page.text.split('class="button" href="')[1].split('"')[0].replace("&amp;", "&")
+        assert "Télécharger le GPX" in page.text and "Revenir à Trail Map" in page.text
+        csp = page.headers["content-security-policy"]
+        nonce = re.search(r'<script nonce="([^"]+)"', page.text).group(1)
+        assert "default-src 'none'" in csp and f"'nonce-{nonce}'" in csp  # only the page's own script runs
+        href = re.search(r'id="download" href="([^"]+)"', page.text).group(1).replace("&amp;", "&")
         r = safari.get(link.split("?")[0] + href)
         assert r.status_code == 200 and r.headers["content-type"] == "application/gpx+xml"
         assert "attachment" in r.headers["content-disposition"]

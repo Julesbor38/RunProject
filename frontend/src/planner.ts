@@ -524,11 +524,10 @@ export class Planner {
         profileBox.addEventListener("click", (e) => e.stopPropagation());
         renderProfile(profileBox, p.profile, ROUTE_COLORS[r.id] ?? ROUTE_COLORS[2], (d) => this.showHoverPoint(r, d));
       }
-      // Phone: the app never shows the GPX itself. In an app added to the iOS home screen, both a navigation
-      // and the in-app browser stay stuck on the file once one has gone to Fichiers / COROS. There, the real
-      // Safari downloads it (iOS 17+ hands « x-safari-https:// » links to Safari); elsewhere, a new tab does.
-      // Then Fichiers -> Partager -> COROS, the only way COROS takes a GPX. The link is signed (Safari has no
-      // session of the home-screen app) and valid for an hour.
+      // Phone: a download page opens over the app (iOS: an in-app browser with its ✕), never the file in place
+      // of the app, which left no way back. The page stays during and after the download, with a button that
+      // closes it to get back here. Then Fichiers -> Partager -> COROS, the only way COROS takes a GPX.
+      // The link is signed (that view has no session of the home-screen app) and valid for an hour.
       const watch = card.querySelector(".watch") as HTMLButtonElement;
       watch.hidden = !isMobile();
       const link = isMobile() ? prefetchLink(p.route_id) : null;
@@ -541,27 +540,8 @@ export class Planner {
           this.status(link.failed ? "GPX indisponible : régénérez l'itinéraire." : "GPX en préparation : réessayez dans un instant.", link.failed);
           return;
         }
-        const file = `${page}&dl=1`;
-        const next = "Fichiers → Téléchargements → le fichier → Partager ⬆ → COROS.";
-        if (!iosHomeScreenApp()) {
-          window.open(file, "_blank"); // in the tap itself, or the browser blocks it
-          this.status(`GPX téléchargé : ${next}`);
-          return;
-        }
-        // Did Safari take over? If the app is still in front after a moment, offer the download page instead.
-        const leftApp = new Promise<boolean>((resolve) => {
-          const timer = setTimeout(() => resolve(false), 2500);
-          document.addEventListener("visibilitychange", () => document.hidden && (clearTimeout(timer), resolve(true)), { once: true });
-        });
-        location.href = `x-safari-${location.origin}${file}`;
-        this.status(`Safari télécharge le GPX : ${next} Revenez ensuite sur Trail Map par son icône : l'app n'a pas bougé.`);
-        leftApp.then((left) => {
-          if (!left)
-            this.status("Safari ne s'est pas ouvert (iOS trop ancien ?).", true, {
-              label: "Ouvrir la page de téléchargement",
-              run: () => window.open(page, "_blank"),
-            });
-        });
+        window.open(page, "_blank"); // in the tap itself, or it is blocked
+        this.status("« Télécharger le GPX », puis Fichiers → Téléchargements → Partager ⬆ → COROS. « Revenir à Trail Map » ramène ici.");
       };
       watch.addEventListener("click", send);
       card.querySelector(".gpx")!.addEventListener("click", send);
@@ -647,11 +627,6 @@ export class Planner {
   get startPoint(): LngLat | null {
     return this.start ? (this.start.getLngLat().toArray() as LngLat) : null;
   }
-}
-
-/** Running as an app added to the iOS home screen (no browser tabs, no address bar). */
-function iosHomeScreenApp(): boolean {
-  return (navigator as Navigator & { standalone?: boolean }).standalone === true;
 }
 
 /** A signed link to the route's GPX, fetched in the background so that a tap can open it at once. */

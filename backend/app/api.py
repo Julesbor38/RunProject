@@ -12,6 +12,7 @@ import html
 import json
 import logging
 import os
+import secrets
 import shutil
 import tempfile
 import threading
@@ -428,38 +429,64 @@ def shared_gpx(
     if dl:
         return gpx.response(saved["name"], saved["coordinates"])
     download = f"?expires={expires}&sig={sig}&dl=1"
+    nonce = secrets.token_urlsafe(16)
     return HTMLResponse(
-        DOWNLOAD_PAGE.format(name=html.escape(saved["name"]), href=html.escape(download), filename=html.escape(gpx.filename(saved["name"]))),
-        headers={"Cache-Control": "no-store", "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'", "Referrer-Policy": "no-referrer"},
+        DOWNLOAD_PAGE.format(
+            name=html.escape(saved["name"]), href=html.escape(download), filename=html.escape(gpx.filename(saved["name"])), nonce=nonce
+        ),
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Security-Policy": f"default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-{nonce}'",
+            "Referrer-Policy": "no-referrer",
+        },
     )
 
 
+# Opened over the app (iOS in-app browser): the download (an <a download>) leaves this page in place, so
+# coming back from Fichiers / COROS shows it again, with its button to close the view and get back to the app.
 DOWNLOAD_PAGE = """<!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{name}</title>
 <style>
-  body {{ margin: 0; padding: 28px 20px; font: 17px/1.5 -apple-system, system-ui, sans-serif; color: #1b2420; background: #f3f0ea; }}
-  main {{ max-width: 460px; margin: auto; padding: 24px 20px; border-radius: 20px; background: #fff; box-shadow: 0 8px 30px rgb(15 46 35 / .15); }}
+  body {{ margin: 0; padding: 16px 16px 28px; font: 17px/1.5 -apple-system, system-ui, sans-serif; color: #1b2420; background: #f3f0ea; }}
+  main {{ max-width: 460px; margin: auto; }}
+  .back {{ display: block; width: 100%; margin-bottom: 14px; padding: 15px; border: none; border-radius: 14px; background: #143f30;
+    color: #fff; font: inherit; font-size: 18px; font-weight: 700; text-align: center; }}
+  .card {{ padding: 22px 20px; border-radius: 20px; background: #fff; box-shadow: 0 8px 30px rgb(15 46 35 / .15); }}
   h1 {{ margin: 0 0 4px; font-size: 22px; color: #143f30; }}
-  p.file {{ margin: 0 0 20px; color: #6a726d; font-size: 14px; word-break: break-all; }}
+  p.file {{ margin: 0 0 18px; color: #6a726d; font-size: 14px; word-break: break-all; }}
   a.button {{ display: block; padding: 16px; border-radius: 14px; background: #e8692c; color: #fff; font-weight: 700;
     font-size: 19px; text-align: center; text-decoration: none; }}
-  ol {{ margin: 22px 0 0; padding-left: 22px; }}
-  li {{ margin-bottom: 8px; }}
-  .note {{ margin-top: 18px; padding: 12px 14px; border-radius: 12px; background: #ecf5f0; font-size: 15px; }}
+  .done {{ margin: 14px 0 0; padding: 12px 14px; border-radius: 12px; background: #ecf5f0; color: #143f30; font-weight: 600; }}
+  ol {{ margin: 18px 0 0; padding-left: 22px; }}
+  li {{ margin-bottom: 6px; }}
+  .hint {{ margin: 12px 0 0; color: #6a726d; font-size: 14px; }}
+  [hidden] {{ display: none; }}
 </style></head>
 <body><main>
-  <h1>{name}</h1>
-  <p class="file">{filename}</p>
-  <a class="button" href="{href}" download="{filename}">Télécharger le GPX</a>
-  <ol>
-    <li>Touchez « Télécharger le GPX », puis confirmez « Télécharger ».</li>
-    <li>Ouvrez l'app <b>Fichiers</b> → <b>Téléchargements</b> → le fichier → <b>Partager</b> → <b>COROS</b>.</li>
-    <li>Revenez à Trail Map avec la croix en haut à gauche.</li>
-  </ol>
-  <p class="note">Rien ne se passe ? Touchez l'icône <b>Safari</b> (la boussole, en bas à droite) pour ouvrir cette
-    page dans Safari, puis « Télécharger le GPX ». Le lien reste valable une heure.</p>
-</main></body></html>
+  <button class="back" id="back" type="button">← Revenir à Trail Map</button>
+  <p class="hint" id="close-hint" hidden>La page reste ouverte ? Touchez tout en haut de l'écran pour faire
+    réapparaître la croix ✕, puis touchez-la.</p>
+  <div class="card">
+    <h1>{name}</h1>
+    <p class="file">{filename}</p>
+    <a class="button" id="download" href="{href}" download="{filename}">Télécharger le GPX</a>
+    <p class="done" id="done" hidden>Téléchargement lancé ✓ Le fichier est dans Fichiers → Téléchargements.</p>
+    <ol>
+      <li>« Télécharger le GPX », puis « Télécharger » si iOS le demande.</li>
+      <li>App <b>Fichiers</b> → <b>Téléchargements</b> → le fichier → <b>Partager</b> → <b>COROS</b>.</li>
+      <li>De retour ici : « Revenir à Trail Map ».</li>
+    </ol>
+  </div>
+</main>
+<script nonce="{nonce}">
+  document.getElementById("download").addEventListener("click", () => (document.getElementById("done").hidden = false));
+  document.getElementById("back").addEventListener("click", () => {{
+    window.close(); // closes the view the app opened
+    setTimeout(() => (document.getElementById("close-hint").hidden = false), 500);
+  }});
+</script>
+</body></html>
 """
 
 
