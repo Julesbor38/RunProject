@@ -3,7 +3,7 @@ import maplibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&ur
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./style.css";
 import { ActivitiesView } from "./activities";
-import { fetchActivities, fetchFrequency, fetchRoutingStatus } from "./api";
+import { fetchActivities, fetchRoutingStatus } from "./api";
 import { ensureLoggedIn, signOut } from "./auth";
 import { setupImporter, takeNewActivities } from "./importer";
 import { Planner } from "./planner";
@@ -34,7 +34,6 @@ map.addControl(new ScaleControl({ unit: "metric" }), "bottom-right");
 // Nothing of the user's data is requested before login (the base map is public).
 const loggedIn = ensureLoggedIn();
 const data = loggedIn.then(fetchActivities);
-const frequency = loggedIn.then(fetchFrequency).catch(() => null); // optional: tracks by sport without it
 const ratings = new Ratings();
 const ratingsLoaded = loggedIn.then(() => ratings.load()).catch(() => undefined); // the map works without them
 loggedIn.then((user) => {
@@ -52,7 +51,7 @@ map.on("load", async () => {
   const newKeys = new Set(takeNewActivities());
   try {
     await ratingsLoaded;
-    activities = new ActivitiesView(map, await data, (text) => (summary.textContent = text), await frequency, ratings, newKeys);
+    activities = new ActivitiesView(map, await data, (text) => (summary.textContent = text), ratings, newKeys);
   } catch (e) {
     summary.textContent = `API injoignable (${(e as Error).message}) : le backend tourne-t-il sur :8000 ?`;
   }

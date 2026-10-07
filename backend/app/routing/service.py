@@ -42,34 +42,25 @@ class RoutingService:
         self._requests_downloading = 0  # prefetch yields Overpass slots to user requests
         self._idle = threading.Condition()
 
-    def start_prefetch(self, on_done=None) -> None:
-        """Download, in the background, the OSM tiles around where the user runs.
-
-        `on_done()` is called from the download thread once it is over, if tiles were downloaded.
-        """
+    def start_prefetch(self) -> None:
+        """Download, in the background, the OSM tiles around where the user runs."""
         if self._prefetching:
             return
         self._prefetching = True
 
         def run() -> None:
-            failed = downloaded = 0
+            failed = 0
             try:
                 # Small batches so progress is visible and a request can slip its own tiles in.
                 for i in range(0, len(self.prefetch_tiles), 2):
                     with self._idle:
                         self._idle.wait_for(lambda: self._requests_downloading == 0)
-                    n, skipped = download_missing(self.prefetch_tiles[i : i + 2], self.osm_dir)
-                    downloaded += n
+                    _, skipped = download_missing(self.prefetch_tiles[i : i + 2], self.osm_dir)
                     failed += len(skipped)  # they will load on demand
                 if failed:
                     self.prefetch_error = f"{failed} zone(s) non téléchargée(s), elles le seront à la demande"
             finally:
                 self._prefetching = False
-            if downloaded and on_done is not None:
-                try:
-                    on_done()
-                except Exception:  # noqa: BLE001 - a failed refresh must not break the prefetch thread
-                    log.exception("after OSM prefetch")
 
         threading.Thread(target=run, name="osm-prefetch", daemon=True).start()
 
@@ -225,8 +216,7 @@ def _tile_to_segment_m(tile: tuple[int, int], a: tuple[float, float], b: tuple[f
 
 def home_tiles(tracks: list[list[tuple[float, float]]]) -> list[tuple[int, int]]:
     """Tiles to prefetch: crossed by at least PREFETCH_MIN_RUNS tracks plus their neighbours (routing
-    around home), busiest first, then every other tile a track crossed (drawing the run frequency
-    on the streets needs them)."""
+    around home), busiest first, then every other tile a track crossed."""
     runs: Counter[tuple[int, int]] = Counter()
     for line in tracks:
         runs.update({(math.floor(lat / TILE_DEG), math.floor(lon / TILE_DEG)) for lon, lat in line})

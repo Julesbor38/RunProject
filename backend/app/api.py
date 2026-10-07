@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import logging
-import math
 import os
 import shutil
 import tempfile
@@ -24,7 +23,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from . import frequency, gpx, imports, ratings
+from . import gpx, imports, ratings
 from .auth import COOKIE, SESSION_DAYS, session_user
 from .auth import login as auth_login
 from .auth import logout as auth_logout
@@ -34,7 +33,6 @@ from .ingest.pipeline import ingest
 from .ingest.privacy import DEFAULT_TRIM_M
 from .ingest.simplify import simplify
 from .routing import Preferences, RoutingError, RoutingService
-from .routing.osm import TILE_DEG, load_cached_tiles, tile_path
 from .routing.elevation import Dem
 from .routing.job import Cancelled, Job
 
@@ -103,30 +101,6 @@ def load_cached(data_dir: Path, force: bool = False) -> dict:
     return _with_keys(fc)
 
 
-def load_frequency(data_dir: Path, fc: dict, force: bool = False) -> dict:
-    """Pass counts drawn on the OSM ways, cached in data/cache/.
-
-    Recomputed when the activities cache changes, when the algorithm settings change,
-    or when more OSM tiles around the tracks have been downloaded since.
-    """
-    activities = data_dir / "cache" / "activities.geojson"
-    cache = data_dir / "cache" / "frequency.geojson"
-    tiles = sorted(
-        {(math.floor(lat / TILE_DEG), math.floor(lon / TILE_DEG)) for f in fc["features"] for line in f["geometry"]["coordinates"] for lon, lat in line}
-    )
-    osm_dir = data_dir / "osm"
-    osm_key = " ".join(f"{i},{j}" for i, j in tiles if tile_path((i, j), osm_dir).exists())
-    if not force and cache.exists() and activities.exists() and cache.stat().st_mtime >= activities.stat().st_mtime:
-        cached = json.loads(cache.read_text())
-        if cached.get("signature") == frequency.SIGNATURE and cached.get("osm") == osm_key:
-            return cached
-    ways = frequency.osm_lines(load_cached_tiles(tiles, osm_dir)) if osm_key else None
-    out = frequency.frequency_collection(fc, ways, osm_key)
-    cache.parent.mkdir(exist_ok=True)
-    cache.write_text(json.dumps(out))
-    return out
-
-
 def routing_service(fc: dict) -> RoutingService:
     tracks = [line for f in fc["features"] for line in f["geometry"]["coordinates"]]
     return RoutingService(DATA_DIR / "osm", tracks, Dem(DATA_DIR / "dem"))
@@ -135,11 +109,9 @@ def routing_service(fc: dict) -> RoutingService:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     state["activities"] = load_cached(DATA_DIR)
-    state["frequency"] = load_frequency(DATA_DIR, state["activities"])
     state["routing"] = routing_service(state["activities"])
     if PREFETCH_OSM:
-        # New OSM tiles let more of the tracks be drawn on the streets themselves.
-        state["routing"].start_prefetch(on_done=lambda: state.update(frequency=load_frequency(DATA_DIR, state["activities"])))
+        state["routing"].start_prefetch()
     state["started_at"] = time.time()
     yield
 
@@ -196,7 +168,6 @@ def health() -> dict:
         "uptime_s": round(time.time() - state["started_at"]),
         "activities": stats["activities"],
         "ingest_errors": len(stats["errors"]),
-        "frequency_ways": len(state["frequency"]["features"]),
         "routing": {**state["routing"].status(), "jobs_running": len(state.get("jobs", {}))},
         "frontend": (FRONTEND_DIST / "index.html").is_file(),
     }
@@ -207,12 +178,6 @@ def activities() -> dict:
     return state["activities"]
 
 
-@app.get("/api/frequency")
-def frequency_map() -> dict:
-    """Track pieces with the number of distinct activities that went along them."""
-    return state["frequency"]
-
-
 @app.post("/api/reload")
 def reload() -> dict:
     _reload()
@@ -221,9 +186,8 @@ def reload() -> dict:
 
 def _reload() -> None:
     activities = load_cached(DATA_DIR, force=True)
-    freq = load_frequency(DATA_DIR, activities, force=True)
     routing = routing_service(activities)
-    state.update(activities=activities, frequency=freq, routing=routing)
+    state.update(activities=activities, routing=routing)
 
 
 # --- adding activities: new Strava export or single files, imported in the background ---

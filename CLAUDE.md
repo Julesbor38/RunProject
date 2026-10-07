@@ -11,8 +11,8 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 ## État actuel (2026-10-07)
 - Étape 1 (import) : fonctionnelle. 254 activités (course, trail, randonnée), doublons Strava/Coros fusionnés.
   Reste : 3 .fit.gz Strava illisibles (`developer_data_index 0 not defined`).
-- Carte web : traces (rendu « Fréquentation » plus foncé selon le nombre de sorties distinctes,
-  ou « Par type »), filtres, fiches, générateur d'itinéraires (boucle / aller simple le plus
+- Carte web : traces distinctes, une par sortie, colorées par type (le rendu « Fréquentation » unifié
+  sur les voies OSM a été retiré le 2026-10-07 : trop complexe, voir l'historique git), filtres, fiches, générateur d'itinéraires (boucle / aller simple le plus
   court ou à distance visée), dénivelé (tranche de D+, profil, relief 3D), export GPX,
   bouton « Envoyer vers la montre » (téléphone : télécharge le .gpx produit par le backend, à ouvrir
   depuis Fichiers → Partager → COROS ; COROS n'apparaît jamais dans la feuille de partage web, testé sur iPhone).
@@ -34,7 +34,7 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   import en arrière-plan, bandeau des nouvelles sorties) ; évaluation de chaque sortie de 1 à 5 sur
   8 critères (sécurité, éclairage, beauté du paysage, plaisir, entretien, abri, tranquillité,
   peu de circulation) + commentaire, en attendant de les reporter sur les tronçons (étape 3).
-- Tests : 83 OK, 1 ignoré.
+- Tests : 61 OK, 1 ignoré.
 
 ## Architecture
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
@@ -45,12 +45,6 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
     session sauf PUBLIC_API (health, login, logout) ; tests : marqueur `auth`, sinon session simulée (conftest)
   - `app/imports.py` : archive Strava (.zip, extraction limitée à activities.csv + activities/, anti zip-slip
     et zip-bomb) ou fichiers isolés ; `app/ratings.py` : évaluations par sortie et par utilisateur
-  - `app/frequency.py` : nombre de sorties distinctes par portion de voie OSM (~25–50 m, une sortie
-    compte si sa trace suit 75 % de la portion dans le même sens, tolérance 12–24 m), dessiné sur la voie ;
-    voies coupées aux carrefours, trottoirs ignorés, choix entre voies parallèles par rue entière,
-    trous comblés le long d'une rue, ergots < 60 m retirés, niveau lissé le long de la rue ; repli
-    sur la trace là où aucune voie OSM ne l'explique (sauf écarts GPS : courts, en boucle, ou en
-    ville) ; extrémités raccordées à < 25 m. Recalculé quand de nouvelles tuiles OSM arrivent
 - frontend/ : TypeScript + Vite + MapLibre GL 6 (PWA à venir), fond OpenFreeMap
   - `index.html` (structure + sprite d'icônes SVG `#i-…`), `src/style.css` (variables de couleurs en tête),
     `public/` (logo, icônes PNG, manifest ; copiés tels quels dans dist/)
@@ -88,9 +82,8 @@ Toutes les routes exigent une session (cookie), sauf /api/health et /api/auth/lo
   GET /api/import/status : running / done (`new` : clés des sorties ajoutées) / error
 - GET /api/ratings : critères + évaluations de l'utilisateur ; PUT|DELETE /api/ratings/{key}
   ({scores: {critère: 1..5}, comment}) ; `key` = clé stable de la sortie (`strava:<id>` ou `file:<nom>`)
-- GET  /api/health : état (activités, fréquentation, routage, front construit), sans données de trace
+- GET  /api/health : état (activités, routage, front construit), sans données de trace
 - GET  /api/activities : traces masquées + simplifiées (~700 Ko), cache data/cache/
-- GET  /api/frequency : voies OSM (ou traces) parcourues avec leur nombre de passages, cache data/cache/
 - POST /api/reload : relit data/raw
 - GET  /api/routing/status : avancement du pré-téléchargement OSM
 - POST /api/routes : génère des itinéraires (boucle / aller simple, préférences, tranche de D+ ou `flat: true`) ;

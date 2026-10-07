@@ -309,6 +309,17 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 - 83 tests OK, 1 ignoré (11 nouveaux : sessions, cookies, blocage, secrets non stockés en clair ; import
   Strava, fichier isolé, archives piégées ; évaluations).
 
+### 2026-10-07 — Retour aux traces distinctes
+- Le rendu « Fréquentation » (passages comptés par portion de voie OSM et dessinés sur les rues, avec
+  ses nombreuses règles de nettoyage) est retiré : trop complexe, risque de bugs. Retour aux traces
+  distinctes, une par sortie, colorées par type (course / trail / randonnée), comme au début.
+- Supprimés : `app/frequency.py`, `GET /api/frequency`, `data/cache/frequency.geojson`, le recalcul après
+  le pré-téléchargement OSM, la légende « Passages » et le sélecteur Fréquentation / Par type (22 tests).
+  Le pré-téléchargement des zones courues reste (routage). Le code reste dans l'historique git
+  (dernier état : commit `6807c2b`).
+- En-tête : résumé sur une ligne malgré le bouton de déconnexion (panneau un peu plus large).
+- 61 tests OK, 1 ignoré.
+
 ---
 
 ## État au 2026-10-07
@@ -324,9 +335,8 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 2. **Performances** : ~6 s pour 30 km graphe en mémoire, mais ~20–30 s pour construire un grand
    graphe (beaucoup de zones). Pistes : un seul Dijkstra depuis le départ partagé entre candidats,
    graphe plus compact, ou GraphHopper (qui peut lire le même extrait .osm.pbf).
-3. **Fréquentation** : quelques petits détails dans les carrefours complexes (géométrie OSM réelle) ;
-   à vérifier quand toutes les zones OSM seront téléchargées. Le comptage par portion de voie OSM
-   (avec direction) est une base pour le map-matching de l'étape 2.
+3. (Rendu « Fréquentation » abandonné le 2026-10-07 ; son comptage par portion de voie OSM, dans
+   l'historique git, peut resservir d'idée pour le map-matching de l'étape 2.)
 4. **Profil altimétrique des sorties passées** dans « Mes sorties » (seul le D+ montre est affiché).
 5. **Étape 2 — map-matching** des traces sur les tronçons OSM (GraphHopper en Docker ou moteur Python).
 6. **Étape 3 — notation des tronçons** : reporter les évaluations des sorties sur les tronçons OSM parcourus
