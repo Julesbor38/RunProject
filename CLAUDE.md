@@ -15,10 +15,11 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   (couche invisible large ; fiche avec « Évaluer cette sortie ») (le rendu « Fréquentation » unifié
   sur les voies OSM a été retiré le 2026-10-07 : trop complexe, voir l'historique git), filtres, fiches, générateur d'itinéraires (boucle / aller simple le plus
   court ou à distance visée), dénivelé (tranche de D+, profil, relief 3D), export GPX,
-  téléphone, `src/share.ts` : « Ouvrir avec COROS » (lien signé /dl/<id>.gpx hors scope PWA, ouvert par-dessus l'app :
-  aperçu iOS → Partager → COROS → OK) et « Enregistrer dans Fichiers » (feuille de partage, GPX préparé à l'avance,
-  appel synchrone dans le tap, 1er type MIME accepté). Jamais de navigation de la page de l'app vers un fichier ;
-  COROS n'est jamais proposé dans la feuille de partage web. Panneau de debug : ?debug=1 ou appui long sur le titre.
+  téléphone, `src/share.ts` : un bouton générique « Envoyer à ma montre » (pas de marque dans l'interface) → feuille
+  de partage (GPX préparé à l'avance, appel synchrone dans le tap, 1er type MIME accepté) → « Enregistrer dans
+  Fichiers » → l'app de la montre depuis Fichiers ; secours automatique : lien signé /dl/<id>.gpx hors scope PWA.
+  Jamais de navigation de la page de l'app vers un fichier ; aucune app de montre n'est proposée dans la feuille de
+  partage web (essayé : « Ouvrir avec COROS » via /dl ne marche pas sur l'iPhone). Debug : ?debug=1 ou appui long sur le titre.
 - Front servi sous **/app/** (scope de la PWA ; / redirige vers /app/) : /api et /dl restent hors scope.
 - Interface : identité « trail » (logo `frontend/public/logo.svg`, palette forêt / braise, Barlow Condensed),
   icônes SVG, réglages fins repliables, bouton Générer collant, panneau du bas compact sur téléphone,

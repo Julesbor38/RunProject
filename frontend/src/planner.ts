@@ -516,10 +516,10 @@ export class Planner {
           ${bar("Routes passantes", p.busy_roads, true)}
         </div>
         <div class="actions">
-          <a class="action gpx" href="${gpxUrl(p.route_id)}" download="${p.gpx_filename}"><svg class="i"><use href="#i-download"/></svg>GPX</a>
-          <button class="action watch" hidden title="Le fichier s'affiche par-dessus l'app : Partager → COROS, puis OK"><svg class="i"><use href="#i-watch"/></svg>Ouvrir avec COROS</button>
-          <button class="action files" hidden title="Feuille de partage : « Enregistrer dans Fichiers »"><svg class="i"><use href="#i-download"/></svg>Enregistrer dans Fichiers</button>
-        </div>`;
+          <a class="action gpx" href="${gpxUrl(p.route_id)}" download="${p.gpx_filename}"><svg class="i"><use href="#i-download"/></svg>Exporter le GPX</a>
+          <button class="action watch" hidden><svg class="i"><use href="#i-watch"/></svg>Envoyer à ma montre</button>
+        </div>
+        <p class="send-note" hidden></p>`;
       card.addEventListener("click", () => this.select(r.id));
       const profileBox = card.querySelector(".profile") as HTMLElement | null;
       if (profileBox) {
@@ -528,31 +528,32 @@ export class Planner {
       }
       // Phone (see share.ts): never a navigation of the app's page to a file. Desktop: the GPX link downloads it.
       const watch = card.querySelector(".watch") as HTMLButtonElement;
-      const files = card.querySelector(".files") as HTMLButtonElement;
       const gpxLink = card.querySelector(".gpx") as HTMLElement;
-      watch.hidden = files.hidden = !isMobile();
+      watch.hidden = !isMobile();
       gpxLink.hidden = isMobile(); // phone: never a plain download (iOS would replace the app with the file)
       gpxLink.addEventListener("click", (e) => e.stopPropagation());
       const gpx = isMobile() ? prepareGpx(p.route_id, p.gpx_filename) : null;
-      // « Ouvrir avec COROS »: the signed /dl/ link, out of the PWA scope: iOS shows the file over the app (with
-      // « OK » to come back) in its own preview, the one that offers COROS (the share sheet never does).
+      // The system share sheet, over the app (it never leaves the app stuck): « Enregistrer dans Fichiers », then the
+      // watch's app (COROS, Garmin Connect, Suunto…) opens the file from Fichiers. Where files can't be shared, the
+      // signed /dl/ link (out of the PWA scope) is opened instead.
+      const noteEl = card.querySelector(".send-note") as HTMLElement;
+      const note = (text: string, error = false) => {
+        noteEl.hidden = false;
+        noteEl.textContent = text;
+        noteEl.classList.toggle("error", error);
+      };
       watch.addEventListener("click", (e) => {
         e.stopPropagation();
         if (!gpx) return;
-        if (openLink(gpx)) this.status("Dans l'aperçu : Partager ⬆ → COROS, puis « OK » pour revenir ici.");
-        else this.status(gpx.failed ? `GPX indisponible (${gpx.failed}) : régénérez l'itinéraire.` : "Lien en préparation : réessayez dans un instant.", !!gpx.failed);
-      });
-      // « Enregistrer dans Fichiers »: the system share sheet, over the app; then Fichiers -> Partager -> COROS.
-      files.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (!gpx) return;
+        const next = "Puis dans l'app Fichiers : le fichier → Partager ⬆ → l'app de votre montre.";
         const outcome = sendGpx(gpx, {
-          shared: () => this.status("Ensuite : Fichiers → le fichier → Partager ⬆ → COROS."),
-          failed: (error) => this.status(`Partage impossible (${error}) : utilisez « Ouvrir avec COROS ».`, true),
+          shared: () => note(`Fichier enregistré. ${next}`),
+          failed: (error) => note(`Envoi impossible (${error}). Réessayez ; si ça persiste : appui long sur le titre (debug).`, true),
         });
-        if (outcome === "opened") this.status("Dans l'aperçu : Partager ⬆ → COROS, puis « OK » pour revenir ici.");
-        else if (outcome === "not-ready") this.status("GPX en préparation : réessayez dans un instant.");
-        else if (outcome === "unavailable") this.status(gpx.failed ? `GPX indisponible (${gpx.failed}) : régénérez l'itinéraire.` : "Lien en préparation : réessayez dans un instant.", !!gpx.failed);
+        if (outcome === "sharing") note(`Choisissez « Enregistrer dans Fichiers ». ${next}`);
+        else if (outcome === "opened") note("Le fichier s'ouvre : Partager ⬆ → l'app de votre montre.");
+        else if (outcome === "not-ready") note("Fichier en préparation : réessayez dans un instant.");
+        else note(gpx.failed ? `Fichier indisponible (${gpx.failed}) : régénérez l'itinéraire.` : "Fichier en préparation : réessayez dans un instant.", !!gpx.failed);
       });
       box.appendChild(card);
     });

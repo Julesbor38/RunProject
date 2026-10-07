@@ -848,9 +848,43 @@ input[type="range"] {
 }
 
 .action.watch {
-  border-color: var(--pine-700);
+  flex: 1;
+  justify-content: center;
+  padding: 12px 14px;
+  border: none;
+  border-radius: 12px;
   background: var(--pine-700);
   color: #fff;
+  font-size: 15px;
+  box-shadow: 0 2px 8px rgb(15 46 35 / 0.25);
+}
+
+.send-note {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--pine-50);
+  color: var(--pine-800);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.send-note[hidden] {
+  display: none;
+}
+
+.send-note.error {
+  background: #fdeee6;
+  color: var(--danger);
+}
+
+.action.watch .i {
+  width: 18px;
+  height: 18px;
+}
+
+.action.watch:active {
+  transform: translateY(1px);
 }
 
 .range-inputs {

@@ -477,6 +477,15 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 - Vérifié en simulation : les deux boutons, page de l'app jamais quittée. À confirmer sur l'iPhone, avec l'app
   réinstallée depuis https://jules-laptop.tailf52fab.ts.net/app/ (sinon /dl reste dans l'ancien scope « / »).
 
+### 2026-10-07 — Un seul bouton générique « Envoyer à ma montre »
+- Retour : « Ouvrir avec COROS » ne marche pas sur l'iPhone, et l'interface ne doit pas viser une seule marque.
+- Sur téléphone : un seul bouton pleine largeur **« Envoyer à ma montre »** → feuille de partage par-dessus l'app
+  (la seule voie qui ne bloque jamais) → « Enregistrer dans Fichiers », puis l'app de la montre (COROS, Garmin
+  Connect, Suunto…) ouvre le fichier depuis Fichiers. Message d'étape juste sous le bouton (le message en haut de
+  l'onglet était invisible une fois la carte d'itinéraire à l'écran). Lien /dl/ seulement en secours automatique
+  (partage de fichiers impossible, ex. Android). Ordinateur : « Exporter le GPX ».
+- Vérifié en simulation (partage dans le geste, app jamais quittée, message sous le bouton).
+
 ---
 
 ## État au 2026-10-07
