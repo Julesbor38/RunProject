@@ -127,8 +127,8 @@ def test_commune_percentage(tmp_path, g):
     # 2 km along row 2, minus the 200 m masked at each end
     assert town["name"] == "Testville" and town["done_m"] == pytest.approx(1600, rel=0.02)
     assert town["pct"] == pytest.approx(100 * 1600 / total, abs=0.2)
-    # area: a 40 m wide corridor along the 1600 m run, with round ends
-    assert town["area_done_m2"] == pytest.approx(1600 * 40 + math.pi * 20**2, rel=0.03)
+    # area: a 100 m wide corridor along the 1600 m run, with round ends
+    assert town["area_done_m2"] == pytest.approx(1600 * 100 + math.pi * 50**2, rel=0.03)
     assert town["area_m2"] == pytest.approx(polygons_area([[ring]]))
     assert town["area_pct"] == pytest.approx(100 * town["area_done_m2"] / town["area_m2"], abs=0.05)
     assert ex.store.totals("jules")["area_m2"] == town["area_done_m2"]
@@ -230,14 +230,14 @@ def area_of(cells):
     return sum(cell_area(cy) for _, cy in cells)
 
 
-def test_area_is_a_corridor_20_m_each_side():
+def test_area_is_a_corridor_50_m_each_side():
     cells = corridor_cells([track([(5, 0), (5, 5)])])  # 1 km
-    assert area_of(cells) == pytest.approx(1000 * 40 + math.pi * 20**2, rel=0.03)
+    assert area_of(cells) == pytest.approx(1000 * 100 + math.pi * 50**2, rel=0.03)
     lat, lon = node(5, 2)
     centers = {(round(la, 5), round(lo, 5)) for la, lo in (cell_center(*c) for c in cells)}
     def near(dy_m):  # is there a discovered cell centre ~dy_m north of the street?
         return any(abs(la - (lat + dy_m / 111_320)) < 6 / 111_320 and abs(lo - lon) < 6 / 78_000 for la, lo in centers)
-    assert near(0) and near(15) and not near(30)
+    assert near(0) and near(45) and not near(60)
 
 
 def test_area_out_and_back_counts_once():
@@ -277,7 +277,7 @@ def test_veil_is_cleared_over_the_area_discovered(block):
     cells -= {c for c in cells if c[0] % 7 == 0 and c[1] % 5 == 0}  # undiscovered specks inside
     polygons = veil(cells, block)["geometry"]["coordinates"]
     lat, lon = node(5, 2)
-    on, beside, far = (lat, lon), (lat + 12 / 111_320, lon), (lat + 300 / 111_320, lon)
+    on, beside, far = (lat, lon), (lat + 35 / 111_320, lon), (lat + 300 / 111_320, lon)
     veiled = in_polygons(np.array([on[0], beside[0], far[0]]), np.array([on[1], beside[1], far[1]]), polygons)
     assert veiled.tolist() == [False, False, True]
     assert in_polygons(np.array([node(6, 3)[0]]), np.array([node(6, 3)[1]]), polygons).tolist() == [False]  # after the bend

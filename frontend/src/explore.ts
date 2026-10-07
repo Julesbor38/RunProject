@@ -1,5 +1,5 @@
 /**
- * « Exploration » tab (like Zenly / Wandrer): my communes with the share of their area I have discovered (20 m
+ * « Exploration » tab (like Zenly / Wandrer): my communes with the share of their area I have discovered (50 m
  * each side of the paths run) and of their paths I have run, places
  * discovered, milestones and badges, suggestions of paths never run nearby; on the map, the « Brouillard »:
  * a veil over the map, cleared over the area I discovered; closer, the paths I ran lit up, the others greyed;

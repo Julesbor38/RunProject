@@ -1,9 +1,9 @@
-"""Area discovered: a corridor 20 m wide on each side of the paths actually run, on a fixed grid of ~10 m cells.
+"""Area discovered: a corridor 50 m wide on each side of the paths actually run, on a fixed grid of ~10 m cells.
 
 The grid is the same for every activity and every user (cells are integers: a new activity only adds the cells
 not seen yet, and two users can be compared later). Its x step is 10 m at 46.5°N (the middle of France), so a
 cell is a little wider in the south and narrower in the north: its true area is kept with it.
-A cell is discovered when its centre lies within 20 m of a point of the track (the privacy-masked, moving
+A cell is discovered when its centre lies within 50 m of a point of the track (the privacy-masked, moving
 parts, as for the paths), sampled every 5 m. It belongs to the commune its centre lies in.
 """
 from __future__ import annotations
@@ -16,7 +16,7 @@ import numpy as np
 from ..ingest.models import TrackPoint
 
 CELL_M = 10.0
-CORRIDOR_M = 20.0
+CORRIDOR_M = 50.0
 STEP_M = 5.0
 M_PER_DEG = 111_320.0
 REF_COS = math.cos(math.radians(46.5))
@@ -59,13 +59,13 @@ def corridor_cells(parts: Iterable[Sequence[TrackPoint]]) -> set[tuple[int, int]
 
 
 def _resample(pts: np.ndarray, f: float) -> np.ndarray:
-    """Points every STEP_M (true metres) along the polyline, its ends included."""
+    """Points every STEP_M (true metres) along the polyline, and its own points (its ends, its turns)."""
     seg = pts[1:] - pts[:-1]
     lengths = np.hypot(seg[:, 0] * f, seg[:, 1])
     cum = np.concatenate([[0.0], np.cumsum(lengths)])
     if cum[-1] == 0:
         return pts[:1]
-    at = np.append(np.arange(0.0, cum[-1], STEP_M), cum[-1])
+    at = np.union1d(np.arange(0.0, cum[-1], STEP_M), cum)
     return np.column_stack([np.interp(at, cum, pts[:, 0]), np.interp(at, cum, pts[:, 1])])
 
 
@@ -116,8 +116,9 @@ WORLD = [[-180.0, -85.0], [180.0, -85.0], [180.0, 85.0], [-180.0, 85.0], [-180.0
 
 
 def block_for_zoom(zoom: float) -> int:
-    """Cells merged into blocks when zoomed out (10 m at 13+, 20 m at 12, 40 m at 11, 80 m below)."""
-    return 1 << max(0, min(3, 13 - math.floor(zoom)))
+    """Cells merged into blocks when zoomed out (10 m at 14+, 20 m at 13, 40 m at 12, 80 m at 11, 160 m below);
+    the smoothing hides the steps."""
+    return 1 << max(0, min(4, 14 - math.floor(zoom)))
 
 
 def grid_range(bbox: Sequence[float]) -> tuple[int, int, int, int]:
@@ -129,15 +130,16 @@ def grid_range(bbox: Sequence[float]) -> tuple[int, int, int, int]:
 
 def veil(cells: Iterable[tuple[int, int]], block: int = 1) -> dict:
     """GeoJSON MultiPolygon of the veil: the world minus the discovered cells (merged into `block`×`block`), the
-    undiscovered pockets inside a discovered area veiled again. Rings are wound for MapLibre: outer rings one
-    way, holes the other."""
+    undiscovered pockets inside a discovered area veiled again. The outlines are smoothed into round shapes (like
+    the corridor around a path really is), not the cells' steps. Rings are wound for MapLibre: outer rings one way,
+    holes the other."""
     blocks = {(cx // block, cy // block) for cx, cy in cells}
     size = CELL_M * block
 
     def lonlat(ring):
-        return [[round(x * size / (M_PER_DEG * REF_COS), 6), round(y * size / M_PER_DEG, 6)] for x, y in ring]
+        return [[round(x * size / (M_PER_DEG * REF_COS), 5), round(y * size / M_PER_DEG, 5)] for x, y in ring]
 
-    rings = [_simplify(r, 0.7) for r in _outlines(blocks)]
+    rings = [_smooth(_simplify(r, 0.9)) for r in _outlines(blocks)]
     rings = [r for r in rings if len(r) >= 4]
     areas = [_signed_area(r) for r in rings]
     regions = [r for r, a in zip(rings, areas) if a > 0]  # counter-clockwise: the edge of a discovered area
@@ -221,6 +223,20 @@ def _dp(pts: list, tolerance: float) -> list:
             keep[at] = True
             stack += [(a, at), (at, b)]
     return [p for p, k in zip(pts, keep) if k]
+
+
+def _smooth(ring: list, rounds: int = 3) -> list:
+    """Chaikin corner cutting on a closed ring: every corner becomes a curve."""
+    if len(ring) < 4:
+        return ring
+    pts = ring[:-1]
+    for _ in range(rounds):
+        nxt = []
+        for k, (ax, ay) in enumerate(pts):
+            bx, by = pts[(k + 1) % len(pts)]
+            nxt += [(0.75 * ax + 0.25 * bx, 0.75 * ay + 0.25 * by), (0.25 * ax + 0.75 * bx, 0.25 * ay + 0.75 * by)]
+        pts = nxt
+    return pts + pts[:1]
 
 
 def _signed_area(ring: list) -> float:

@@ -626,6 +626,16 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 - Historique réel : 0,2 à 0,3 s et 50 à 200 Ko par vue, du quartier à l'agglomération lyonnaise.
 - 104 tests OK (voile percé sur la trace et à 12 m, voilé à 300 m, après un virage, à plusieurs échelles ; API).
 
+### 2026-10-08 — Brouillard arrondi, bande de 50 m
+- À la demande : la superficie découverte est maintenant la bande de **50 m** de chaque côté des passages (au lieu
+  de 20 m) ; version du calcul 3, tout l'historique retraité une fois (~7 min pour 254 sorties). Historique réel :
+  52,9 km² découverts, 83 communes ; Tassin-la-Demi-Lune 42 % de sa superficie, Charbonnières 33 %.
+- Contours du voile **arrondis** (lissage de Chaikin, 3 passes, après simplification) : formes naturelles au lieu
+  des marches de la grille ; cellules regroupées un cran plus tôt en vue éloignée (le lissage masque les blocs).
+- Échantillonnage de la trace : aussi ses propres points (le demi-tour d'un aller-retour est toujours couvert).
+- Réponses compressées (gzip) : voile 452 -> 99 Ko au zoom 13, traces 700 -> 190 Ko.
+- 104 tests OK.
+
 ---
 
 ## État au 2026-10-07

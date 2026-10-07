@@ -40,10 +40,10 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   sur les tronçons OSM praticables (arêtes du graphe, ≤ 20 m, direction, 80 % couverts, trottoirs ignorés,
   portions à plus de 25 km/h et zones de confidentialité exclus), stocké par compte dans data/explore/explore.sqlite, calcul
   incrémental en arrière-plan (démarrage + après import ; `TRAILMAP_EXPLORE=0` pour le couper) ; par commune
-  (OSM admin_level=8, 34 770 extraites) : % de la **superficie** découverte (bande de 20 m de chaque côté des
+  (OSM admin_level=8, 34 770 extraites) : % de la **superficie** découverte (bande de 50 m de chaque côté des
   passages, cellules de ~10 m, `area.py`) et % des chemins ; lieux découverts (≤ 30 m), paliers 10–90 % des chemins
   et badges (annoncés seulement après un import, les rattrapages sont silencieux), mode « Brouillard » (voile
-  percé sur la superficie découverte, chemins courus en jaune au zoom ≥ 13), suggestions de zones jamais courues -> générateur en
+  percé sur la superficie découverte, contours arrondis, chemins courus en jaune au zoom ≥ 13), suggestions de zones jamais courues -> générateur en
   mode Découverte. Tables prêtes pour un classement (opt-in désactivé par défaut), rien d'exposé aux autres.
 - Prochaine grosse étape : notation des tronçons (étape 3) sur les tronçons de l'Exploration.
 - **Lieux notables** (`app/pois/`, `src/pois.ts`) : extraits de l'extrait OSM France dans data/pois/pois.sqlite
@@ -64,7 +64,7 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
   - `app/ingest/` : parsers (FIT/GPX/TCX, archive Strava), clean, dedup, privacy, simplify, pipeline
   - `app/routing/` : moteur d'itinéraires Python (en attendant GraphHopper)
-  - `app/explore/` : matching (map-matching, `explorable`, `segment_key`), area (bande de 20 m sur grille
+  - `app/explore/` : matching (map-matching, `explorable`, `segment_key`), area (bande de 50 m sur grille
     de ~10 m, point dans polygone vectorisé), store (SQLite), communes
     (extraction + total praticable), explorer (traitement incrémental, résumé, paliers, suggestions)
   - `app/auth.py` : comptes (scrypt), sessions (cookie HttpOnly/Secure/SameSite=Strict, seul le SHA-256

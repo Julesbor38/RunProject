@@ -1,7 +1,7 @@
 """Exploration data in SQLite (data/explore/explore.sqlite).
 
 Per user (every row has its user, and every query asks for one user only: nothing is shown to others yet):
-segments traversed (with the date and activity of their first discovery), area cells discovered (a 20 m
+segments traversed (with the date and activity of their first discovery), area cells discovered (a 50 m
 corridor each side of the paths run, see area.py), places discovered, activities
 already processed, and settings ready for leaderboards (opt-in off by default, pseudonym). Shared, public:
 the communes (OSM boundaries), their area and their total length of walkable paths.
@@ -16,7 +16,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-VERSION = 2  # of the matching (2: area discovered): a new version re-processes the activities
+VERSION = 3  # of the matching (2: area discovered, 3: 50 m each side): a new version re-processes the activities
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS traversed (

@@ -1,5 +1,5 @@
 """Exploration of one user: their activities matched onto the OSM paths, the area discovered around them
-(20 m each side), per commune progress (paths and area), places
+(50 m each side), per commune progress (paths and area), places
 discovered, milestones and badges, suggestions of unexplored paths nearby. Run in the background, only for
 the activities not processed yet (a new import only costs its new activities)."""
 from __future__ import annotations

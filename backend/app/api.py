@@ -22,6 +22,7 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, File, HTTPException, Path as PathParam, Request, Response, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field
 
 from . import gpx, imports, ratings
@@ -262,6 +263,8 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
 )
+# Compressed answers (the tracks, the fog's veil: JSON several times smaller over the phone's connection).
+app.add_middleware(GZipMiddleware, minimum_size=2000)
 
 
 class LoginIn(BaseModel):
