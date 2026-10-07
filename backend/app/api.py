@@ -136,13 +136,15 @@ app = FastAPI(title="Trail Map", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_methods=["GET", "POST", "PUT", "DELETE"])
 
 PUBLIC_API = {"/api/health", "/api/auth/login", "/api/auth/logout", "/api/auth/signup", "/api/auth/options"}
+SIGNED_API = "/api/share/"  # no session, but a signed, expiring link (checked by the route itself)
+LINK_TTL_S = 3600
 
 
 @app.middleware("http")
 async def require_login(request: Request, call_next):
     """Every /api route needs a session, except the few public ones: new routes are protected by default."""
     path = request.url.path
-    if (path == "/api" or path.startswith("/api/")) and path not in PUBLIC_API:
+    if (path == "/api" or path.startswith("/api/")) and path not in PUBLIC_API and not path.startswith(SIGNED_API):
         user = session_user(DATA_DIR, request.cookies.get(COOKIE))
         if user is None:
             return JSONResponse({"detail": "connexion requise"}, status_code=401)
@@ -385,6 +387,33 @@ def save_route(user_folder: Path, feature: dict, name: str) -> None:
 def route_gpx(route_id: str = PathParam(pattern="^[0-9a-f]{32}$"), ws: Workspace = Depends(workspace)):
     """GPX of one of the user's generated routes, as a download (Safari on iOS: « Ouvrir dans… »)."""
     file = ws.dir / "routes" / f"{route_id}.json"
+    if not file.is_file():
+        raise HTTPException(404, "itinéraire inconnu ou expiré, régénérez-le")
+    saved = json.loads(file.read_text())
+    return gpx.response(saved["name"], saved["coordinates"])
+
+
+@app.post("/api/routes/{route_id}/link")
+def route_link(route_id: str = PathParam(pattern="^[0-9a-f]{32}$"), ws: Workspace = Depends(workspace)) -> dict:
+    """A link to the route's GPX that works without the session for an hour (opened in Safari from the
+    iOS home-screen app, which keeps its own cookies: Safari downloads it, then Fichiers -> COROS)."""
+    if not (ws.dir / "routes" / f"{route_id}.json").is_file():
+        raise HTTPException(404, "itinéraire inconnu ou expiré, régénérez-le")
+    expires = int(time.time()) + LINK_TTL_S
+    sig = auth.sign_link(DATA_DIR, "gpx", ws.user, route_id, expires)
+    return {"url": f"{SIGNED_API}gpx/{ws.user}/{route_id}?expires={expires}&sig={sig}", "expires": expires}
+
+
+@app.get(SIGNED_API + "gpx/{user}/{route_id}")
+def shared_gpx(
+    user: str = PathParam(pattern=auth.USERNAME.pattern),
+    route_id: str = PathParam(pattern="^[0-9a-f]{32}$"),
+    expires: int = 0,
+    sig: str = "",
+):
+    if not auth.check_link(DATA_DIR, sig, expires, "gpx", user, route_id):
+        raise HTTPException(403, "lien expiré ou invalide : relancez « Envoyer vers la montre » depuis l'app")
+    file = user_dir(DATA_DIR, user) / "routes" / f"{route_id}.json"
     if not file.is_file():
         raise HTTPException(404, "itinéraire inconnu ou expiré, régénérez-le")
     saved = json.loads(file.read_text())

@@ -363,6 +363,19 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
   (.gpx, application/gpx+xml, sans titre) ; sans partage, téléchargement et page inchangée.
   À confirmer sur un vrai iPhone en mode écran d'accueil.
 
+### 2026-10-07 — « Envoyer vers la montre » : téléchargement dans Safari, à côté de l'app
+- La feuille de partage (entrée précédente) ne permettait pas d'arriver à COROS. Le seul chemin qui
+  fonctionne : télécharger le GPX dans Safari, puis Fichiers → Téléchargements → Partager → COROS.
+- Le GPX s'ouvre maintenant dans un nouvel onglet Safari (`window.open`, dans le geste) : l'app d'écran
+  d'accueil reste en place, on y revient après. Safari n'ayant pas la session de l'app, le lien est
+  **signé** (HMAC-SHA256, secret dans data/auth/link-secret, 600) et expire au bout d'une heure :
+  `POST /api/routes/{id}/link` (connecté) -> `GET /api/share/gpx/{compte}/{id}?expires=…&sig=…` (sans session,
+  seulement ce GPX). Lien préchargé à l'affichage de la carte, renouvelé s'il va expirer.
+- Testé : lien valable sans session pour cet itinéraire, refusé s'il est modifié, pour un autre compte,
+  un autre itinéraire ou expiré ; le reste de l'API reste fermé. En navigateur mobile simulé : un nouvel
+  onglet s'ouvre sur le lien, l'app ne bouge pas. À confirmer sur l'iPhone.
+- 67 tests OK, 1 ignoré.
+
 ---
 
 ## État au 2026-10-07

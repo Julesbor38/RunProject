@@ -516,7 +516,7 @@ export class Planner {
         </div>
         <div class="actions">
           <a class="action gpx" href="${gpxUrl(p.route_id)}" download="${p.gpx_filename}"><svg class="i"><use href="#i-download"/></svg>GPX</a>
-          <button class="action watch" hidden title="Enregistrer le GPX dans Fichiers, puis l'ouvrir avec l'app COROS"><svg class="i"><use href="#i-watch"/></svg>Envoyer vers la montre</button>
+          <button class="action watch" hidden title="Télécharger le GPX dans Safari, puis l'ouvrir avec l'app COROS depuis Fichiers"><svg class="i"><use href="#i-watch"/></svg>Envoyer vers la montre</button>
         </div>`;
       card.addEventListener("click", () => this.select(r.id));
       const profileBox = card.querySelector(".profile") as HTMLElement | null;
@@ -524,34 +524,26 @@ export class Planner {
         profileBox.addEventListener("click", (e) => e.stopPropagation());
         renderProfile(profileBox, p.profile, ROUTE_COLORS[r.id] ?? ROUTE_COLORS[2], (d) => this.showHoverPoint(r, d));
       }
-      // Phone: never navigate to the .gpx. In an app added to the iOS home screen, that replaces the app
-      // with the file and there is no way back. The system share sheet opens over the app instead:
-      // « Enregistrer dans Fichiers », then Fichiers -> Partager -> COROS (the only way COROS accepts a GPX).
+      // Phone: the GPX opens in Safari next to the app (never in place of it: in an app added to the iOS home
+      // screen there would be no way back). Safari downloads it, then Fichiers -> Partager -> COROS, the only
+      // way COROS takes a GPX. Safari has no session there: the link is signed and valid for an hour.
       const watch = card.querySelector(".watch") as HTMLButtonElement;
       watch.hidden = !isMobile();
-      const file = isMobile() ? prefetchGpx(gpxUrl(p.route_id), p.gpx_filename) : null;
-      const share = (e: Event) => {
+      const link = isMobile() ? prefetchLink(p.route_id) : null;
+      const send = (e: Event) => {
         e.stopPropagation();
-        if (!file) return; // desktop: the link downloads the file
-        const ready = file.current;
-        if (ready && !navigator.canShare?.({ files: [ready] })) {
-          // No file sharing here (Chrome on Android refuses .gpx): a plain download, which keeps the app.
-          if (e.currentTarget === watch) location.href = gpxUrl(p.route_id);
-          return;
-        }
+        if (!link) return; // desktop: the link downloads the file
         e.preventDefault();
-        if (!ready) {
-          this.status(file.failed ? "GPX indisponible : régénérez l'itinéraire." : "Fichier GPX en préparation : réessayez dans un instant.", file.failed);
+        const url = link.fresh();
+        if (!url) {
+          this.status(link.failed ? "GPX indisponible : régénérez l'itinéraire." : "GPX en préparation : réessayez dans un instant.", link.failed);
           return;
         }
-        this.status("Choisissez « Enregistrer dans Fichiers », puis dans Fichiers : Partager ⬆ → COROS.");
-        // Only the file (a title would hide the apps that take files), right in the tap (Safari requires it).
-        navigator.share({ files: [ready] }).catch((err: DOMException) => {
-          if (err.name !== "AbortError") this.status(`Partage impossible : ${err.message}`, true);
-        });
+        window.open(url, "_blank"); // in the tap itself, or Safari blocks it
+        this.status("GPX ouvert dans Safari : Télécharger, puis Fichiers → Téléchargements → Partager ⬆ → COROS. Revenez ensuite ici : l'app n'a pas bougé.");
       };
-      watch.addEventListener("click", share);
-      card.querySelector(".gpx")!.addEventListener("click", share);
+      watch.addEventListener("click", send);
+      card.querySelector(".gpx")!.addEventListener("click", send);
       box.appendChild(card);
     });
   }
@@ -629,13 +621,28 @@ export class Planner {
   }
 }
 
-/** The GPX fetched in the background (with the session cookie), so that a tap can share it at once. */
-function prefetchGpx(url: string, filename: string) {
-  const out: { current: File | null; failed: boolean } = { current: null, failed: false };
-  apiFetch(url)
-    .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(`erreur ${r.status}`))))
-    .then((blob) => (out.current = new File([blob], filename, { type: "application/gpx+xml" })))
-    .catch(() => (out.failed = true));
+/** A signed link to the route's GPX, fetched in the background so that a tap can open it at once. */
+function prefetchLink(routeId: string) {
+  const out = {
+    url: null as string | null,
+    failed: false,
+    expires: 0,
+    /** The link, or null (and a new one on its way) when missing or about to expire. */
+    fresh(): string | null {
+      if (this.url && this.expires - Date.now() / 1000 > 60) return this.url;
+      if (this.url) this.refresh();
+      return null;
+    },
+    refresh() {
+      this.url = null;
+      this.failed = false;
+      apiFetch(`/api/routes/${encodeURIComponent(routeId)}/link`, { method: "POST" })
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`erreur ${r.status}`))))
+        .then((body: { url: string; expires: number }) => Object.assign(this, { url: body.url, expires: body.expires }))
+        .catch(() => (this.failed = true));
+    },
+  };
+  out.refresh();
   return out;
 }
 

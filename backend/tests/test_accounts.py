@@ -99,3 +99,27 @@ def test_adopt_legacy_data(tmp_path):
     (tmp_path / "ratings.json").write_text("{}")
     with pytest.raises(FileExistsError):
         adopt_legacy(tmp_path, "jules")  # never overwrites
+
+
+def test_signed_gpx_link_works_without_session_for_its_route_only(data, monkeypatch):
+    with client() as a:
+        a.post("/api/auth/login", json={"username": "tester", "password": "tester password"})
+        a.get("/api/activities")
+        fake = {"type": "FeatureCollection", "features": [
+            {"type": "Feature", "id": 0, "geometry": {"type": "LineString", "coordinates": [[4.8, 45.7], [4.81, 45.71]]}, "properties": {"distance_m": 1500}}
+        ]}
+        monkeypatch.setattr(api._workspaces["tester"].routing, "generate", lambda *x, **k: fake)
+        route_id = a.post("/api/routes", json={"start": [4.8, 45.7], "distance_km": 2}).json()["features"][0]["properties"]["route_id"]
+        link = a.post(f"/api/routes/{route_id}/link").json()["url"]
+        assert a.post(f"/api/routes/{'0' * 32}/link").status_code == 404
+    with client() as safari:  # no cookie, like Safari next to the home-screen app
+        r = safari.get(link)
+        assert r.status_code == 200 and r.headers["content-type"] == "application/gpx+xml"
+        assert "attachment" in r.headers["content-disposition"]
+        assert safari.get(link.replace("sig=", "sig=0")).status_code == 403  # tampered
+        assert safari.get(link.replace("/tester/", "/marie/")).status_code == 403  # another account
+        other = link.replace(route_id, "1" * 32)
+        assert safari.get(other).status_code == 403  # another route
+        assert safari.get("/api/activities").status_code == 401  # nothing else is open
+        monkeypatch.setattr(api.time, "time", lambda: 4_000_000_000)
+        assert safari.get(link).status_code == 403  # expired

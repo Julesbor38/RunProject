@@ -15,9 +15,9 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   (couche invisible large ; fiche avec « Évaluer cette sortie ») (le rendu « Fréquentation » unifié
   sur les voies OSM a été retiré le 2026-10-07 : trop complexe, voir l'historique git), filtres, fiches, générateur d'itinéraires (boucle / aller simple le plus
   court ou à distance visée), dénivelé (tranche de D+, profil, relief 3D), export GPX,
-  bouton « Envoyer vers la montre » (téléphone : feuille de partage par-dessus l'app avec le .gpx →
-  « Enregistrer dans Fichiers », puis Fichiers → Partager → COROS ; jamais de navigation vers le fichier,
-  qui bloquait l'app d'écran d'accueil iOS ; COROS n'apparaît pas directement dans la feuille de partage web).
+  bouton « Envoyer vers la montre » (téléphone : le GPX s'ouvre dans Safari, dans un nouvel onglet, via un lien
+  signé valable 1 h — Safari n'a pas la session de l'app d'écran d'accueil — puis Fichiers → Partager → COROS ;
+  jamais de navigation de l'app vers le fichier, qui la bloquait ; COROS n'accepte pas la feuille de partage web).
 - Interface : identité « trail » (logo `frontend/public/logo.svg`, palette forêt / braise, Barlow Condensed),
   icônes SVG, réglages fins repliables, bouton Générer collant, panneau du bas compact sur téléphone,
   icônes d'écran d'accueil + manifest.
@@ -37,7 +37,7 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   import en arrière-plan, bandeau des nouvelles sorties) ; évaluation de chaque sortie de 1 à 5 sur
   8 critères (sécurité, éclairage, beauté du paysage, plaisir, entretien, abri, tranquillité,
   peu de circulation) + commentaire, en attendant de les reporter sur les tronçons (étape 3).
-- Tests : 66 OK, 1 ignoré.
+- Tests : 67 OK, 1 ignoré.
 
 ## Architecture
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
@@ -98,6 +98,8 @@ Chaque route ne lit et n'écrit que les données du compte connecté (data/users
   `request_id` optionnel pour suivre / annuler ; `warning` si des tuiles OSM manquent
   Chaque itinéraire reçoit `route_id`, `name`, `gpx_filename` et est gardé dans data/routes/ (300 derniers)
 - GET  /api/routes/{route_id}/gpx : GPX 1.1 (application/gpx+xml, attachment, nom ASCII .gpx)
+- POST /api/routes/{route_id}/link : lien signé (1 h) vers ce GPX, utilisable sans session :
+  GET /api/share/gpx/{compte}/{route_id}?expires=…&sig=… (préfixe /api/share/ : pas de session, signature vérifiée)
 - POST /api/routes/gpx : GPX d'un itinéraire envoyé par le client ({name, coordinates})
 - GET  /api/routes/{request_id}/progress : étape (download_ends, download, graph, routes) et avancement
 - POST /api/routes/{request_id}/cancel : annule la génération
