@@ -15,8 +15,9 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   (couche invisible large ; fiche avec « Évaluer cette sortie ») (le rendu « Fréquentation » unifié
   sur les voies OSM a été retiré le 2026-10-07 : trop complexe, voir l'historique git), filtres, fiches, générateur d'itinéraires (boucle / aller simple le plus
   court ou à distance visée), dénivelé (tranche de D+, profil, relief 3D), export GPX,
-  bouton « Envoyer vers la montre » (téléphone : télécharge le .gpx produit par le backend, à ouvrir
-  depuis Fichiers → Partager → COROS ; COROS n'apparaît jamais dans la feuille de partage web, testé sur iPhone).
+  bouton « Envoyer vers la montre » (téléphone : feuille de partage par-dessus l'app avec le .gpx →
+  « Enregistrer dans Fichiers », puis Fichiers → Partager → COROS ; jamais de navigation vers le fichier,
+  qui bloquait l'app d'écran d'accueil iOS ; COROS n'apparaît pas directement dans la feuille de partage web).
 - Interface : identité « trail » (logo `frontend/public/logo.svg`, palette forêt / braise, Barlow Condensed),
   icônes SVG, réglages fins repliables, bouton Générer collant, panneau du bas compact sur téléphone,
   icônes d'écran d'accueil + manifest.

@@ -350,6 +350,19 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
   imports et GPX entre deux comptes, rattachement des anciennes données).
 - Prochaine étape côté comptes : mise en commun (évaluations partagées des tronçons, étape 5).
 
+### 2026-10-07 — Plus d'app bloquée après « Envoyer vers la montre » (iPhone, écran d'accueil)
+- Dans l'app ajoutée à l'écran d'accueil iOS, « Envoyer vers la montre » (et le lien GPX) naviguait vers le
+  fichier : iOS l'affichait à la place de l'app, sans retour possible (il fallait fermer l'app).
+  Ouvrir le GPX dans Safari n'est pas une solution : depuis iOS 16.4 l'app d'écran d'accueil ne partage pas
+  ses cookies avec Safari (on y serait déconnecté).
+- Sur téléphone, les deux boutons ouvrent maintenant la feuille de partage du système **par-dessus l'app**
+  avec le fichier .gpx (préchargé avec la session, partagé dans le geste) : « Enregistrer dans Fichiers »,
+  puis Fichiers → Partager → COROS. Fermer la feuille ramène à l'app. Là où le partage de fichiers est
+  refusé (Chrome sur Android), téléchargement classique (sans blocage là-bas). Ordinateur : inchangé.
+- Vérifié en navigateur mobile simulé : avec partage, la page ne change pas et le fichier partagé est le bon
+  (.gpx, application/gpx+xml, sans titre) ; sans partage, téléchargement et page inchangée.
+  À confirmer sur un vrai iPhone en mode écran d'accueil.
+
 ---
 
 ## État au 2026-10-07
