@@ -2,24 +2,52 @@
 <html lang="fr">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#143f30" />
+    <meta name="apple-mobile-web-app-title" content="Trail Map" />
+    <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <title>Trail Map</title>
   </head>
   <body>
+    <!-- Icon sprite (Lucide-style strokes): <svg class="i"><use href="#i-…"/></svg> -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-7-6.1-7-11.5a7 7 0 0 1 14 0C19 14.9 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></symbol>
+        <symbol id="i-locate" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></symbol>
+        <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10.5l5 5 5-5M5 20h14"/></symbol>
+        <symbol id="i-watch" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="3"/><path d="M9 6l.7-3h4.6l.7 3M9 18l.7 3h4.6l.7-3M12 9.5V12l1.5 1.5"/></symbol>
+        <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+        <symbol id="i-loop" viewBox="0 0 24 24"><path d="M5 12a7 7 0 1 0 2.1-5"/><path d="M4 3.5v4h4"/></symbol>
+        <symbol id="i-oneway" viewBox="0 0 24 24"><circle cx="5.5" cy="17.5" r="2"/><path d="M7.5 17.5h5a3.5 3.5 0 0 0 0-7h-3a3.5 3.5 0 0 1 0-7H19"/><path d="M16 1l3 2.5L16 6"/></symbol>
+        <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></symbol>
+        <symbol id="i-up" viewBox="0 0 24 24"><path d="M3 18l6-7 4 4 8-9"/><path d="M15 6h6v6"/></symbol>
+        <symbol id="i-down" viewBox="0 0 24 24"><path d="M3 6l6 7 4-4 8 9"/><path d="M15 18h6v-6"/></symbol>
+        <symbol id="i-peak" viewBox="0 0 24 24"><path d="M3 20l6.5-11 4 6 2.5-3.5L21 20z"/></symbol>
+      </defs>
+    </svg>
+
     <div id="map"></div>
 
-    <button id="panel-toggle" class="fab" aria-label="Afficher le menu" hidden>☰</button>
+    <button id="panel-toggle" class="fab" aria-label="Afficher le menu" hidden>
+      <img src="/logo.svg" alt="" width="28" height="28" />
+      <span>Trail Map</span>
+    </button>
 
     <aside id="panel">
       <header class="panel-head">
+        <span class="grabber" aria-hidden="true"></span>
         <div class="brand">
-          <span class="logo"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M2 20 9 8l4 6 3-4 6 10z" fill="currentColor"/></svg></span>
+          <img class="logo" src="/logo.svg" alt="" width="42" height="42" />
           <div>
             <h1>Trail Map</h1>
-            <p id="summary" class="muted">Chargement…</p>
+            <p id="summary">Chargement…</p>
           </div>
         </div>
-        <button id="panel-close" class="icon-btn" aria-label="Replier le menu">«</button>
+        <button id="panel-close" class="icon-btn" aria-label="Replier le menu">
+          <svg class="i"><use href="#i-chevron" /></svg>
+        </button>
       </header>
 
       <nav class="tabs" role="tablist">
@@ -29,8 +57,8 @@
 
       <section id="tab-route" class="tab-body">
         <div class="segmented" id="mode">
-          <button data-mode="loop" class="on">Boucle</button>
-          <button data-mode="oneway">Aller simple</button>
+          <button data-mode="loop" class="on"><svg class="i"><use href="#i-loop" /></svg>Boucle</button>
+          <button data-mode="oneway"><svg class="i"><use href="#i-oneway" /></svg>Aller simple</button>
         </div>
 
         <div class="points">
@@ -39,8 +67,8 @@
             <span id="start-label" class="muted">Départ</span>
           </div>
           <div class="point-actions">
-            <button id="place-start" class="secondary">📍 Placer sur la carte</button>
-            <button id="locate" class="secondary">◎ Ma position</button>
+            <button id="place-start" class="secondary"><svg class="i"><use href="#i-pin" /></svg><span class="label">Placer sur la carte</span></button>
+            <button id="locate" class="secondary"><svg class="i"><use href="#i-locate" /></svg>Ma position</button>
           </div>
           <div id="end-row" hidden>
             <div class="point">
@@ -48,7 +76,7 @@
               <span id="end-label" class="muted">Arrivée</span>
             </div>
             <div class="point-actions">
-              <button id="place-end" class="secondary">📍 Placer l'arrivée sur la carte</button>
+              <button id="place-end" class="secondary"><svg class="i"><use href="#i-pin" /></svg><span class="label">Placer l'arrivée sur la carte</span></button>
             </div>
           </div>
         </div>
@@ -62,7 +90,7 @@
         </div>
 
         <label class="field" id="distance-field">
-          <span class="field-head">Distance <strong id="distance-value">10 km</strong></span>
+          <span class="field-head">Distance <strong id="distance-value" class="big-value">10 km</strong></span>
           <input type="range" id="distance" min="2" max="42" step="1" value="10" />
         </label>
 
@@ -77,9 +105,14 @@
 
         <h2>Mes exigences</h2>
         <div class="presets" id="presets"></div>
-        <div id="prefs"></div>
+        <details class="fine">
+          <summary><svg class="i"><use href="#i-sliders" /></svg>Réglages fins<svg class="i caret"><use href="#i-chevron" /></svg></summary>
+          <div id="prefs"></div>
+        </details>
 
-        <button id="generate" class="primary">Générer l'itinéraire</button>
+        <div class="generate-bar">
+          <button id="generate" class="primary">Générer l'itinéraire</button>
+        </div>
         <p id="route-status" class="status" hidden></p>
 
         <div id="results"></div>
@@ -102,7 +135,7 @@
       </section>
 
       <footer class="panel-foot">
-        <label class="switch"><input type="checkbox" id="show-tracks" checked /> Afficher mes traces</label>
+        <label class="switch"><input type="checkbox" id="show-tracks" checked /><span class="knob"></span>Afficher mes traces</label>
         <div id="osm-status" class="osm-status" hidden>
           <span id="osm-status-text"></span>
           <div class="track"><div id="osm-status-bar"></div></div>

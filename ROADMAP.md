@@ -235,6 +235,23 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
   à étudier (API, CGU).
 - 69 tests OK, 1 ignoré (4 nouveaux sur le GPX : structure, nom de fichier, en-têtes, itinéraires gardés).
 
+### 2026-10-07 — Interface : identité « trail » et logo
+- Logo (`frontend/public/logo.svg`) : sentier en lacets jusqu'au sommet, soleil couchant, fond vert forêt ;
+  favicon, icône d'écran d'accueil iOS (`apple-touch-icon.png`), icônes 192/512 et `manifest.webmanifest`
+  (nom, couleurs) pour « Ajouter à l'écran d'accueil ».
+- Palette forêt / sable avec un orange « braise » pour l'action principale ; titres en Barlow Condensed
+  (paquet `@fontsource`, servi par l'app, pas de Google Fonts). En-tête vert foncé avec courbes de niveau.
+- Icônes SVG à la place des emojis (affichage identique partout), boutons et onglets uniformisés,
+  interrupteur « Afficher mes traces », réglages fins (curseurs) repliés sous « Réglages fins ».
+- Bouton « Générer » toujours accessible en bas de l'onglet (collant) pendant qu'on fait défiler les réglages.
+- Cartes d'itinéraire : pastille de couleur avec la lettre, distance en grand, D+ / D- / altitudes en étiquettes,
+  boutons « GPX » et « Envoyer vers la montre ».
+- Téléphone : panneau du bas plus haut (64 %), poignée, en-tête et pied compacts (avancement OSM sur une ligne),
+  légende « Passages » en haut à gauche (plus coupée par le panneau), crédits de la carte repliables (ⓘ),
+  bouton « Trail Map » pour rouvrir le panneau au-dessus des crédits.
+- Vérifié par captures (Chromium headless, vue ordinateur 1280×800 et iPhone 390×844) : itinéraire,
+  résultats, mes sorties, réglages fins, panneau replié ; aucune erreur dans la console.
+
 ---
 
 ## État au 2026-10-07

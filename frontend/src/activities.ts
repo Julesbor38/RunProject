@@ -72,7 +72,8 @@ export class ActivitiesView {
         },
       });
       this.legend = new FrequencyLegend(freq.max_passes);
-      map.addControl(this.legend, "top-right");
+      // Phone: the bottom sheet hides the lower right, and the top left is free (the panel is at the bottom).
+      map.addControl(this.legend, matchMedia("(max-width: 700px)").matches ? "top-left" : "top-right");
     }
     map.addSource(SOURCE, { type: "geojson", data: fc as never });
     map.addLayer({

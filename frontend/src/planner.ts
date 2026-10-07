@@ -460,8 +460,8 @@ export class Planner {
     };
     document.getElementById("start-label")!.textContent = fmt(this.start, "Départ : pas encore placé");
     document.getElementById("end-label")!.textContent = fmt(this.end, "Arrivée : pas encore placée");
-    document.getElementById("place-start")!.textContent = this.start ? "📍 Déplacer le départ" : "📍 Placer sur la carte";
-    document.getElementById("place-end")!.textContent = this.end ? "📍 Déplacer l'arrivée" : "📍 Placer l'arrivée sur la carte";
+    document.querySelector("#place-start .label")!.textContent = this.start ? "Déplacer le départ" : "Placer sur la carte";
+    document.querySelector("#place-end .label")!.textContent = this.end ? "Déplacer l'arrivée" : "Placer l'arrivée sur la carte";
   }
 
   private renderResults() {
@@ -472,16 +472,18 @@ export class Planner {
       const card = document.createElement("article");
       card.className = "route-card" + (r.id === this.selected ? " selected" : "");
       card.style.setProperty("--c", ROUTE_COLORS[r.id] ?? ROUTE_COLORS[2]);
+      const letter = String.fromCharCode(65 + r.id);
+      const title = `${this.mode === "loop" ? "Boucle" : "Itinéraire"}${this.mode === "loop" || this.routes.length > 1 ? ` ${letter}` : ""}`;
       card.innerHTML = `
         <header>
-          <span class="swatch"></span>
-          <strong>${this.mode === "loop" ? "Boucle" : "Itinéraire"}${this.mode === "loop" || this.routes.length > 1 ? ` ${String.fromCharCode(65 + r.id)}` : ""}</strong>
-          <span class="dist">${km(p.distance_m)}</span>
+          <span class="route-letter">${letter}</span>
+          <strong class="route-title">${title}</strong>
+          <span class="dist">${(p.distance_m / 1000).toFixed(1).replace(".", ",")}<small> km</small></span>
         </header>
         <p class="climb">
-          <span title="Dénivelé positif">↗ ${p.ascent_m} m</span>
-          <span title="Dénivelé négatif">↘ ${p.descent_m} m</span>
-          ${p.ele_min != null ? `<span class="muted">${Math.round(p.ele_min)}–${Math.round(p.ele_max ?? 0)} m</span>` : ""}
+          <span title="Dénivelé positif"><svg class="i"><use href="#i-up"/></svg>${p.ascent_m} m</span>
+          <span title="Dénivelé négatif"><svg class="i"><use href="#i-down"/></svg>${p.descent_m} m</span>
+          ${p.ele_min != null ? `<span class="muted" title="Altitudes min – max"><svg class="i"><use href="#i-peak"/></svg>${Math.round(p.ele_min)}–${Math.round(p.ele_max ?? 0)} m</span>` : ""}
           ${p.in_ascent_range === false ? `<span class="badge">hors tranche</span>` : ""}
         </p>
         ${r.id === this.selected && p.profile.length ? `<div class="profile"></div>` : ""}
@@ -492,8 +494,8 @@ export class Planner {
           ${bar("Routes passantes", p.busy_roads, true)}
         </div>
         <div class="actions">
-          <a class="link-btn gpx" href="${gpxUrl(p.route_id)}" download="${p.gpx_filename}">⤓ Exporter en GPX</a>
-          <button class="link-btn watch" hidden title="Télécharger le GPX pour l'ouvrir dans l'app COROS">⌚ Envoyer vers la montre</button>
+          <a class="action gpx" href="${gpxUrl(p.route_id)}" download="${p.gpx_filename}"><svg class="i"><use href="#i-download"/></svg>GPX</a>
+          <button class="action watch" hidden title="Télécharger le GPX pour l'ouvrir dans l'app COROS"><svg class="i"><use href="#i-watch"/></svg>Envoyer vers la montre</button>
         </div>`;
       card.addEventListener("click", () => this.select(r.id));
       const profileBox = card.querySelector(".profile") as HTMLElement | null;
@@ -538,7 +540,7 @@ export class Planner {
     const b = document.getElementById("generate") as HTMLButtonElement;
     b.disabled = this.busy && !this.generation;
     b.classList.toggle("cancel", !!this.generation);
-    b.textContent = this.generation ? "✕ Annuler le calcul" : this.routes.length ? "Régénérer" : "Générer l'itinéraire";
+    b.textContent = this.generation ? "Annuler le calcul" : this.routes.length ? "Régénérer" : "Générer l'itinéraire";
   }
 
   private status(text: string | null, error = false) {

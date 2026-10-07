@@ -21,6 +21,7 @@ const map = new Map({
   style: "https://tiles.openfreemap.org/styles/positron",
   center: [4.8357, 45.764],
   zoom: 11,
+  attributionControl: { compact: true }, // a small ⓘ: keeps the bottom of the map free on phones
 });
 if (import.meta.env.DEV) Object.assign(window, { map }); // handy from the browser console
 map.addControl(new NavigationControl(), "top-right");

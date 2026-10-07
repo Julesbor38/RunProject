@@ -16,6 +16,9 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   court ou à distance visée), dénivelé (tranche de D+, profil, relief 3D), export GPX,
   bouton « Envoyer vers la montre » (téléphone : télécharge le .gpx produit par le backend, à ouvrir
   depuis Fichiers → Partager → COROS ; COROS n'apparaît jamais dans la feuille de partage web, testé sur iPhone).
+- Interface : identité « trail » (logo `frontend/public/logo.svg`, palette forêt / braise, Barlow Condensed),
+  icônes SVG, réglages fins repliables, bouton Générer collant, panneau du bas compact sur téléphone,
+  icônes d'écran d'accueil + manifest.
 - Génération d'itinéraires annulable, avec avancement ; tuiles OSM de Rhône-Alpes en local
   (plus de dépendance à Overpass dans la région). Accès téléphone via Tailscale (HTTPS, tailnet).
 - Auto-hébergement (`SELF-HOST.md`) : en production FastAPI sert aussi le front construit sur un seul port
@@ -35,6 +38,8 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
     sur la trace là où aucune voie OSM ne l'explique (sauf écarts GPS : courts, en boucle, ou en
     ville) ; extrémités raccordées à < 25 m. Recalculé quand de nouvelles tuiles OSM arrivent
 - frontend/ : TypeScript + Vite + MapLibre GL 6 (PWA à venir), fond OpenFreeMap
+  - `index.html` (structure + sprite d'icônes SVG `#i-…`), `src/style.css` (variables de couleurs en tête),
+    `public/` (logo, icônes PNG, manifest ; copiés tels quels dans dist/)
   - `main.ts`, `activities.ts` (onglet Mes sorties), `planner.ts` (onglet Itinéraire),
     `profile.ts` (profil altimétrique), `terrain.ts` (relief 3D), `api.ts`, `format.ts`
   - Vite ne pré-empaquette pas MapLibre (sinon le worker est perdu et la carte ne charge pas) ;
