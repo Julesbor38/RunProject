@@ -526,6 +526,15 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 - Le mode dev (Vite + --reload) n'est plus lancé : pour développer, `sudo systemctl stop trailmap` puis le relancer,
   et `./deploy-local.sh --no-pull` pour mettre le service à jour.
 
+### 2026-10-07 — App native : menu « Ouvrir avec… » d'abord
+- Test du soir (app web, raccourci iOS « Obtenir le contenu de l'URL » + « Partager ») : COROS absent là aussi,
+  alors qu'il apparaît depuis l'app Fichiers. Le menu de Fichiers est le « Ouvrir avec… » d'iOS
+  (UIDocumentInteractionController), pas la feuille de partage : la feuille du plugin Share de l'app native
+  risquait donc le même échec.
+- App native : plugin maison `OpenWith` (`frontend/ios/App/App/SceneDelegate.swift`, `RunProjectViewController`) :
+  le GPX écrit par Filesystem est ouvert dans le menu « Ouvrir avec… » ; feuille de partage seulement si aucune
+  app ne l'ouvre. À recompiler (Actions -> iOS (AltStore) -> Run workflow) avant l'installation.
+
 ---
 
 ## État au 2026-10-07

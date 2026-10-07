@@ -23,8 +23,9 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 - Front servi sous **/app/** (scope de la PWA ; / redirige vers /app/) : /api et /dl restent hors scope.
 - **App iOS native** (Capacitor 8, `frontend/ios/`, « RunProject », com.julesbor38.runproject) compilée sans Mac ni
   signature par GitHub Actions (`.github/workflows/ios.yml`, à la main ou tag v*), installée avec AltStore
-  (IOS-ALTSTORE.md). Adresse du serveur tapée au 1er lancement ; session par jeton Bearer ; GPX partagé en vrai
-  fichier (Filesystem + Share).
+  (IOS-ALTSTORE.md). Adresse du serveur tapée au 1er lancement ; session par jeton Bearer ; GPX écrit en vrai
+  fichier (Filesystem) puis menu « Ouvrir avec… » d'iOS (plugin maison OpenWith, celui de l'app Fichiers où les
+  apps de montre apparaissent), feuille de partage (Share) en secours.
 - Interface : identité « trail » (logo `frontend/public/logo.svg`, palette forêt / braise, Barlow Condensed),
   icônes SVG, réglages fins repliables, bouton Générer collant, panneau du bas compact sur téléphone,
   icônes d'écran d'accueil + manifest.

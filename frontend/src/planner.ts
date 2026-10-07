@@ -552,7 +552,9 @@ export class Planner {
             (r) =>
               r === "not-ready"
                 ? note("Fichier en préparation : réessayez dans un instant.")
-                : r === "shared" && note("Envoyé. Si l'app de votre montre n'était pas dans la liste : « Enregistrer dans Fichiers », puis ouvrez-le depuis Fichiers."),
+                : r === "opened"
+                  ? note("Choisissez l'app de votre montre dans le menu.")
+                  : r === "shared" && note("Envoyé. Si l'app de votre montre n'était pas dans la liste : « Enregistrer dans Fichiers », puis ouvrez-le depuis Fichiers."),
             (err: Error) => note(`Partage impossible (${err.message}).`, true),
           );
           return;

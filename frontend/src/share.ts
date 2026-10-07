@@ -9,6 +9,7 @@
  * 2. Fallback, when files can't be shared: a signed /dl/ link, outside the PWA scope (/app/), opened in a new
  *    window: iOS shows it over the app with its own « OK », never in place of the app.
  */
+import { registerPlugin } from "@capacitor/core";
 import { Directory, Encoding, Filesystem } from "@capacitor/filesystem";
 import { Share } from "@capacitor/share";
 import { apiFetch, gpxUrl } from "./api";
@@ -100,14 +101,25 @@ export function sendGpx(
   return openLink(gpx) ? "opened" : "unavailable";
 }
 
+/** The app's own plugin (ios/App/App/SceneDelegate.swift): iOS's « Ouvrir avec… » menu on a file. */
+const OpenWith = registerPlugin<{ open(options: { url: string }): Promise<{ shown: boolean }> }>("OpenWith");
+
 /**
- * Native app: write the GPX into the app's cache, then the system share sheet on that file. Resolves
- * "shared" or "cancelled" (the user closed the sheet: nothing to say), rejects on a real error.
+ * Native app: write the GPX into the app's cache, then iOS's « Ouvrir avec… » menu on that file (the one of the
+ * Files app, which lists the watch apps), else the system share sheet. Resolves "opened", "shared" or
+ * "cancelled" (the user closed the sheet: nothing to say), rejects on a real error.
  */
-export async function shareNative(gpx: PreparedGpx, filename: string): Promise<"shared" | "cancelled" | "not-ready"> {
+export async function shareNative(gpx: PreparedGpx, filename: string): Promise<"opened" | "shared" | "cancelled" | "not-ready"> {
   if (gpx.text === null) return "not-ready";
   const { uri } = await Filesystem.writeFile({ path: filename, data: gpx.text, directory: Directory.Cache, encoding: Encoding.UTF8 });
-  debugLog("app : partage", `${filename} (${uri.split("/").slice(-2).join("/")})`);
+  debugLog("app : fichier", uri.split("/").slice(-2).join("/"));
+  try {
+    const { shown } = await OpenWith.open({ url: uri });
+    debugLog("app : Ouvrir avec…", shown ? "menu affiché" : "aucune app : feuille de partage");
+    if (shown) return "opened";
+  } catch (e) {
+    debugLog("app : Ouvrir avec… erreur", String((e as Error).message));
+  }
   try {
     await Share.share({ files: [uri] });
     return "shared";
