@@ -36,6 +36,7 @@ interface PetView {
   active: boolean;
   stage: { index: number; id: string; name: string; max_level: number; final: boolean };
   level: number;
+  branch: string | null;
   stats: Stats;
   next_level: { cost: number; cost_5: number; levels_5: number; affordable: number } | null;
   evolution: { stage: string; level: number; ready: boolean; cost: number; stats: Stats; form: string | null; branches?: BranchView[] } | null;
@@ -95,11 +96,14 @@ export class PetTab {
       <div class="starters">${starters
         .map(
           (s) => `<article class="starter" data-id="${s.id}">
-            <div class="starter-art">${petArt(s.color, s.type, 1, 110)}</div>
+            <div class="starter-art">${petArt({ species: s.id, stage: 1, color: s.color, type: s.type }, 110)}</div>
             <div class="starter-text"><strong>${escape(s.names[1])}</strong> <span class="type-badge t-${s.type}">${escape(s.type_name)}</span>
               <p class="small">${escape(s.description)}</p>
               ${statBars(s.base, 130)}
-              <p class="muted small">Formes finales : ${s.branches.map((b) => `${escape(b.name)} (${escape(b.hint)})`).join(" ou ")}</p>
+              <div class="finals">${s.branches
+                .map((b) => `<figure>${petArt({ species: s.id, stage: 4, branch: b.id, color: s.color, type: b.type }, 64)}
+                  <figcaption><strong>${escape(b.name)}</strong><span class="muted">${escape(b.hint)}</span></figcaption></figure>`)
+                .join("")}</div>
               <button type="button" class="primary choose">Choisir ${escape(s.names[1])}</button></div>
           </article>`,
         )
@@ -142,7 +146,7 @@ export class PetTab {
           <span class="type-badge t-${pet.type}">${escape(pet.type_name)}</span>
         </div>
         <button type="button" class="pet-art ${this.open ? "" : "hint"}" aria-expanded="${this.open}" aria-label="Faire progresser ${escape(pet.name)}">
-          ${petArt(pet.color, pet.type, st.index, 180)}
+          ${petArt(art(pet), 180)}
         </button>
         <div class="pet-level"><strong>Niv. ${pet.level}</strong><div class="track"><div style="width:${levelPct}%"></div></div>
           <span class="muted small">max ${st.max_level} au stade ${escape(st.name.toLowerCase())}</span></div>
@@ -152,7 +156,7 @@ export class PetTab {
         <p id="pet-status" class="status" hidden></p>
       </div>
       ${s.pets.length > 1 ? `<h2>Mes familiers</h2><ul class="pet-list">${s.pets
-        .map((p) => `<li data-id="${p.id}" class="${p.active ? "active" : ""}">${petArt(p.color, p.type, p.stage.index, 44)}
+        .map((p) => `<li data-id="${p.id}" class="${p.active ? "active" : ""}">${petArt(art(p), 44)}
           <div><strong>${escape(p.name)}</strong><span class="muted small">${escape(p.form)} · niv. ${p.level}</span></div>
           ${p.active ? `<span class="muted small">actif</span>` : `<button type="button" class="action activate">Activer</button>`}</li>`)
         .join("")}</ul>` : ""}`;
@@ -199,8 +203,8 @@ export class PetTab {
     const best = Math.max(...b.map((x) => x.score), 0.0001);
     return `<div class="pet-branches"><h3>Forme finale</h3>
       <p class="muted small">Elle dépend de ta façon de courir depuis l'arrivée de ${escape(pet.name)}.</p>
-      ${b.map((x) => `<div class="branch ${x.leading ? "leading" : ""}"><span>${escape(x.name)} <span class="type-badge t-${x.type}">${escape(x.type_name)}</span>
-        <span class="muted small">${escape(x.hint)}</span></span><div class="track"><div style="width:${Math.round((100 * x.score) / best)}%"></div></div></div>`).join("")}</div>`;
+      ${b.map((x) => `<div class="branch ${x.leading ? "leading" : ""}">${petArt({ species: pet.species, stage: 4, branch: x.id, color: pet.color, type: x.type }, 52)}<div class="branch-text"><span>${escape(x.name)} <span class="type-badge t-${x.type}">${escape(x.type_name)}</span>
+        <span class="muted small">${escape(x.hint)}</span></span><div class="track"><div style="width:${Math.round((100 * x.score) / best)}%"></div></div></div></div>`).join("")}</div>`;
   }
 
   // --- actions ---
@@ -251,6 +255,8 @@ export class PetTab {
     el.classList.toggle("error", error);
   }
 }
+
+const art = (p: PetView) => ({ species: p.species, stage: p.stage.index, branch: p.branch, color: p.color, type: p.type });
 
 function statBars(stats: Stats, scale: number): string {
   return `<div class="stat-bars">${STAT_NAMES.map(
