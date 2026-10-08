@@ -8,7 +8,7 @@ Tout est décidé par le serveur (`app/game/`) ; le front (`frontend/src/pet.ts`
 - **Portefeuille** (`wallet.py`) : soldes et journal (`transactions`) dans `data/game/game.sqlite`, mis à jour
   dans la même transaction SQLite ; une dépense ne passe que si le solde la couvre ; chaque ligne a une clé
   unique (un gain ou un achat rejoué ne compte jamais deux fois). **À sauvegarder.**
-- **Familiers** (`pets.py`) : un starter choisi une fois ; on achète des niveaux avec des points (appui sur
+- **Familiers** (`pets.py`) : les trois starters, adoptables chacun une fois (ils évoluent chacun de leur côté) ; on achète des niveaux avec des points (appui sur
   l'image), jusqu'au niveau max du stade, puis l'évolution ; la forme finale dépend du profil de course.
 - Base de données : migrations numérotées dans `migrations/` (`NNN_nom.sql`, appliquées au démarrage dans
   l'ordre, suivies par `PRAGMA user_version`). Pour changer le schéma : ajouter un fichier, ne jamais modifier
@@ -29,7 +29,7 @@ names = ["Œuf de Lucine", "Lucine", "Luciole", "Lucifère"]   # œuf, bébé, j
 color = "#4b3f8f"
 description = "…"
 base = { hp = 70, attack = 80, defense = 65, speed = 85 }    # stats du stade jeune au niveau 1
-# starter = true             # seulement pour les trois de départ (jamais vendus)
+# starter = true             # adoptable gratuitement, une fois (jamais vendu)
 
   [[species.branch]]          # au moins une ; la forme finale prend celle au meilleur score
   id = "eclipse"

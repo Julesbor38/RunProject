@@ -714,7 +714,8 @@ def game_state(ws: Workspace = Depends(workspace)) -> dict:
 @app.get("/api/game/starters")
 def game_starters(ws: Workspace = Depends(workspace)) -> dict:
     g = game()
-    return {"chosen": g.pets.has_starter(ws.user), "starters": [g.species_json(s) for s in g.cfg.starters()]}
+    adopted = g.pets.adopted_starters(ws.user)
+    return {"chosen": bool(adopted), "starters": [{**g.species_json(s), "adopted": s.id in adopted} for s in g.cfg.starters()]}
 
 
 class StarterIn(BaseModel):
@@ -724,7 +725,7 @@ class StarterIn(BaseModel):
 
 @app.post("/api/game/starter")
 def game_choose_starter(body: StarterIn, ws: Workspace = Depends(workspace)) -> dict:
-    """The starter, once per account and for good; it becomes the active familier."""
+    """Adopt one of the three starters (each once); it becomes the active familier."""
     return _pet_out(ws, _game_call(game().pets.choose_starter, ws.user, body.species, body.name))
 
 

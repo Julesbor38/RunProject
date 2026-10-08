@@ -1,5 +1,6 @@
 /**
- * « Familier » tab: the starter to choose (once, for good), then the active familier. A tap on its picture
+ * « Familier » tab: the three starters to adopt (all of them, each once; they grow each on their own side),
+ * a row to switch between my familiers, then the active one. A tap on its picture
  * opens what points buy: levels (+1, +5, as many as possible), and at the stage's max level the evolution
  * (from the adult stage: which final form the running profile leans towards). Everything is decided by the
  * server; this only shows it.
@@ -51,6 +52,7 @@ interface Starter {
   description: string;
   base: Stats;
   branches: { id: string; name: string; type: string; hint: string }[];
+  adopted: boolean;
 }
 
 interface GameState {
@@ -80,20 +82,28 @@ export class PetTab {
       return;
     }
     this.state = (await r.json()) as GameState;
-    if (!this.state.starter_chosen) await this.renderStarters();
+    const rs = await apiFetch("/api/game/starters");
+    this.starters = rs.ok ? ((await rs.json()) as { starters: Starter[] }).starters : [];
+    if (!this.state.pets.length) this.renderStarters();
     else this.render();
   }
 
+  private starters: Starter[] = [];
+
   // --- the starter ---
 
-  private async renderStarters() {
-    const r = await apiFetch("/api/game/starters");
-    if (!r.ok) return;
-    const { starters } = (await r.json()) as { starters: Starter[] };
+  private renderStarters() {
     this.box.innerHTML = `
-      <h2>Choisis ton familier</h2>
-      <p class="muted small">Il grandit avec les points que tu gagnes en courant et en explorant. Ce choix est définitif.</p>
-      <div class="starters">${starters
+      <h2>Adopte ton premier familier</h2>
+      <p class="muted small">Il grandit avec les points que tu gagnes en courant et en explorant. Tu pourras adopter les deux autres
+        quand tu voudras : chacun évolue de son côté.</p>
+      ${this.starterCards(this.starters)}
+      <p id="pet-status" class="status" hidden></p>`;
+    this.bindStarters();
+  }
+
+  private starterCards(starters: Starter[]): string {
+    return `<div class="starters">${starters
         .map(
           (s) => `<article class="starter" data-id="${s.id}">
             <div class="starter-art">${petArt({ species: s.id, stage: 1, color: s.color, type: s.type }, 110)}</div>
@@ -104,26 +114,28 @@ export class PetTab {
                 .map((b) => `<figure>${petArt({ species: s.id, stage: 4, branch: b.id, color: s.color, type: b.type }, 64)}
                   <figcaption><strong>${escape(b.name)}</strong><span class="muted">${escape(b.hint)}</span></figcaption></figure>`)
                 .join("")}</div>
-              <button type="button" class="primary choose">Choisir ${escape(s.names[1])}</button></div>
+              <button type="button" class="primary choose">Adopter ${escape(s.names[1])}</button></div>
           </article>`,
         )
-        .join("")}</div>
-      <p id="pet-status" class="status" hidden></p>`;
+        .join("")}</div>`;
+  }
+
+  private bindStarters() {
     this.box.querySelectorAll<HTMLButtonElement>(".choose").forEach((b) =>
       b.addEventListener("click", () => {
-        const s = starters.find((x) => x.id === b.closest<HTMLElement>(".starter")!.dataset.id)!;
+        const s = this.starters.find((x) => x.id === b.closest<HTMLElement>(".starter")!.dataset.id)!;
         this.chooseStarter(s);
       }),
     );
   }
 
   private async chooseStarter(s: Starter) {
-    if (!confirm(`Choisir ${s.names[1]} (${s.type_name}) ? C'est définitif.`)) return;
-    const name = prompt("Son nom ?", s.names[1])?.trim();
+    const name = prompt(`Adopter ${s.names[1]} (${s.type_name}) : quel nom lui donner ?`, s.names[1]);
+    if (name === null) return; // cancelled
     const r = await apiFetch("/api/game/starter", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ species: s.id, name: name || undefined }),
+      body: JSON.stringify({ species: s.id, name: name.trim() || undefined }),
     });
     if (!r.ok) return this.status((await r.json().catch(() => ({}))).detail ?? `erreur ${r.status}`, true);
     this.open = true;
@@ -138,7 +150,12 @@ export class PetTab {
     if (!pet) return;
     const st = pet.stage;
     const levelPct = Math.round((100 * pet.level) / st.max_level);
+    const others = this.starters.filter((x) => !x.adopted);
     this.box.innerHTML = `
+      ${s.pets.length > 1 ? `<div class="pet-switch" role="tablist">${s.pets
+        .map((p) => `<button type="button" role="tab" data-id="${p.id}" aria-selected="${p.id === pet.id}">${petArt(art(p), 46)}
+          <span>${escape(p.name)}</span><span class="muted">niv. ${p.level}</span></button>`)
+        .join("")}</div>` : ""}
       <div class="pet-card t-${pet.type}">
         <div class="pet-head">
           <div><h2 class="pet-name">${escape(pet.name)} <button type="button" class="text-btn rename" title="Renommer">✎</button></h2>
@@ -155,11 +172,10 @@ export class PetTab {
         ${this.branches(pet)}
         <p id="pet-status" class="status" hidden></p>
       </div>
-      ${s.pets.length > 1 ? `<h2>Mes familiers</h2><ul class="pet-list">${s.pets
-        .map((p) => `<li data-id="${p.id}" class="${p.active ? "active" : ""}">${petArt(art(p), 44)}
-          <div><strong>${escape(p.name)}</strong><span class="muted small">${escape(p.form)} · niv. ${p.level}</span></div>
-          ${p.active ? `<span class="muted small">actif</span>` : `<button type="button" class="action activate">Activer</button>`}</li>`)
-        .join("")}</ul>` : ""}`;
+      ${others.length ? `<h2>Adopter un autre familier</h2>
+        <p class="muted small">Gratuit, une fois chacun ; il évolue de son côté avec les points que tu lui donnes.</p>
+        ${this.starterCards(others)}` : ""}`;
+    this.bindStarters();
 
     this.box.querySelector(".pet-art")!.addEventListener("click", () => {
       this.open = !this.open;
@@ -168,8 +184,8 @@ export class PetTab {
     this.box.querySelector(".rename")!.addEventListener("click", () => this.rename(pet));
     this.box.querySelectorAll<HTMLButtonElement>("[data-levels]").forEach((b) => b.addEventListener("click", () => this.buyLevels(pet, b.dataset.levels!)));
     this.box.querySelector<HTMLButtonElement>(".evolve")?.addEventListener("click", () => this.evolve(pet));
-    this.box.querySelectorAll<HTMLButtonElement>(".activate").forEach((b) =>
-      b.addEventListener("click", () => this.activate(Number(b.closest<HTMLElement>("li")!.dataset.id))),
+    this.box.querySelectorAll<HTMLButtonElement>(".pet-switch button").forEach((b) =>
+      b.addEventListener("click", () => Number(b.dataset.id) !== pet.id && this.activate(Number(b.dataset.id))),
     );
   }
 

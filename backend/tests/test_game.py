@@ -111,14 +111,21 @@ def test_no_double_spending_from_two_connections_at_once(tmp_path):
 # --- starter ---
 
 
-def test_starter_is_chosen_once_for_good(game):
-    pet = game.pets.choose_starter("jules", "galet")
-    assert pet.active and pet.name == "Galet" and pet.stage == 0 and pet.level == 1
-    with pytest.raises(GameError, match="définitif"):
-        game.pets.choose_starter("jules", "fusette")
+def test_each_starter_is_adopted_once_and_they_grow_apart(game):
+    galet = game.pets.choose_starter("jules", "galet")
+    assert galet.active and galet.name == "Galet" and galet.stage == 0 and galet.level == 1
+    with pytest.raises(GameError, match="déjà adopté"):
+        game.pets.choose_starter("jules", "galet")
     with pytest.raises(GameError):
         game.pets.choose_starter("marie", "unknown")
-    assert len(game.pets.all("jules")) == 1 and game.pets.choose_starter("marie", "foulon", "  Ma  Foulée ").name == "Ma Foulée"
+    fusette = game.pets.choose_starter("jules", "fusette")
+    assert fusette.active and not game.pets.get("jules", galet.id).active  # the newcomer is the active one
+    foulon = game.pets.choose_starter("jules", "foulon", "  Ma  Foulée ")
+    assert foulon.name == "Ma Foulée" and game.pets.adopted_starters("jules") == {"galet", "fusette", "foulon"}
+    give(game, "jules", 10)
+    game.pets.buy_levels("jules", fusette.id, 2, "req-00001")
+    assert [p.level for p in game.pets.all("jules")] == [1, 3, 1]  # each on its own side
+    assert game.pets.activate("jules", galet.id).active and game.pets.active("jules").id == galet.id
 
 
 # --- levels ---
@@ -235,7 +242,8 @@ def test_game_api_flow_and_privacy(tmp_path, monkeypatch):
         assert [s["id"] for s in c.get("/api/game/starters").json()["starters"]] == ["galet", "fusette", "foulon"]
         pet = c.post("/api/game/starter", json={"species": "foulon", "name": "Tempo"}).json()
         assert pet["name"] == "Tempo" and pet["type"] == "endurance" and pet["active"] and pet["next_level"]["cost"] == 2
-        assert c.post("/api/game/starter", json={"species": "galet"}).status_code == 409
+        assert c.post("/api/game/starter", json={"species": "foulon"}).status_code == 409  # already adopted
+        assert [s["adopted"] for s in c.get("/api/game/starters").json()["starters"]] == [False, False, True]
         r = c.post(f"/api/game/pets/{pet['id']}/levels", json={"count": 1, "request_id": "req-00001"})
         assert r.status_code == 402 and "points insuffisants" in r.json()["detail"]
         give(g, "tester", 100)

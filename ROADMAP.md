@@ -692,6 +692,13 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
   formes finales dès l'adulte, stats), illustrations SVG provisoires (`src/pet-art.ts`) ; « crédits » -> « points ».
 - 130 tests OK, 1 ignoré.
 
+### 2026-10-08 — Les trois starters adoptables
+- À la demande : plus de choix unique ; chaque starter s'adopte une fois (gratuit), le dernier adopté devient
+  actif, chacun évolue de son côté (niveaux et points dépensés par familier). Migration 003 (index unique par
+  espèce de starter). Onglet : sélecteur des familiers en haut, « Adopter un autre familier » en bas.
+- Illustrations refaites (`src/pet-art.ts`) : une ligne par espèce, six formes finales distinctes (kawaii -> badass).
+- 130 tests OK, 1 ignoré.
+
 ---
 
 ## Bilan des 7 et 8 octobre 2026

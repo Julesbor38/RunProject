@@ -47,7 +47,8 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   percé sur la superficie découverte, contours arrondis, chemins courus en jaune au zoom ≥ 13), suggestions de zones jamais courues -> générateur en
   mode Découverte. Tables prêtes pour un classement (opt-in désactivé par défaut), rien d'exposé aux autres.
 - **Familiers** (`app/game/`, `src/pet.ts`, `src/pet-art.ts`, onglet « Familier », README dans `app/game/README.md`) :
-  starter choisi une fois parmi 3 (Montagne / Vitesse / Endurance, triangle d'efficacité), niveaux **achetés avec
+  les 3 starters adoptables (Montagne / Vitesse / Endurance, triangle d'efficacité ; chacun une fois, gratuit, ils
+  évoluent chacun de leur côté ; sélecteur en haut de l'onglet), niveaux **achetés avec
   des points** (appui sur l'image ; coût `ceil(0,5 × n^1,5)`) jusqu'au niveau max du stade (œuf 5, bébé 15,
   jeune 35, adulte 60, finale 100), puis évolution payante (50 / 250 / 1 000 / 3 000) ; forme finale à 2 branches
   selon le profil de course (D+, nuit, sorties longues, rapides, chemins nouveaux ; `app/explore/profile.py`).
@@ -143,7 +144,7 @@ Chaque route ne lit et n'écrit que les données du compte connecté (data/users
   GET /api/explore/communes/{id} : contour (GeoJSON + bbox) ; GET /api/explore/veil?bbox=&zoom= : voile du
   brouillard (monde moins la superficie découverte, ≤ 2 deg²)
 - Jeu (`/api/game…`) : GET /api/game (soldes, starter choisi, familiers) ; GET /api/game/starters ;
-  POST /api/game/starter {species, name} (une fois) ; GET /api/game/pets[/{id}] ; POST …/{id}/activate ;
+  POST /api/game/starter {species, name} (chaque starter une fois ; `adopted` dans /starters) ; GET /api/game/pets[/{id}] ; POST …/{id}/activate ;
   PATCH …/{id} {name} ; POST …/{id}/levels {count | "max", request_id} ; POST …/{id}/evolve {request_id}
   (402 points insuffisants, 409 refus, 404 familier d'un autre) ; GET /api/game/wallet ; GET /api/game/transactions
 - PUT /api/ratings/{key} renvoie aussi `points` (gagnés à la première évaluation de la sortie)

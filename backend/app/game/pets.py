@@ -1,4 +1,4 @@
-"""Familiers: the starter chosen once, levels bought with points up to the stage's max level, evolutions bought
+"""Familiers: the three starters, each adopted once (free; they grow each on their own side), levels bought with points up to the stage's max level, evolutions bought
 at that max level, the final form's branch chosen by the running profile, one active familier per account.
 
 Every purchase runs in one transaction with its spending (wallet.apply): the pet changes only if the points
@@ -84,6 +84,9 @@ class Pets:
     def has_starter(self, user: str) -> bool:
         return bool(self.db.read("SELECT 1 FROM pets WHERE user = ? AND origin = 'starter'", (user,)))
 
+    def adopted_starters(self, user: str) -> set[str]:
+        return {r[0] for r in self.db.read("SELECT species FROM pets WHERE user = ? AND origin = 'starter'", (user,))}
+
     def species_of(self, pet: Pet) -> Species:
         return self.cfg.species[pet.species]
 
@@ -103,14 +106,14 @@ class Pets:
     # --- actions ---
 
     def choose_starter(self, user: str, species: str, name: str | None = None) -> Pet:
-        """Once per account, for good; the starter becomes the active familier."""
+        """Adopt one of the starters (each once per account); it becomes the active familier."""
         sp = self.cfg.species.get(species)
         if sp is None or not sp.starter:
             raise GameError("ce familier n'est pas un des trois de départ", 422)
         name = _clean_name(name) or sp.names[0].removeprefix("Œuf de ")
         with self.db.tx() as conn:
-            if conn.execute("SELECT 1 FROM pets WHERE user = ? AND origin = 'starter'", (user,)).fetchone():
-                raise GameError("le familier de départ est déjà choisi, et c'est définitif")
+            if conn.execute("SELECT 1 FROM pets WHERE user = ? AND origin = 'starter' AND species = ?", (user, species)).fetchone():
+                raise GameError(f"{sp.names[1]} est déjà adopté")
             conn.execute("UPDATE pets SET active = 0 WHERE user = ?", (user,))
             # profile_since NULL: the starter's running profile is the whole account's history
             cur = conn.execute("INSERT INTO pets (user, species, name, origin, active, acquired_at) VALUES (?, ?, ?, 'starter', 1, ?)",
