@@ -32,7 +32,7 @@ interface CreditsSummary {
 
 const nf = (n: number, digits = 0) => n.toLocaleString("fr-FR", { maximumFractionDigits: digits });
 const km = (m: number) => nf(m / 1000, 1);
-const KINDS: Record<string, string> = { activity: "Sorties", area: "Superficie", poi: "Lieux", milestone: "Paliers", badge: "Badges", rating: "Évaluations", welcome: "Bienvenue", spend: "Dépensés" };
+const KINDS: Record<string, string> = { activity: "Sorties", area: "Superficie", poi: "Lieux", milestone: "Paliers", badge: "Badges", rating: "Évaluations", welcome: "Bienvenue", gift: "Cadeaux", spend: "Dépensés" };
 
 export class Credits {
   private poll = 0;
