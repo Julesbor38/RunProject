@@ -77,8 +77,8 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 - **Points** (anciennement « crédits » ; `app/explore/credits.py`, `src/credits.ts`) : **gains** en place — 1/km couru, +2/km de chemin
   nouveau, 10/km², lieux 1–10, paliers de commune 10–100, 25/badge ; journal par compte (table `credits`, clé unique,
   jamais payé deux fois) ; l'historique d'avant les crédits ne compte que dans un bonus de bienvenue plafonné à 500 ;
-  **2 000 / mois** au plus gagnés en courant (mois de la sortie) ; **un itinéraire coûte 1 crédit / km** (vérifié
-  avant le calcul, 402 sinon ; `ROUTE_CREDITS` coupé dans les tests) ; solde « ✦ N » dans l'en-tête, section
+  **2 000 / mois** au plus gagnés en courant (mois de la sortie) ; générer un itinéraire est **gratuit** (le coût de
+  1 point / km a été retiré le 2026-10-08 : `ROUTE_CREDITS = False`) ; solde « ✦ N » dans l'en-tête, section
   « Crédits » dans Exploration, annonce « +N crédits ». **Suite : la collection** (tâche 1 de ROADMAP.md, plan à
   valider d'abord). Ensuite : notation des tronçons (étape 3).
 - **Lieux notables** (`app/pois/`, `src/pois.ts`) : extraits de l'extrait OSM France dans data/pois/pois.sqlite
