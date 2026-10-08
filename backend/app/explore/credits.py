@@ -148,6 +148,7 @@ def summary(store: ExploreStore, user: str, recent: int = 50, now: datetime | No
     new = [r for r in earned if r["id"] > seen and r["kind"] != "spend"]
     month = now.isoformat()[:7]
     return {
+        "started": store.credits_start(user)[0] is not None,  # False: the first count is still to come
         "balance": welcome + sum(r["amount"] for r in earned),
         "welcome": welcome,
         "history": history,

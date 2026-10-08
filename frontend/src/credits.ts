@@ -18,6 +18,7 @@ interface Entry {
 
 interface CreditsSummary {
   balance: number;
+  started: boolean;
   welcome: number;
   history: number;
   welcome_cap: number;
@@ -57,9 +58,14 @@ export class Credits {
 
   private render(s: CreditsSummary) {
     document.getElementById("credits-chip")!.hidden = false;
-    document.getElementById("credits-balance")!.textContent = nf(s.balance);
     const box = document.getElementById("credits")!;
     box.hidden = false;
+    if (s.started === false) {  // the very first count (the history, a few seconds to a minute)
+      document.getElementById("credits-balance")!.textContent = "…";
+      box.innerHTML = `<p class="muted small">Calcul de vos crédits à partir de vos sorties…</p>`;
+      return;
+    }
+    document.getElementById("credits-balance")!.textContent = nf(s.balance);
     const welcome = s.history
       ? `dont ${nf(s.welcome)} de bienvenue${s.history > s.welcome ? ` (votre historique en valait ${nf(s.history)}, plafonné à ${nf(s.welcome_cap)})` : ""}`
       : "";
