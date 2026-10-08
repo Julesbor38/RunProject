@@ -1,0 +1,57 @@
+# Shop. Every item is paid in points (earned by running) OR in gems (bought), as listed: give either price, or
+# both. Rule: an item bought with gems is always deterministic — the buyer knows exactly what they get;
+# `random = true` items (packs, later) may only have a points price, and must show their odds (checked when
+# the config loads). A familier is sold once per account; it arrives as an egg and becomes the active one.
+
+[[item]]
+id = "oeuf_brasaltor"
+kind = "pet"
+species = "brasaltor"
+price_points = 10000
+price_gems = 1000
+
+[[item]]
+id = "oeuf_aurorelle"
+kind = "pet"
+species = "aurorelle"
+price_points = 10000
+price_gems = 1000
+
+[[item]]
+id = "oeuf_tempestor"
+kind = "pet"
+species = "tempestor"
+price_points = 6000
+price_gems = 600
+
+[[item]]
+id = "oeuf_sylvarion"
+kind = "pet"
+species = "sylvarion"
+price_points = 6000
+price_gems = 600
+
+[[item]]
+id = "oeuf_colossaure"
+kind = "pet"
+species = "colossaure"
+price_points = 3000
+price_gems = 300
+
+# Gem packs, bought with real money through the payment provider (payments.py; a mock until App Store / Stripe).
+[[gem_pack]]
+id = "gems_100"
+gems = 100
+price_eur = 0.99
+
+[[gem_pack]]
+id = "gems_550"
+gems = 550
+price_eur = 4.99
+label = "+10 %"
+
+[[gem_pack]]
+id = "gems_1200"
+gems = 1200
+price_eur = 9.99
+label = "+20 %"

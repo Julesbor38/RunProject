@@ -56,7 +56,12 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   **Portefeuille** (`app/game/wallet.py`) : points et gemmes, soldes mis à jour dans la même transaction que le
   journal (`BEGIN IMMEDIATE`, dépense refusée si le solde ne couvre pas : pas de double dépense), clé unique par
   ligne. Les crédits d'explore.sqlite y ont été déplacés (une fois, `credits.adopt_legacy`).
-  Prochaines étapes validées : duels contre des bots, puis boutique + gemmes (paiement factice d'abord).
+  **Boutique** (`app/game/shop.py`, `config/shop.toml`, sous-onglet « Boutique » du Familier) : 5 familiers rares
+  (Colossaure rare 360, Tempestor / Sylvarion épiques 390, Brasaltor / Aurorelle légendaires 420 de stats de base,
+  3–4 capacités chacun ; 3 000 / 6 000 / 10 000 points ou 300 / 600 / 1 000 gemmes), achat déterministe, une fois
+  par compte ; capacités (`[[species.ability]]`) pour tous, débloquées par stade, affichées (serviront aux duels) ;
+  gemmes : `payments.py` (`PaymentProvider`, factice avec `TRAILMAP_PAYMENTS=mock`, sinon 503).
+  Prochaine étape : duels contre des bots.
 - **Points** (anciennement « crédits » ; `app/explore/credits.py`, `src/credits.ts`) : **gains** en place — 1/km couru, +2/km de chemin
   nouveau, 10/km², lieux 1–10, paliers de commune 10–100, 25/badge ; journal par compte (table `credits`, clé unique,
   jamais payé deux fois) ; l'historique d'avant les crédits ne compte que dans un bonus de bienvenue plafonné à 500 ;
@@ -76,7 +81,7 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   import en arrière-plan, bandeau des nouvelles sorties) ; évaluation de chaque sortie de 1 à 5 sur
   8 critères (sécurité, éclairage, beauté du paysage, plaisir, entretien, abri, tranquillité,
   peu de circulation) + commentaire, en attendant de les reporter sur les tronçons (étape 3).
-- Tests : 130 OK, 1 ignoré.
+- Tests : 137 OK, 1 ignoré.
 
 ## Architecture
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
@@ -146,7 +151,9 @@ Chaque route ne lit et n'écrit que les données du compte connecté (data/users
 - Jeu (`/api/game…`) : GET /api/game (soldes, starter choisi, familiers) ; GET /api/game/starters ;
   POST /api/game/starter {species, name} (chaque starter une fois ; `adopted` dans /starters) ; GET /api/game/pets[/{id}] ; POST …/{id}/activate ;
   PATCH …/{id} {name} ; POST …/{id}/levels {count | "max", request_id} ; POST …/{id}/evolve {request_id}
-  (402 points insuffisants, 409 refus, 404 familier d'un autre) ; GET /api/game/wallet ; GET /api/game/transactions
+  (402 points insuffisants, 409 refus, 404 familier d'un autre) ; GET /api/game/wallet ; GET /api/game/transactions ;
+  GET /api/game/shop ; POST /api/game/shop/buy {item, currency: points|gems, request_id} ;
+  POST /api/game/gems/buy {pack, request_id, receipt?} (503 tant que le paiement n'est pas branché)
 - PUT /api/ratings/{key} renvoie aussi `points` (gagnés à la première évaluation de la sortie)
 - GET  /api/credits : solde, bonus de bienvenue (`welcome`, `history`, `welcome_cap`), `by_kind`, `new` (gagnés depuis
   la dernière annonce ; POST /api/explore/seen {ids: ["credits"]}), `month` {earned, cap}, derniers mouvements

@@ -50,8 +50,43 @@ provisoire vient de `frontend/src/pet-art.ts` (couleur + type + stade) ; une vra
 - `config/types.toml` : `[strong]` liste, pour chaque type, ceux contre qui il inflige ×1,5 (ils lui rendent
   ×0,75). Chaque type doit avoir au moins une force et une faiblesse (vérifié au chargement).
 
-## Ajouter un bot ou un article de boutique
+## Capacités
 
-Étapes suivantes (duels, boutique) : `config/bots.toml` et `config/shop.toml`, décrits ici quand elles seront
-faites. Règle déjà fixée : tout achat en gemmes ou en argent réel est déterministe ; un tirage aléatoire ne se
-paie qu'en points, probabilités affichées.
+Dans le bloc d'une espèce, des `[[species.ability]]` : `kind` = strike (dégâts, `power` 100 = un coup normal),
+guard (défense +`value` % pendant 2 tours), heal (`value` % des PV max), haste (vitesse +`value` % pendant 2 tours),
+drain (dégâts `power`, soigne `value` % des dégâts) ; `stage` = stade où elle se débloque (baby, young, adult,
+final) ; `branch` (facultatif) = seulement pour cette forme finale. Elles serviront aux duels (étape suivante).
+
+## Ajouter un article de boutique
+
+1. L'espèce dans `config/species.toml`, avec `rarity = "rare" | "epique" | "legendaire"` (pas `starter`), des stats
+   de base au-dessus de celles des starters (300) et 3 à 4 capacités.
+2. L'article dans `config/shop.toml` :
+
+```toml
+[[item]]
+id = "oeuf_lucine"            # identifiant stable (gardé dans les achats)
+kind = "pet"
+species = "lucine"
+price_points = 6000           # l'un ou l'autre, ou les deux
+price_gems = 600
+# random = true               # un tirage : seulement en points (refusé au chargement avec des gemmes)
+```
+
+3. Son illustration dans `frontend/src/pet-art.ts` (une fonction par espèce, enregistrée dans `SPECIES`) ; sans
+   elle, une créature générique aux couleurs de son type.
+
+Un familier de boutique s'achète une fois par compte, arrive en œuf, devient le familier actif ; son profil de
+course (pour sa forme finale) compte à partir de l'achat.
+
+## Gemmes et paiement
+
+`payments.py` : `PaymentProvider.confirm(user, pack, request_id, receipt)` vérifie le paiement et renvoie une
+preuve, gardée avec l'achat (un même reçu n'est jamais crédité deux fois). Seul un fournisseur factice existe :
+`TRAILMAP_PAYMENTS=mock` (tout achat accepté, rien n'est facturé ; à réserver au développement), sinon l'achat de
+gemmes répond 503. À brancher plus tard : achats intégrés App Store (obligatoires dans l'app iOS pour une
+monnaie virtuelle), Stripe sur le web. Packs de gemmes : `[[gem_pack]]` dans `shop.toml`.
+
+## Ajouter un bot
+
+Étape des duels (pas encore faite) : `config/bots.toml`, décrit ici quand elle sera là.

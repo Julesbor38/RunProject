@@ -1,5 +1,5 @@
-"""Game configuration: the TOML files of config/ (stages and level costs, types, species), loaded and checked
-once. Editing a file and restarting the API is enough (see README.md)."""
+"""Game configuration: the TOML files of config/ (stages and level costs, types, species and their abilities,
+shop), loaded and checked once. Editing a file and restarting the API is enough (see README.md)."""
 from __future__ import annotations
 
 import math
@@ -11,6 +11,8 @@ from pathlib import Path
 CONFIG_DIR = Path(__file__).parent / "config"
 STATS = ("hp", "attack", "defense", "speed")
 METRICS = ("ascent_per_km", "night_share", "long_share", "fast_share", "new_share")
+ABILITY_KINDS = ("strike", "guard", "heal", "haste", "drain")
+RARITIES = {"rare": "Rare", "epique": "Épique", "legendaire": "Légendaire"}
 
 
 class ConfigError(ValueError):
@@ -38,6 +40,36 @@ class Branch:
 
 
 @dataclass(frozen=True)
+class Ability:
+    id: str
+    name: str
+    kind: str
+    stage: str  # unlocked at this stage
+    power: int = 0
+    value: int = 0
+    branch: str | None = None  # final form only, with this branch
+    description: str = ""
+
+
+@dataclass(frozen=True)
+class ShopItem:
+    id: str
+    kind: str  # "pet"
+    species: str | None
+    price_points: int | None
+    price_gems: int | None
+    random: bool = False
+
+
+@dataclass(frozen=True)
+class GemPack:
+    id: str
+    gems: int
+    price_eur: float
+    label: str = ""
+
+
+@dataclass(frozen=True)
 class Species:
     id: str
     type: str
@@ -47,6 +79,8 @@ class Species:
     starter: bool = False
     color: str = "#888888"
     description: str = ""
+    rarity: str | None = None
+    abilities: tuple[Ability, ...] = ()
 
     def branch(self, branch_id: str | None) -> Branch | None:
         return next((b for b in self.branches if b.id == branch_id), None)
@@ -63,6 +97,11 @@ class GameConfig:
     strong_multiplier: float
     weak_multiplier: float
     species: dict[str, Species] = field(default_factory=dict)
+    shop: dict[str, ShopItem] = field(default_factory=dict)
+    gem_packs: dict[str, GemPack] = field(default_factory=dict)
+
+    def stage_index(self, stage_id: str) -> int:
+        return next(s.index for s in self.stages if s.id == stage_id)
 
     @property
     def final(self) -> int:
@@ -93,6 +132,7 @@ def _read(name: str, folder: Path) -> dict:
 
 def load(folder: Path = CONFIG_DIR) -> GameConfig:
     st, ty, sp = _read("stages.toml", folder), _read("types.toml", folder), _read("species.toml", folder)
+    sh = _read("shop.toml", folder) if (folder / "shop.toml").exists() else {}
     stages = tuple(Stage(i, s["id"], s["name"], int(s["max_level"]), int(s["evolve_cost"]), float(s["stat_multiplier"]))
                    for i, s in enumerate(st["stage"]))
     types = dict(ty["names"])
@@ -100,11 +140,17 @@ def load(folder: Path = CONFIG_DIR) -> GameConfig:
     species = {}
     for s in sp["species"]:
         branches = tuple(Branch(b["id"], b["name"], b["type"], b["metric"], float(b["reference"]), b.get("hint", "")) for b in s["branch"])
+        abilities = tuple(Ability(a["id"], a["name"], a["kind"], a["stage"], int(a.get("power", 0)), int(a.get("value", 0)),
+                                  a.get("branch"), a.get("description", "")) for a in s.get("ability", ()))
         species[s["id"]] = Species(s["id"], s["type"], tuple(s["names"]), {k: int(s["base"][k]) for k in STATS}, branches,
-                                   bool(s.get("starter", False)), s.get("color", "#888888"), s.get("description", ""))
+                                   bool(s.get("starter", False)), s.get("color", "#888888"), s.get("description", ""),
+                                   s.get("rarity"), abilities)
+    shop = {i["id"]: ShopItem(i["id"], i["kind"], i.get("species"), i.get("price_points"), i.get("price_gems"), bool(i.get("random", False)))
+            for i in sh.get("item", ())}
+    packs = {p["id"]: GemPack(p["id"], int(p["gems"]), float(p["price_eur"]), p.get("label", "")) for p in sh.get("gem_pack", ())}
     cfg = GameConfig(stages, float(st["levels"]["cost_base"]), float(st["levels"]["cost_exponent"]),
                      float(st["levels"]["stat_bonus_per_level"]), types, strong,
-                     float(ty["strong_multiplier"]), float(ty["weak_multiplier"]), species)
+                     float(ty["strong_multiplier"]), float(ty["weak_multiplier"]), species, shop, packs)
     validate(cfg)
     return cfg
 
@@ -134,6 +180,27 @@ def validate(cfg: GameConfig) -> None:
             raise ConfigError(f"{where}: branches need a metric among {METRICS} and a positive reference")
         if any(v <= 0 for v in s.base.values()):
             raise ConfigError(f"{where}: base stats must be positive")
+        if s.rarity is not None and s.rarity not in RARITIES:
+            raise ConfigError(f"{where}: rarity among {sorted(RARITIES)}")
+        stage_ids = {st.id for st in cfg.stages}
+        for a in s.abilities:
+            if a.kind not in ABILITY_KINDS or a.stage not in stage_ids or (a.branch and not s.branch(a.branch)):
+                raise ConfigError(f"{where}: ability {a.id} needs a kind among {ABILITY_KINDS}, a known stage and branch")
+            if a.kind in ("strike", "drain") and a.power <= 0 or a.kind != "strike" and a.value <= 0:
+                raise ConfigError(f"{where}: ability {a.id} needs a positive power (strikes) or value")
+    for item in cfg.shop.values():
+        where = f"shop item {item.id}"
+        if item.price_points is None and item.price_gems is None:
+            raise ConfigError(f"{where}: a price in points or in gems")
+        if any(p is not None and p <= 0 for p in (item.price_points, item.price_gems)):
+            raise ConfigError(f"{where}: prices must be positive")
+        if item.random and item.price_gems is not None:
+            raise ConfigError(f"{where}: a random item can only be paid in points (never gems nor real money)")
+        if item.kind == "pet" and (item.species not in cfg.species or cfg.species[item.species].starter):
+            raise ConfigError(f"{where}: a known species, not a starter (starters are never sold)")
+    for pack in cfg.gem_packs.values():
+        if pack.gems <= 0 or pack.price_eur <= 0:
+            raise ConfigError(f"gem pack {pack.id}: gems and price must be positive")
 
 
 @lru_cache(maxsize=1)

@@ -277,3 +277,113 @@ def test_branch_preview_from_the_adult_stage(game):
     assert view["stage"]["id"] == "adult"
     assert [b["name"] for b in view["evolution"]["branches"] if b["leading"]] == ["Éclairon"]
     assert view["evolution"]["cost"] == 3000
+
+
+# --- shop ---
+
+
+def test_shop_species_are_stronger_and_have_more_abilities():
+    starter_total = max(sum(s.base.values()) for s in CFG.starters())
+    for item in CFG.shop.values():
+        sp = CFG.species[item.species]
+        assert sum(sp.base.values()) > starter_total and sp.rarity and not sp.starter
+        assert len(sp.abilities) >= 3 and any(a.stage == "final" for a in sp.abilities)
+        assert item.price_points and item.price_gems and not item.random  # deterministic, and earnable by running
+
+
+def test_a_random_item_paid_in_gems_is_refused(tmp_path):
+    for name in ("stages.toml", "species.toml", "types.toml", "shop.toml"):
+        (tmp_path / name).write_text((config.CONFIG_DIR / name).read_text())
+    with open(tmp_path / "shop.toml", "a") as f:
+        f.write('\n[[item]]\nid = "pack"\nkind = "pet"\nspecies = "tempestor"\nrandom = true\nprice_gems = 100\n')
+    with pytest.raises(config.ConfigError, match="random item can only be paid in points"):
+        config.load(tmp_path)
+
+
+def test_buying_a_familier_with_points_or_gems(game):
+    give(game, "jules", 3500)
+    bought = game.shop.buy("jules", "oeuf_colossaure", "points", "buy-00001")
+    pet = game.pets.get("jules", bought.pet_id)
+    assert (pet.species, pet.stage, pet.level, pet.origin, pet.active) == ("colossaure", 0, 1, "shop", True)
+    assert game.wallet.balances("jules") == {"points": 500, "gems": 0} and pet.profile_since is not None
+    # the same request again: the same purchase, nothing paid twice
+    again = game.shop.buy("jules", "oeuf_colossaure", "points", "buy-00001")
+    assert again.replayed and again.pet_id == pet.id and game.wallet.balance("jules") == 500
+    # once per account
+    with pytest.raises(GameError, match="déjà dans ta collection"):
+        game.shop.buy("jules", "oeuf_colossaure", "points", "buy-00002")
+    # not enough gems: refused, nothing created
+    game.wallet.credit("jules", [{"key": "g", "amount": 599, "kind": "gift"}], currency="gems")
+    with pytest.raises(InsufficientFunds):
+        game.shop.buy("jules", "oeuf_tempestor", "gems", "buy-00003")
+    assert len(game.pets.all("jules")) == 1 and game.wallet.balance("jules", "gems") == 599
+    game.wallet.credit("jules", [{"key": "g2", "amount": 1, "kind": "gift"}], currency="gems")
+    game.shop.buy("jules", "oeuf_tempestor", "gems", "buy-00004")
+    assert game.wallet.balances("jules") == {"points": 500, "gems": 0}  # gems only: points untouched
+    assert {p.species for p in game.pets.all("jules")} == {"colossaure", "tempestor"}
+
+
+def test_two_buyers_at_once_cannot_spend_the_same_points(tmp_path):
+    path = tmp_path / "game.sqlite"
+    Game(path).wallet.credit("jules", [{"key": "gift", "amount": 6000, "kind": "gift"}])
+    games = [Game(path) for _ in range(6)]
+    results, barrier = [], threading.Barrier(len(games))
+
+    def buy(i):
+        barrier.wait()
+        try:
+            results.append(games[i].shop.buy("jules", ["oeuf_tempestor", "oeuf_sylvarion"][i % 2], "points", f"buy-{i:05d}").pet_id)
+        except (InsufficientFunds, GameError):
+            results.append(None)
+
+    threads = [threading.Thread(target=buy, args=(i,)) for i in range(len(games))]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    assert sum(r is not None for r in results) == 1 and Game(path).wallet.balance("jules") == 0
+
+
+def test_gems_need_a_payment_provider(tmp_path):
+    from app.game.payments import MockPayments, PaymentError
+
+    off = Game(tmp_path / "off.sqlite")
+    with pytest.raises(PaymentError) as e:
+        off.shop.buy_gems("jules", "gems_100", "pay-00001")
+    assert e.value.status == 503 and off.wallet.balance("jules", "gems") == 0
+    mock = Game(tmp_path / "mock.sqlite", payments=MockPayments())
+    assert mock.shop.buy_gems("jules", "gems_550", "pay-00001").price == 4.99
+    assert mock.shop.buy_gems("jules", "gems_550", "pay-00001").replayed  # once per payment
+    assert mock.wallet.balances("jules") == {"points": 0, "gems": 550}
+
+
+def test_abilities_unlock_with_the_stages(game):
+    give(game, "jules", 3000)
+    pet = game.pets.get("jules", game.shop.buy("jules", "oeuf_colossaure", "points", "buy-00001").pet_id)
+    view = game.pet_json(pet, 0)
+    assert view["rarity_name"] == "Rare" and [a["unlocked"] for a in view["abilities"]] == [False, False, False]
+    give(game, "jules", CFG.levels_cost(1, 5) + CFG.stages[1].evolve_cost)
+    pet = game.pets.buy_levels("jules", pet.id, "max", "lvl-00001")[0]
+    pet = game.pets.evolve("jules", pet.id, "evo-00001", lambda since: [])[0]
+    assert [a["unlocked"] for a in game.pet_json(pet, 0)["abilities"]] == [True, False, False]
+
+
+def test_shop_api(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app import api
+    from test_pipeline import make_data
+
+    monkeypatch.setattr(api, "DATA_DIR", make_data(tmp_path))
+    g = api.game()
+    with TestClient(api.app) as c:
+        shop = c.get("/api/game/shop").json()
+        assert shop["payments"] == "disabled" and len(shop["items"]) == 5 and not any(i["owned"] for i in shop["items"])
+        assert c.post("/api/game/shop/buy", json={"item": "oeuf_aurorelle", "currency": "points", "request_id": "buy-00001"}).status_code == 402
+        assert c.post("/api/game/gems/buy", json={"pack": "gems_100", "request_id": "pay-00001"}).status_code == 503
+        give(g, "tester", 10000)
+        out = c.post("/api/game/shop/buy", json={"item": "oeuf_aurorelle", "currency": "points", "request_id": "buy-00002"}).json()
+        assert out["pet"]["species"] == "aurorelle" and out["pet"]["active"] and out["wallet"] == {"points": 0, "gems": 0}
+        assert len(out["pet"]["abilities"]) == 4 and out["pet"]["rarity"] == "legendaire"
+        assert [i["owned"] for i in c.get("/api/game/shop").json()["items"]] == [False, True, False, False, False]
+        assert c.post("/api/game/shop/buy", json={"item": "nope", "currency": "points", "request_id": "buy-00003"}).status_code == 404
+        assert c.post("/api/game/shop/buy", json={"item": "oeuf_aurorelle", "currency": "euros", "request_id": "buy-00004"}).status_code == 422
+    assert g.shop.owned_species("marie") == set()

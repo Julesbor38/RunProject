@@ -2,8 +2,9 @@
  * « Familier » tab: the three starters to adopt (all of them, each once; they grow each on their own side),
  * a row to switch between my familiers, then the active one. A tap on its picture
  * opens what points buy: levels (+1, +5, as many as possible), and at the stage's max level the evolution
- * (from the adult stage: which final form the running profile leans towards). Everything is decided by the
- * server; this only shows it.
+ * (from the adult stage: which final form the running profile leans towards). « Boutique »: rarer familiers,
+ * bigger and stronger, with more abilities, paid in points or gems (each purchase says exactly what it gives).
+ * Everything is decided by the server; this only shows it.
  */
 import { apiFetch } from "./api";
 import { escape } from "./format";
@@ -26,6 +27,18 @@ interface BranchView {
   leading: boolean;
 }
 
+interface Ability {
+  id: string;
+  name: string;
+  kind: "strike" | "guard" | "heal" | "haste" | "drain";
+  power: number;
+  value: number;
+  description: string;
+  stage: string;
+  branch: string | null;
+  unlocked: boolean;
+}
+
 interface PetView {
   id: number;
   name: string;
@@ -40,6 +53,9 @@ interface PetView {
   level: number;
   branch: string | null;
   stats: Stats;
+  rarity: string | null;
+  rarity_name: string | null;
+  abilities: Ability[];
   next_level: { cost: number; cost_5: number; levels_5: number; affordable: number; affordable_cost?: number } | null;
   evolution: { stage: string; level: number; ready: boolean; cost: number; stats: Stats; form: string | null; branches?: BranchView[] } | null;
 }
@@ -54,6 +70,19 @@ interface Starter {
   base: Stats;
   branches: { id: string; name: string; type: string; hint: string }[];
   adopted: boolean;
+  rarity: string | null;
+  rarity_name: string | null;
+  total: number;
+  abilities: Ability[];
+  final_stats: Stats;
+}
+
+interface ShopState {
+  items: { id: string; price_points: number | null; price_gems: number | null; owned: boolean; species: Starter }[];
+  wallet: { points: number; gems: number };
+  payments: string;
+  gem_packs: { id: string; gems: number; price_eur: number; label: string }[];
+  starter_total: number;
 }
 
 interface GameState {
@@ -65,6 +94,22 @@ interface GameState {
 const STAT_NAMES: [keyof Stats, string][] = [["hp", "PV"], ["attack", "Attaque"], ["defense", "Défense"], ["speed", "Vitesse"]];
 const STAT_SCALE = 400; // the bars' full width (about the best final form at level 100)
 const nf = (n: number) => n.toLocaleString("fr-FR");
+const KIND_ICON: Record<Ability["kind"], string> = { strike: "⚔", guard: "⛨", heal: "✚", haste: "➤", drain: "♥" };
+
+function abilityLine(a: Ability, branchName?: string): string {
+  const effect =
+    a.kind === "strike" ? `puissance ${a.power}` :
+    a.kind === "drain" ? `puissance ${a.power}, soigne ${a.value} % des dégâts` :
+    a.kind === "heal" ? `soigne ${a.value} % des PV` :
+    a.kind === "guard" ? `défense +${a.value} %` : `vitesse +${a.value} %`;
+  return `<li class="ability k-${a.kind} ${a.unlocked ? "on" : ""}"><span class="ability-icon">${KIND_ICON[a.kind]}</span>
+    <div><strong>${escape(a.name)}</strong> <span class="muted small">${effect}</span>
+    <span class="muted small">${a.unlocked ? escape(a.description) : `Débloquée au stade ${escape(a.stage.toLowerCase())}${branchName ? ` (forme ${escape(branchName)})` : ""}`}</span></div></li>`;
+}
+
+function rarityBadge(rarity: string | null, name: string | null): string {
+  return rarity ? `<span class="rarity r-${rarity}">${escape(name ?? rarity)}</span>` : "";
+}
 
 function requestId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
@@ -75,6 +120,8 @@ export class PetTab {
   private open = false; // the upgrade sheet under the picture
   private busy = false;
   private box = document.getElementById("pet-body")!;
+  private view: "pets" | "shop" = "pets";
+  private shop: ShopState | null = null;
 
   async refresh() {
     const r = await apiFetch("/api/game");
@@ -83,10 +130,36 @@ export class PetTab {
       return;
     }
     this.state = (await r.json()) as GameState;
+    if (this.view === "shop") {
+      const rs = await apiFetch("/api/game/shop");
+      if (rs.ok) {
+        this.shop = (await rs.json()) as ShopState;
+        return this.renderShop();
+      }
+      this.view = "pets";
+    }
     const rs = await apiFetch("/api/game/starters");
     this.starters = rs.ok ? ((await rs.json()) as { starters: Starter[] }).starters : [];
     if (!this.state.pets.length) this.renderStarters();
     else this.render();
+  }
+
+  /** « Mes familiers » / « Boutique », above both views. */
+  private views(): string {
+    return `<div class="pet-views" role="tablist">
+      <button type="button" role="tab" data-view="pets" aria-selected="${this.view === "pets"}">Mes familiers</button>
+      <button type="button" role="tab" data-view="shop" aria-selected="${this.view === "shop"}">Boutique <span class="shop-spark">✦</span></button></div>`;
+  }
+
+  private bindViews() {
+    this.box.querySelectorAll<HTMLButtonElement>(".pet-views button").forEach((b) =>
+      b.addEventListener("click", () => {
+        const v = b.dataset.view as "pets" | "shop";
+        if (v === this.view) return;
+        this.view = v;
+        this.refresh();
+      }),
+    );
   }
 
   private starters: Starter[] = [];
@@ -94,13 +167,14 @@ export class PetTab {
   // --- the starter ---
 
   private renderStarters() {
-    this.box.innerHTML = `
+    this.box.innerHTML = `${this.views()}
       <h2>Adopte ton premier familier</h2>
       <p class="muted small">Il grandit avec les points que tu gagnes en courant et en explorant. Tu pourras adopter les deux autres
         quand tu voudras : chacun évolue de son côté.</p>
       ${this.starterCards(this.starters)}
       <p id="pet-status" class="status" hidden></p>`;
     this.bindStarters();
+    this.bindViews();
   }
 
   private starterCards(starters: Starter[]): string {
@@ -152,7 +226,7 @@ export class PetTab {
     const st = pet.stage;
     const levelPct = Math.round((100 * pet.level) / st.max_level);
     const others = this.starters.filter((x) => !x.adopted && !s.pets.some((p) => p.origin === "starter" && p.species === x.id));
-    this.box.innerHTML = `
+    this.box.innerHTML = `${this.views()}
       ${s.pets.length > 1 ? `<div class="pet-switch" role="tablist">${s.pets
         .map((p) => `<button type="button" role="tab" data-id="${p.id}" aria-selected="${p.id === pet.id}">${petArt(art(p), 46)}
           <span>${escape(p.name)}</span><span class="muted">niv. ${p.level}</span></button>`)
@@ -161,15 +235,19 @@ export class PetTab {
         <div class="pet-head">
           <div><h2 class="pet-name">${escape(pet.name)} <button type="button" class="text-btn rename" title="Renommer">✎</button></h2>
             <span class="muted small">${escape(pet.form)} · ${escape(st.name)}</span></div>
-          <span class="type-badge t-${pet.type}">${escape(pet.type_name)}</span>
+          <span class="badges">${rarityBadge(pet.rarity, pet.rarity_name)}<span class="type-badge t-${pet.type}">${escape(pet.type_name)}</span></span>
         </div>
-        <button type="button" class="pet-art ${this.open ? "" : "hint"}" aria-expanded="${this.open}" aria-label="Faire progresser ${escape(pet.name)}">
+        <button type="button" class="pet-art ${pet.rarity ? `r-${pet.rarity}` : ""} ${this.open ? "" : "hint"}" aria-expanded="${this.open}" aria-label="Faire progresser ${escape(pet.name)}">
           ${petArt(art(pet), 180)}
         </button>
         <div class="pet-level"><strong>Niv. ${pet.level}</strong><div class="track"><div style="width:${levelPct}%"></div></div>
           <span class="muted small">max ${st.max_level} au stade ${escape(st.name.toLowerCase())}</span></div>
         <div class="pet-upgrade" ${this.open ? "" : "hidden"}>${this.upgrade(pet, s.wallet.points)}</div>
         ${statBars(pet.stats, STAT_SCALE)}
+        ${pet.abilities.length ? `<div class="abilities"><h3>Capacités</h3><ul>${pet.abilities
+          .filter((a) => !a.branch || !pet.branch || a.branch === pet.branch)
+          .map((a) => abilityLine(a, a.branch ? pet.evolution?.branches?.find((b) => b.id === a.branch)?.name : undefined))
+          .join("")}</ul></div>` : ""}
         ${this.branches(pet)}
         <p id="pet-status" class="status" hidden></p>
       </div>
@@ -177,6 +255,7 @@ export class PetTab {
         <p class="muted small">Gratuit, une fois chacun ; il évolue de son côté avec les points que tu lui donnes.</p>
         ${this.starterCards(others)}` : ""}`;
     this.bindStarters();
+    this.bindViews();
 
     this.box.querySelector(".pet-art")!.addEventListener("click", () => {
       this.open = !this.open;
@@ -222,6 +301,80 @@ export class PetTab {
       <p class="muted small">Elle dépend de ta façon de courir depuis l'arrivée de ${escape(pet.name)}.</p>
       ${b.map((x) => `<div class="branch ${x.leading ? "leading" : ""}">${petArt({ species: pet.species, stage: 4, branch: x.id, color: pet.color, type: x.type }, 52)}<div class="branch-text"><span>${escape(x.name)} <span class="type-badge t-${x.type}">${escape(x.type_name)}</span>
         <span class="muted small">${escape(x.hint)}</span></span><div class="track"><div style="width:${Math.round((100 * x.score) / best)}%"></div></div></div></div>`).join("")}</div>`;
+  }
+
+  // --- the shop ---
+
+  private renderShop() {
+    const sh = this.shop!;
+    const pay = sh.payments !== "disabled";
+    this.box.innerHTML = `${this.views()}
+      <div class="shop-wallet"><span><strong>✦ ${nf(sh.wallet.points)}</strong> points</span><span><strong class="gem">◆ ${nf(sh.wallet.gems)}</strong> gemmes</span></div>
+      <p class="muted small">Des familiers rares, plus grands, plus forts, avec plus de capacités. Chaque achat est exactement ce qui
+        est affiché : pas de tirage au sort. Tout s'obtient aussi avec les points gagnés en courant.</p>
+      <div class="shop-items">${sh.items.map((it) => this.shopCard(it, sh)).join("")}</div>
+      <h2>Gemmes</h2>
+      <div class="gem-packs">${sh.gem_packs
+        .map((g) => `<button type="button" class="gem-pack" data-pack="${g.id}" ${pay ? "" : "disabled"}><strong class="gem">◆ ${nf(g.gems)}</strong>
+          ${g.label ? `<span class="bonus">${escape(g.label)}</span>` : ""}<span>${g.price_eur.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })}</span></button>`)
+        .join("")}</div>
+      <p class="muted small">${pay ? (sh.payments === "mock" ? "Mode test : aucun paiement réel n'est demandé." : "") : "L'achat de gemmes n'est pas encore disponible : les familiers s'achètent avec tes points en attendant."}</p>
+      <p id="pet-status" class="status" hidden></p>`;
+    this.bindViews();
+    this.box.querySelectorAll<HTMLButtonElement>("[data-buy]").forEach((b) =>
+      b.addEventListener("click", () => this.buyItem(sh.items.find((i) => i.id === b.dataset.buy)!, b.dataset.currency as "points" | "gems")),
+    );
+    this.box.querySelectorAll<HTMLButtonElement>("[data-pack]").forEach((b) => b.addEventListener("click", () => this.buyGems(b.dataset.pack!)));
+  }
+
+  private shopCard(it: ShopState["items"][number], sh: ShopState): string {
+    const sp = it.species;
+    const final = sp.branches[0];
+    const plus = sh.starter_total ? Math.round((100 * (sp.total - sh.starter_total)) / sh.starter_total) : 0;
+    const price = (cur: "points" | "gems", v: number | null) =>
+      v === null ? "" : `<button type="button" class="${cur === "points" ? "primary" : "action gem-btn"}" data-buy="${it.id}" data-currency="${cur}"
+        ${it.owned || v > sh.wallet[cur] ? "disabled" : ""}>${cur === "points" ? "✦" : "◆"} ${nf(v)}</button>`;
+    return `<article class="shop-card r-${sp.rarity}">
+      <div class="shop-top">${rarityBadge(sp.rarity, sp.rarity_name)}<span class="type-badge t-${sp.type}">${escape(sp.type_name)}</span></div>
+      <div class="shop-art">${petArt({ species: sp.id, stage: 4, branch: final.id, color: sp.color, type: final.type }, 170)}
+        <div class="shop-line">${[0, 1, 2, 3].map((st) => petArt({ species: sp.id, stage: st, color: sp.color, type: sp.type }, 40)).join("")}</div></div>
+      <h3>${escape(final.name)}</h3>
+      <p class="muted small">${sp.names.map(escape).join(" → ")} → ${escape(final.name)}</p>
+      <p class="small">${escape(sp.description)}</p>
+      <p class="shop-power"><strong>${sp.total}</strong> de stats de base${plus > 0 ? ` <span class="plus">+${plus} % vs les starters</span>` : ""}</p>
+      ${statBars(sp.final_stats, STAT_SCALE * 1.3)}
+      <ul class="abilities">${sp.abilities.map((a) => abilityLine({ ...a, unlocked: true })).join("")}</ul>
+      <div class="shop-buy">${it.owned ? `<span class="owned">Dans ta collection</span>` : `${price("points", it.price_points)}${price("gems", it.price_gems)}`}</div>
+    </article>`;
+  }
+
+  private async buyItem(it: ShopState["items"][number], currency: "points" | "gems") {
+    const sp = it.species;
+    const price = currency === "points" ? `${nf(it.price_points!)} points` : `${nf(it.price_gems!)} gemmes`;
+    if (!confirm(`Tu obtiens : un œuf de ${sp.names[1]} (${sp.rarity_name}), qui deviendra ${sp.branches[0].name}.\nPrix : ${price}.\n\nConfirmer l'achat ?`)) return;
+    const r = await apiFetch("/api/game/shop/buy", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ item: it.id, currency, request_id: requestId() }),
+    });
+    const out = await r.json().catch(() => ({}));
+    if (!r.ok) return this.status(out.detail ?? `erreur ${r.status}`, true);
+    window.dispatchEvent(new CustomEvent("credits:changed"));
+    this.view = "pets"; // straight to the new familier, the active one now
+    this.open = true;
+    await this.refresh();
+    this.box.querySelector(".pet-art")?.classList.add("evolved");
+  }
+
+  private async buyGems(pack: string) {
+    const r = await apiFetch("/api/game/gems/buy", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ pack, request_id: requestId() }),
+    });
+    const out = await r.json().catch(() => ({}));
+    if (!r.ok) return this.status(out.detail ?? `erreur ${r.status}`, true);
+    await this.refresh();
   }
 
   // --- actions ---

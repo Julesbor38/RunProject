@@ -2653,3 +2653,285 @@ input[type="range"] {
     animation: none;
   }
 }
+
+/* --- shop --- */
+
+.pet-views {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.pet-views button {
+  flex: 1;
+  padding: 7px 0;
+  border: none;
+  border-radius: 9px;
+  background: none;
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+
+.pet-views button[aria-selected="true"] {
+  background: var(--bg);
+  color: var(--pine-700);
+  box-shadow: 0 1px 4px rgb(15 46 35 / 0.12);
+}
+
+.shop-spark {
+  color: #e0a800;
+}
+
+.rarity {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #fff;
+  vertical-align: middle;
+}
+
+.rarity.r-rare { background: #2f80d6; }
+.rarity.r-epique { background: linear-gradient(90deg, #7b3fe4, #c04fd8); }
+.rarity.r-legendaire {
+  background: linear-gradient(90deg, #f2a516, #ffd166, #f2a516);
+  background-size: 200% 100%;
+  color: #4a2c00;
+  animation: shine 2.5s linear infinite;
+}
+
+@keyframes shine { to { background-position: -200% 0; } }
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.pet-art.r-legendaire {
+  background: radial-gradient(circle at 50% 60%, #fff3cf, transparent 70%);
+}
+
+.pet-art.r-epique {
+  background: radial-gradient(circle at 50% 60%, #f1e4ff, transparent 70%);
+}
+
+.pet-rays {
+  transform-origin: 100px 108px;
+  animation: spin 24s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.shop-wallet {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+.gem {
+  color: #7b3fe4;
+}
+
+.shop-items {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 10px 0 6px;
+}
+
+.shop-card {
+  position: relative;
+  padding: 12px;
+  border-radius: 16px;
+  border: 2px solid var(--line);
+  background: var(--sand-50);
+  overflow: hidden;
+}
+
+.shop-card.r-rare { border-color: #8ec0f2; background: linear-gradient(180deg, #eef6ff, var(--sand-50) 45%); }
+.shop-card.r-epique { border-color: #c9a6f5; background: linear-gradient(180deg, #f6eeff, var(--sand-50) 45%); }
+.shop-card.r-legendaire {
+  border-color: #f2c14e;
+  background: linear-gradient(180deg, #fff6d9, var(--sand-50) 50%);
+  box-shadow: 0 0 0 1px #ffe39a inset, 0 6px 22px rgb(242 165 22 / 0.25);
+}
+
+.shop-top {
+  display: flex;
+  justify-content: space-between;
+}
+
+.shop-art {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.shop-art > .pet-svg {
+  animation: breathe 3.2s ease-in-out infinite;
+  transform-origin: 50% 90%;
+}
+
+.shop-line {
+  display: flex;
+  gap: 2px;
+  margin-top: -6px;
+  opacity: 0.9;
+}
+
+.shop-card h3 {
+  margin: 4px 0 0;
+  font-family: var(--display);
+  font-size: 26px;
+  text-align: center;
+}
+
+.shop-card > p {
+  margin: 4px 0;
+}
+
+.shop-card > .muted {
+  text-align: center;
+}
+
+.shop-power {
+  font-size: 13px;
+}
+
+.shop-power .plus {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: #ffe9c2;
+  color: #a35a00;
+  font-weight: 700;
+}
+
+.abilities h3 {
+  margin: 6px 0 2px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.abilities ul,
+ul.abilities {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.ability {
+  display: flex;
+  gap: 8px;
+  padding: 5px 0;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  opacity: 0.55;
+}
+
+.ability.on {
+  opacity: 1;
+}
+
+.ability > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.ability-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--pine-50);
+  color: var(--pine-700);
+  font-size: 14px;
+}
+
+.ability.k-strike .ability-icon { background: #ffe3d6; color: #c2410c; }
+.ability.k-guard .ability-icon { background: #e1ecf7; color: #2f5f8f; }
+.ability.k-heal .ability-icon { background: #def5e3; color: #23704f; }
+.ability.k-haste .ability-icon { background: #fff2c6; color: #a36b00; }
+.ability.k-drain .ability-icon { background: #f1e4ff; color: #7b3fe4; }
+
+.shop-buy {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.shop-buy button {
+  flex: 1;
+}
+
+.gem-btn {
+  color: #7b3fe4;
+}
+
+.owned {
+  flex: 1;
+  padding: 8px;
+  border-radius: 10px;
+  background: var(--pine-50);
+  color: var(--pine-700);
+  font-weight: 700;
+  text-align: center;
+}
+
+.gem-packs {
+  display: flex;
+  gap: 8px;
+}
+
+.gem-pack {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  gap: 2px;
+  padding: 10px 4px;
+  border: 1px solid #d9c6f7;
+  border-radius: 12px;
+  background: #faf6ff;
+  cursor: pointer;
+}
+
+.gem-pack:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.gem-pack .bonus {
+  position: absolute;
+  top: -8px;
+  right: -4px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: #7b3fe4;
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pet-rays,
+  .rarity.r-legendaire,
+  .shop-art > .pet-svg {
+    animation: none;
+  }
+}

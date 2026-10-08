@@ -41,6 +41,7 @@ from .workspace import Workspace, user_dir
 from .explore import credits
 from .explore.explorer import Explorer
 from .explore.store import ExploreStore
+from .game.payments import PaymentError
 from .game.pets import GameError
 from .game.service import Game
 from .game.wallet import InsufficientFunds
@@ -688,6 +689,8 @@ def _game_call(fn, *args, **kwargs):
         raise HTTPException(e.status, str(e)) from e
     except InsufficientFunds as e:
         raise HTTPException(402, str(e)) from e
+    except PaymentError as e:
+        raise HTTPException(e.status, str(e)) from e
 
 
 def _activities_since(user: str):
@@ -776,6 +779,43 @@ def game_evolve(pet_id: int, body: EvolveIn, ws: Workspace = Depends(workspace))
     """At the stage's max level: the next stage, for points; the final form's branch follows the running profile."""
     pet, spent = _game_call(game().pets.evolve, ws.user, pet_id, body.request_id, _activities_since(ws.user))
     return {"pet": _pet_out(ws, pet), "spent": spent, "wallet": game().wallet.balances(ws.user)}
+
+
+@app.get("/api/game/shop")
+def game_shop(ws: Workspace = Depends(workspace)) -> dict:
+    """The shop: familiers (price in points and/or gems, owned or not), gem packs, my balances."""
+    return game().shop_json(ws.user)
+
+
+class BuyIn(BaseModel):
+    item: str = Field(max_length=64)
+    currency: str = Field(pattern="^(points|gems)$")
+    request_id: str = Field(min_length=8, max_length=64)
+
+
+@app.post("/api/game/shop/buy")
+def game_buy(body: BuyIn, ws: Workspace = Depends(workspace)) -> dict:
+    """Buy an item, deterministic: exactly what it shows. A familier arrives as an egg and becomes the active one."""
+    g = game()
+    bought = _game_call(g.shop.buy, ws.user, body.item, body.currency, body.request_id)
+    pet = g.pets.get(ws.user, bought.pet_id) if bought.pet_id else None
+    return {"purchase": {"id": bought.id, "item": bought.item, "currency": bought.currency, "price": bought.price, "replayed": bought.replayed},
+            "pet": _pet_out(ws, pet) if pet else None, "wallet": g.wallet.balances(ws.user)}
+
+
+class GemsIn(BaseModel):
+    pack: str = Field(max_length=64)
+    request_id: str = Field(min_length=8, max_length=64)
+    receipt: str | None = Field(None, max_length=10000)  # the store's proof of payment (App Store, Stripe), later
+
+
+@app.post("/api/game/gems/buy")
+def game_buy_gems(body: GemsIn, ws: Workspace = Depends(workspace)) -> dict:
+    """A gem pack, once the payment provider confirms it (503 while payments are not set up; TRAILMAP_PAYMENTS=mock in dev)."""
+    g = game()
+    bought = _game_call(g.shop.buy_gems, ws.user, body.pack, body.request_id, body.receipt)
+    return {"purchase": {"id": bought.id, "item": bought.item, "price_eur": bought.price, "replayed": bought.replayed},
+            "wallet": g.wallet.balances(ws.user)}
 
 
 @app.get("/api/game/wallet")

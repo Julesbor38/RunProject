@@ -699,6 +699,23 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 - Illustrations refaites (`src/pet-art.ts`) : une ligne par espèce, six formes finales distinctes (kawaii -> badass).
 - 130 tests OK, 1 ignoré.
 
+### 2026-10-08 — Jeu, étape 3 avant la 2 : la boutique
+- À la demande, la boutique avant les duels : 5 nouveaux familiers plus grands, plus forts, avec plus de capacités :
+  Colossaure (mammouth de givre, rare, 360), Tempestor (dragon d'orage, épique, 390), Sylvarion (cerf aux bois de
+  cristal, épique, 390), Brasaltor (dragon de basalte et de lave, légendaire, 420), Aurorelle (renarde céleste à neuf
+  queues d'aurore, légendaire, 420) ; une ligne d'évolution chacun et une forme finale unique ; halo de rayons
+  tournants pour les légendaires.
+- Capacités (`[[species.ability]]` : strike, guard, heal, haste, drain), débloquées par stade, pour les starters
+  aussi (une par forme finale) ; affichées sur la fiche et dans la boutique ; elles serviront aux duels.
+- `shop.toml` : prix en points ou en gemmes (3 000 / 6 000 / 10 000 points, 300 / 600 / 1 000 gemmes), packs de
+  gemmes (0,99 / 4,99 / 9,99 €) ; règle vérifiée au chargement : un article aléatoire ne se paie qu'en points.
+- `shop.py` : achat atomique (prix pris, familier créé en œuf et actif, achat enregistré), une fois par compte,
+  `request_id` rejouable ; `payments.py` : `PaymentProvider`, factice (`TRAILMAP_PAYMENTS=mock`), sinon 503.
+  Migration 004 (`purchases`, un familier de boutique par espèce et par compte).
+- Front : sous-onglets « Mes familiers » / « Boutique » ; cartes par rareté (forme finale en grand, ligne
+  d'évolution, stats, capacités, « +30 % vs les starters »), confirmation qui dit exactement ce qu'on obtient.
+- 137 tests OK, 1 ignoré.
+
 ---
 
 ## Bilan des 7 et 8 octobre 2026
@@ -731,9 +748,9 @@ Deux journées chargées, détaillées dans le journal ci-dessus :
 
 ## Prochaines tâches
 
-> **Jeu, étape 1 (familiers + portefeuille) faite le 2026-10-08.** Suite : **étape 2, duels contre des bots**
-> (plan déjà validé : bots en config, combat au tour par tour côté serveur à graine enregistrée, points pour les
-> victoires, limite quotidienne), à faire valider avant l'étape 3 (boutique, gemmes, paiement factice).
+> **Jeu : familiers, portefeuille et boutique faits le 2026-10-08.** Suite : **les duels contre des bots** (plan
+> validé : bots en config, combat au tour par tour côté serveur à graine enregistrée, avec les capacités déjà
+> définies, points pour les victoires, limite quotidienne) ; puis brancher un vrai paiement (App Store / Stripe).
 
 1. **Crédits : gagner en courant, dépenser dans l'app.** **Gains faits**, plafond de 2 000 / mois, itinéraires à
    1 crédit / km (journal du 2026-10-08) ; reste : la collection (rareté), bâtiments, autres dépenses. Notes d'origine :

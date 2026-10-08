@@ -3,8 +3,16 @@
 # the highest metric / reference wins (ties: the first one). Metrics: ascent_per_km (m of D+ per km),
 # night_share (share of km run at night, sun below -6°), long_share (share of km in runs of 15 km or more),
 # fast_share (share of km faster than 5:00/km), new_share (share of km on paths never run before).
-# `base`: stats at level 1 of the young stage (multiplier 1). `starter = true`: one of the three to choose
-# from, free, once; never sold. All names are provisional.
+# `base`: stats at level 1 of the young stage (multiplier 1). `starter = true`: adoptable for free, once;
+# never sold. `rarity` (rare, epique, legendaire): a shop species (on sale in shop.toml).
+#
+# Abilities (`[[species.ability]]`), unlocked at a stage (`stage`: baby, young, adult, final), and for the
+# final form only with that `branch` if given. `kind`: strike (damage, `power` 100 = a normal blow), guard
+# (defence +`value` % for 2 turns), heal (`value` % of the max HP), haste (speed +`value` % for 2 turns),
+# drain (a strike that heals `value` % of the damage). Used by the duels (next step); shown on the pet.
+# All names are provisional.
+
+# ---------------------------------------------------------------- starters
 
 [[species]]
 id = "galet"
@@ -31,6 +39,41 @@ base = { hp = 85, attack = 60, defense = 95, speed = 60 }
   reference = 0.15
   hint = "des sorties de nuit"
 
+  [[species.ability]]
+  id = "jet_de_cailloux"
+  name = "Jet de cailloux"
+  kind = "strike"
+  power = 60
+  stage = "baby"
+  description = "Une volée de petits cailloux."
+
+  [[species.ability]]
+  id = "carapace"
+  name = "Carapace de granit"
+  kind = "guard"
+  value = 40
+  stage = "adult"
+  description = "Se fige comme un roc : défense +40 % pendant 2 tours."
+
+  [[species.ability]]
+  id = "avalanche"
+  name = "Avalanche"
+  kind = "strike"
+  power = 110
+  stage = "final"
+  branch = "cimeval"
+  description = "Toute la montagne dévale sur l'adversaire."
+
+  [[species.ability]]
+  id = "eclipse"
+  name = "Éclipse"
+  kind = "drain"
+  power = 90
+  value = 40
+  stage = "final"
+  branch = "ombrecrete"
+  description = "Plonge le combat dans le noir et se nourrit de la lumière perdue."
+
 [[species]]
 id = "fusette"
 starter = true
@@ -56,6 +99,40 @@ base = { hp = 60, attack = 90, defense = 55, speed = 95 }
   reference = 0.15
   hint = "des sorties de nuit"
 
+  [[species.ability]]
+  id = "coup_de_queue"
+  name = "Coup de queue"
+  kind = "strike"
+  power = 60
+  stage = "baby"
+  description = "Un fouet de queue, plus rapide que l'œil."
+
+  [[species.ability]]
+  id = "sprint"
+  name = "Sprint"
+  kind = "haste"
+  value = 40
+  stage = "adult"
+  description = "Accélère d'un coup : vitesse +40 % pendant 2 tours."
+
+  [[species.ability]]
+  id = "eclair_foudroyant"
+  name = "Éclair foudroyant"
+  kind = "strike"
+  power = 115
+  stage = "final"
+  branch = "eclairon"
+  description = "Frappe à la vitesse de la foudre."
+
+  [[species.ability]]
+  id = "etoile_filante"
+  name = "Étoile filante"
+  kind = "strike"
+  power = 105
+  stage = "final"
+  branch = "nuitfilante"
+  description = "Traverse le ciel nocturne et s'abat en comète."
+
 [[species]]
 id = "foulon"
 starter = true
@@ -80,3 +157,263 @@ base = { hp = 95, attack = 70, defense = 70, speed = 65 }
   metric = "new_share"
   reference = 0.35
   hint = "des chemins nouveaux"
+
+  [[species.ability]]
+  id = "charge"
+  name = "Charge"
+  kind = "strike"
+  power = 60
+  stage = "baby"
+  description = "Fonce tête baissée."
+
+  [[species.ability]]
+  id = "second_souffle"
+  name = "Second souffle"
+  kind = "heal"
+  value = 25
+  stage = "adult"
+  description = "Reprend son souffle : récupère 25 % de ses PV."
+
+  [[species.ability]]
+  id = "ultra_trail"
+  name = "Ultra-trail"
+  kind = "strike"
+  power = 110
+  stage = "final"
+  branch = "ultravent"
+  description = "Cent kilomètres d'élan dans un seul coup."
+
+  [[species.ability]]
+  id = "boussole"
+  name = "Boussole sauvage"
+  kind = "drain"
+  power = 90
+  value = 35
+  stage = "final"
+  branch = "sentinomade"
+  description = "Trouve le chemin le plus court vers le point faible."
+
+# ---------------------------------------------------------------- shop (shop.toml sets their prices)
+
+[[species]]
+id = "brasaltor"
+rarity = "legendaire"
+type = "montagne"
+names = ["Œuf de braise", "Braisillon", "Magmor", "Volcanide"]
+color = "#3b2a2a"
+description = "Né au cœur d'un volcan, un dragon de basalte aux veines de lave. Chaque pas fait trembler la montagne."
+base = { hp = 110, attack = 105, defense = 125, speed = 80 }
+
+  [[species.branch]]
+  id = "pyroclaste"
+  name = "Pyroclaste"
+  type = "montagne"
+  metric = "ascent_per_km"
+  reference = 25.0
+  hint = "forme finale unique"
+
+  [[species.ability]]
+  id = "coulee_de_lave"
+  name = "Coulée de lave"
+  kind = "strike"
+  power = 75
+  stage = "baby"
+  description = "Crache un filet de lave brûlante."
+
+  [[species.ability]]
+  id = "obsidienne"
+  name = "Armure d'obsidienne"
+  kind = "guard"
+  value = 50
+  stage = "young"
+  description = "La lave refroidit en armure : défense +50 % pendant 2 tours."
+
+  [[species.ability]]
+  id = "coeur_de_magma"
+  name = "Cœur de magma"
+  kind = "drain"
+  power = 85
+  value = 40
+  stage = "adult"
+  description = "Absorbe la chaleur de l'adversaire pour se régénérer."
+
+  [[species.ability]]
+  id = "eruption"
+  name = "Éruption"
+  kind = "strike"
+  power = 135
+  stage = "final"
+  description = "Le volcan se réveille : une colonne de feu et de roche."
+
+[[species]]
+id = "aurorelle"
+rarity = "legendaire"
+type = "nocturne"
+names = ["Œuf d'aurore", "Lumignon", "Nébuline", "Astrelle"]
+color = "#2b2f6b"
+description = "Une renarde céleste aux neuf queues d'aurore boréale. Elle ne court qu'à la lumière des étoiles."
+base = { hp = 95, attack = 115, defense = 85, speed = 125 }
+
+  [[species.branch]]
+  id = "aurorelle_celeste"
+  name = "Aurorelle céleste"
+  type = "nocturne"
+  metric = "night_share"
+  reference = 0.15
+  hint = "forme finale unique"
+
+  [[species.ability]]
+  id = "rayon_lunaire"
+  name = "Rayon lunaire"
+  kind = "strike"
+  power = 70
+  stage = "baby"
+  description = "Un faisceau d'argent tiré de la lune."
+
+  [[species.ability]]
+  id = "voile_etoile"
+  name = "Voile étoilé"
+  kind = "haste"
+  value = 50
+  stage = "young"
+  description = "Disparaît dans la nuit : vitesse +50 % pendant 2 tours."
+
+  [[species.ability]]
+  id = "aurore_boreale"
+  name = "Aurore boréale"
+  kind = "heal"
+  value = 35
+  stage = "adult"
+  description = "Ses queues s'illuminent et referment ses blessures."
+
+  [[species.ability]]
+  id = "supernova"
+  name = "Supernova"
+  kind = "strike"
+  power = 140
+  stage = "final"
+  description = "Une étoile explose entre ses neuf queues."
+
+[[species]]
+id = "tempestor"
+rarity = "epique"
+type = "vitesse"
+names = ["Œuf d'orage", "Bourrasque", "Cyclonet", "Tornadrake"]
+color = "#2a7fd4"
+description = "Un dragon d'orage aux ailes de nuages. Il court plus vite que le vent qu'il soulève."
+base = { hp = 85, attack = 115, defense = 75, speed = 115 }
+
+  [[species.branch]]
+  id = "tempestor"
+  name = "Tempestor"
+  type = "vitesse"
+  metric = "fast_share"
+  reference = 0.2
+  hint = "forme finale unique"
+
+  [[species.ability]]
+  id = "rafale"
+  name = "Rafale"
+  kind = "strike"
+  power = 65
+  stage = "baby"
+  description = "Une bourrasque qui renverse tout."
+
+  [[species.ability]]
+  id = "oeil_du_cyclone"
+  name = "Œil du cyclone"
+  kind = "haste"
+  value = 45
+  stage = "adult"
+  description = "Au calme au centre de la tempête : vitesse +45 % pendant 2 tours."
+
+  [[species.ability]]
+  id = "foudre_tempete"
+  name = "Foudre-tempête"
+  kind = "strike"
+  power = 125
+  stage = "final"
+  description = "Dix éclairs à la fois."
+
+[[species]]
+id = "sylvarion"
+rarity = "epique"
+type = "exploration"
+names = ["Œuf de mousse", "Faonelle", "Sylvelin", "Cerfroi"]
+color = "#5aa05a"
+description = "L'esprit de la forêt, un cerf aux bois de cristal où poussent des fleurs. Il connaît tous les sentiers."
+base = { hp = 100, attack = 95, defense = 100, speed = 95 }
+
+  [[species.branch]]
+  id = "sylvarion"
+  name = "Sylvarion"
+  type = "exploration"
+  metric = "new_share"
+  reference = 0.35
+  hint = "forme finale unique"
+
+  [[species.ability]]
+  id = "ronces"
+  name = "Ronces"
+  kind = "strike"
+  power = 65
+  stage = "baby"
+  description = "Des ronces jaillissent du sol."
+
+  [[species.ability]]
+  id = "seve"
+  name = "Sève guérisseuse"
+  kind = "heal"
+  value = 30
+  stage = "adult"
+  description = "La sève de la forêt referme ses plaies."
+
+  [[species.ability]]
+  id = "mille_sentiers"
+  name = "Mille sentiers"
+  kind = "drain"
+  power = 115
+  value = 30
+  stage = "final"
+  description = "Attaque de tous les chemins à la fois."
+
+[[species]]
+id = "colossaure"
+rarity = "rare"
+type = "endurance"
+names = ["Œuf de toundra", "Mammouchon", "Laineux", "Mastodorme"]
+color = "#8a5a3c"
+description = "Un mammouth titan à la toison de givre. Il ne s'arrête jamais, quelle que soit la distance."
+base = { hp = 125, attack = 80, defense = 100, speed = 55 }
+
+  [[species.branch]]
+  id = "colossaure"
+  name = "Colossaure"
+  type = "endurance"
+  metric = "long_share"
+  reference = 0.3
+  hint = "forme finale unique"
+
+  [[species.ability]]
+  id = "pietinement"
+  name = "Piétinement"
+  kind = "strike"
+  power = 65
+  stage = "baby"
+  description = "Fait trembler le sol sous ses pattes."
+
+  [[species.ability]]
+  id = "toison_de_givre"
+  name = "Toison de givre"
+  kind = "guard"
+  value = 45
+  stage = "adult"
+  description = "Sa laine gelée amortit les coups : défense +45 % pendant 2 tours."
+
+  [[species.ability]]
+  id = "charge_titanesque"
+  name = "Charge titanesque"
+  kind = "strike"
+  power = 120
+  stage = "final"
+  description = "Des tonnes lancées au galop."
