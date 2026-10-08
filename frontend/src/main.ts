@@ -10,6 +10,7 @@ import { ensureServer } from "./native";
 import { openImporter, setupImporter, takeNewActivities } from "./importer";
 import { Planner } from "./planner";
 import { PoiLayer } from "./pois";
+import { Credits } from "./credits";
 import { ExploreView } from "./explore";
 import { Ratings } from "./ratings";
 import { addTerrain } from "./terrain";
@@ -83,12 +84,21 @@ map.on("load", async () => {
     document.getElementById("tab-route")!.hidden = tab !== "route";
     document.getElementById("tab-activities")!.hidden = tab !== "activities";
     document.getElementById("tab-explore")!.hidden = tab !== "explore";
-    if (tab === "explore") explore.refresh();
+    if (tab === "explore") {
+      explore.refresh();
+      credits.refresh();
+    }
     planner.setActive(tab === "route");
     // Tracks open their sheet (and rating) on click in both tabs, unless the planner needs that click.
     if (activities) activities.clickable = (point) => (tab === "activities" ? !pois.hitAt(point) : !planner.claimsClick(point));
   };
   document.querySelectorAll<HTMLButtonElement>(".tabs [role=tab]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab as Tab)));
+  // Credits: the balance in the header (a tap opens their details), « +N crédits » once an import is analysed.
+  const credits = new Credits(() => {
+    setPanel(true);
+    showTab("explore");
+  });
+  credits.refresh();
   // After an import: straight to the new activities. A new account: straight to adding its data.
   const empty = activities !== null && (await data).features.length === 0;
   showTab(newKeys.size || empty ? "activities" : "route");

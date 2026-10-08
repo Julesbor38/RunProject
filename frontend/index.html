@@ -120,6 +120,9 @@
             <p id="summary">Chargement…</p>
           </div>
         </div>
+        <button id="credits-chip" class="credits-chip" type="button" title="Mes crédits" hidden>
+          <span class="spark" aria-hidden="true">✦</span><span id="credits-balance">0</span>
+        </button>
         <button id="sign-out" class="icon-btn" aria-label="Se déconnecter" hidden>
           <svg class="i"><use href="#i-logout" /></svg>
         </button>
@@ -241,6 +244,7 @@
       <section id="tab-explore" class="tab-body" hidden>
         <p id="explore-status" class="status" hidden></p>
         <div id="explore-totals" class="explore-totals"></div>
+        <section id="credits" class="credits" hidden></section>
         <label class="switch fog-switch"><input type="checkbox" id="fog-toggle" /><span class="knob"></span>Brouillard sur la carte</label>
         <p id="fog-hint" class="muted small" hidden>Zoomez pour voir aussi vos chemins éclairés dans le brouillard.</p>
         <div id="explore-suggestions"></div>

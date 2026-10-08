@@ -636,6 +636,29 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 - Réponses compressées (gzip) : voile 452 -> 99 Ko au zoom 13, traces 700 -> 190 Ko.
 - 104 tests OK.
 
+### 2026-10-08 — Glisser le panneau vers le bas (téléphone)
+- Sur téléphone, le panneau du bas se replie d'un glissé vers le bas (depuis l'en-tête, ou depuis le contenu une
+  fois remonté en haut ; seuil ~120 px ou geste rapide) ; curseurs et champs gardent leurs gestes.
+
+### 2026-10-08 — Crédits gagnés en courant (première partie : les gains)
+- Plan validé : barème « équilibré », historique en **bonus de bienvenue plafonné** (500).
+- Barème (`app/explore/credits.py`) : 1 par km couru (parties visibles des sorties horodatées, ≤ 25 km/h), +2 par
+  km de chemin nouveau, 10 par km² découvert ; lieux 10 (sommet, cascade), 5 (point de vue, lac), 3 (monument),
+  2 (nature, eau), 1 (parcs, points utiles) ; paliers de commune 10/25/50/75/90 % -> 10/20/40/60/100 ; 25 par badge.
+- **Journal** par compte (table `credits` d'explore.sqlite, clé unique `act:` / `poi:` / `ach:` : jamais payé deux
+  fois) ; `credits_meta` : début des crédits du compte et dernier gain annoncé. Historique (`history`) = tout ce qui
+  existait au premier calcul, puis les sorties importées plus tard mais datées de plus de 14 jours avant ce début ;
+  il ne compte que dans le bonus de bienvenue (plafond 500).
+- `processed` garde maintenant les km courus, la superficie nouvelle et la date de chaque sortie ; les km des
+  sorties déjà traitées sont recalculés une fois sans nouveau map-matching (~35 s pour 254 sorties) ; leur
+  superficie est créditée d'un bloc (`history:area`).
+- Calcul à la fin de chaque passage de l'Exploration (démarrage, après import) ; rattrapages silencieux.
+- API : GET /api/credits ; POST /api/explore/seen avec `credits` ; front `src/credits.ts` : solde « ✦ N » dans
+  l'en-tête (ouvre le détail), section « Crédits » en tête de l'onglet Exploration (solde, par type, barème,
+  derniers gains), annonce « +N crédits » quand les nouvelles sorties sont analysées.
+- Historique réel (jules) : 2 150 km courus, 545 km nouveaux, 52,9 km² -> historique de 5 715, solde de départ 500.
+- 108 tests OK, 1 ignoré.
+
 ---
 
 ## Bilan des 7 et 8 octobre 2026
@@ -668,10 +691,10 @@ Deux journées chargées, détaillées dans le journal ci-dessus :
 
 ## Prochaines tâches
 
-> **Au lancement de la prochaine session : partir sur les crédits (tâche 1 ci-dessous).** Commencer par
-> présenter un plan (gains, dépenses, équilibre, écrans) et le faire valider avant de coder.
+> **Crédits : les gains sont en place (2026-10-08).** Suite : les dépenses (tâche 1), plan à faire valider d'abord.
 
-1. **Crédits : gagner en courant, dépenser dans l'app** (prochaine direction du projet, idée à mûrir).
+1. **Crédits : gagner en courant, dépenser dans l'app.** **Gains faits** (voir le journal du 2026-10-08) ; reste :
+   dépenses, plafonds anti-abus éventuels (par jour ?), bâtiments, rareté. Notes d'origine :
    - **Gagner des crédits** :
      - selon les **kilomètres parcourus** (sorties horodatées seulement, mêmes règles que l'Exploration : parties
        visibles, ≤ 25 km/h ; peut-être un bonus pour les km nouveaux par rapport aux km déjà connus) ;

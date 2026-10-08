@@ -37,6 +37,7 @@ from .routing import Preferences, RoutingError, RoutingService
 from .routing.elevation import Dem
 from .routing.job import Cancelled, Job
 from .workspace import Workspace, user_dir
+from .explore import credits
 from .explore.explorer import Explorer
 from .explore.store import ExploreStore
 from .pois.catalog import CATEGORIES
@@ -614,14 +615,26 @@ def explore_summary(ws: Workspace = Depends(workspace)) -> dict:
     return out
 
 
+@app.get("/api/credits")
+def credits_summary(ws: Workspace = Depends(workspace)) -> dict:
+    """My credits: balance, welcome bonus (the history, capped), latest gains, earned since last announced."""
+    ex = explorer()
+    out = credits.summary(ex.store, ws.user)
+    out["running"] = ex.status.get(ws.user, {}).get("state") == "running"
+    return out
+
+
 class SeenIn(BaseModel):
     ids: list[str] = Field(max_length=500)
 
 
 @app.post("/api/explore/seen")
 def explore_seen(body: SeenIn, ws: Workspace = Depends(workspace)) -> dict:
-    """Milestones and badges already announced (not again after the next import)."""
-    explorer().store.mark_seen(ws.user, body.ids)
+    """Milestones and badges already announced (not again after the next import); "credits": the credits earned."""
+    store = explorer().store
+    if "credits" in body.ids:
+        store.mark_credits_seen(ws.user)
+    store.mark_seen(ws.user, [i for i in body.ids if i != "credits"])
     return {"ok": True}
 
 

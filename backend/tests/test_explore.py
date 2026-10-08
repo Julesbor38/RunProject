@@ -281,3 +281,87 @@ def test_veil_is_cleared_over_the_area_discovered(block):
     veiled = in_polygons(np.array([on[0], beside[0], far[0]]), np.array([on[1], beside[1], far[1]]), polygons)
     assert veiled.tolist() == [False, False, True]
     assert in_polygons(np.array([node(6, 3)[0]]), np.array([node(6, 3)[1]]), polygons).tolist() == [False]  # after the bend
+
+
+# --- credits ---
+
+
+def test_credits_history_is_a_capped_welcome_then_new_runs_earn_in_full(tmp_path, g, monkeypatch):
+    from app.explore import credits
+
+    pois = PoiStore(tmp_path / "pois.sqlite")
+    lat, lon = node(8, 2)
+    pois.add([Poi("n9", lat + 10 / 111_320, lon, "nature", "peak", "Crêt", 40, 12)])
+    ex = explorer(tmp_path, g, pois)
+    monkeypatch.setattr(credits, "WELCOME_CAP", 3)
+    ex.process("jules", tmp_path, lambda s: s, [Activity("strava:20", "run", "r", T0, track([(2, 0), (2, 10)]))])
+    s = credits.summary(ex.store, "jules")
+    # the history: 1.6 km run, all new, 0.17 km² -> 1.6 + 3.2 + 1.7 = 6 once rounded (capped at 3); quiet
+    assert s["history"] == 6 and s["welcome"] == 3 and s["balance"] == 3 and s["entries"] == [] and s["new"] == 0
+
+    later = datetime.now(timezone.utc)
+    ex.process("jules", tmp_path, lambda s: s, [Activity("strava:21", "run", "r", later, track([(8, 0), (8, 5)], start=later))], announce=True)
+    s = credits.summary(ex.store, "jules")
+    by_key = {e["key"]: e for e in s["entries"]}
+    run = by_key["act:strava:21"]
+    assert run["detail"]["run_m"] == pytest.approx(600, rel=0.05) and run["detail"]["new_m"] == pytest.approx(600, rel=0.02)
+    assert run["amount"] == credits.activity_credits(run["detail"]["run_m"], run["detail"]["new_m"], run["detail"]["area_m2"])
+    assert by_key["poi:n9"]["amount"] == 10  # a summit
+    assert by_key["ach:badge:peaks:1"]["amount"] == credits.BADGE_CREDITS
+    assert s["balance"] == 3 + sum(e["amount"] for e in s["entries"]) and s["new"] == s["balance"] - 3
+
+    # never twice: the same activity again, a re-processing
+    assert credits.sync(ex.store, "jules", ex._achievements("jules")) == 0
+    ex.store.mark_credits_seen("jules")
+    assert credits.summary(ex.store, "jules")["new"] == 0
+
+
+def test_credits_of_an_old_activity_imported_late_go_to_the_welcome(tmp_path, g):
+    from app.explore import credits
+
+    ex = explorer(tmp_path, g)
+    ex.process("jules", tmp_path, lambda s: s, [])  # the credits begin (empty account)
+    old, recent = datetime.now(timezone.utc) - timedelta(days=60), datetime.now(timezone.utc) - timedelta(days=3)
+    ex.process("jules", tmp_path, lambda s: s, [Activity("strava:30", "run", "r", old, track([(2, 0), (2, 10)], start=old)),
+                                               Activity("strava:31", "run", "r", recent, track([(6, 0), (6, 10)], start=recent))], announce=True)
+    rows = {r["key"]: r["history"] for r in ex.store.credits("jules")}
+    assert rows["act:strava:30"] is True and rows["act:strava:31"] is False
+
+
+def test_credits_backfill_the_km_of_activities_processed_before_them(tmp_path, g):
+    from app.explore import credits
+
+    ex = explorer(tmp_path, g)
+    act = Activity("strava:40", "run", "r", T0, track([(2, 0), (2, 10)]))
+    ex.process("jules", tmp_path, lambda s: s, [act])
+    with ex.store._db:  # as recorded before the credits
+        ex.store._db.execute("UPDATE processed SET run_m = NULL, area_m2 = NULL, date = NULL")
+        ex.store._db.execute("DELETE FROM credits")
+        ex.store._db.execute("DELETE FROM credits_meta")
+    ex.process("jules", tmp_path, lambda s: s, [act])
+    rows = {r["key"]: r for r in ex.store.credits("jules")}
+    assert rows["act:strava:40"]["detail"]["run_m"] == pytest.approx(1600, rel=0.05)
+    assert rows["history:area"]["detail"]["area_m2"] == ex.store.totals("jules")["area_m2"]
+    assert credits.summary(ex.store, "jules")["history"] == 5 + 2  # the run (4.8), its area apart (1.7)
+
+
+def test_credits_api_is_per_user(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app import api
+    from app.explore import credits
+    from test_pipeline import make_data
+
+    monkeypatch.setattr(api, "DATA_DIR", make_data(tmp_path))
+    store = api.explorer().store
+    store.add_activity("tester", "strava:1", [], [{"poi": "n1", "name": "Pic", "category": "nature", "kind": "peak", "first_date": "2026-10-01"}])
+    credits.sync(store, "tester", [])  # history
+    store.add_activity("tester", "strava:2", [], [{"poi": "n2", "name": "Saut", "category": "water", "kind": "waterfall",
+                                                     "first_date": datetime.now(timezone.utc).isoformat()}])
+    credits.sync(store, "tester", [])
+    with TestClient(api.app) as c:
+        s = c.get("/api/credits").json()
+        assert s["welcome"] == 10 and s["balance"] == 20 and s["new"] == 10 and [e["label"] for e in s["entries"]] == ["Saut"]
+        assert c.post("/api/explore/seen", json={"ids": ["credits"]}).json() == {"ok": True}
+        assert c.get("/api/credits").json()["new"] == 0
+    assert credits.summary(store, "marie")["balance"] == 0

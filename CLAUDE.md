@@ -11,6 +11,7 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 ## État actuel (2026-10-08)
 - Étape 1 (import) : fonctionnelle. 254 activités (course, trail, randonnée), doublons Strava/Coros fusionnés.
   Reste : 3 .fit.gz Strava illisibles (`developer_data_index 0 not defined`).
+- Téléphone : le panneau du bas se replie d'un glissé vers le bas.
 - Carte web : traces distinctes, une par sortie, colorées par type, cliquables dans les deux onglets
   (couche invisible large ; fiche avec « Évaluer cette sortie ») (le rendu « Fréquentation » unifié
   sur les voies OSM a été retiré le 2026-10-07 : trop complexe, voir l'historique git), filtres, fiches, générateur d'itinéraires (boucle / aller simple le plus
@@ -45,9 +46,11 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   et badges (annoncés seulement après un import, les rattrapages sont silencieux), mode « Brouillard » (voile
   percé sur la superficie découverte, contours arrondis, chemins courus en jaune au zoom ≥ 13), suggestions de zones jamais courues -> générateur en
   mode Découverte. Tables prêtes pour un classement (opt-in désactivé par défaut), rien d'exposé aux autres.
-- **Prochaine direction (à la prochaine session) : les crédits** — gagnés en courant (km, succès, % de commune,
-  lieux visités), dépensés dans l'app (génération d'itinéraires, collection, rareté, trophées). Idée à mûrir :
-  voir la tâche 1 de ROADMAP.md, présenter un plan d'abord. Ensuite : notation des tronçons (étape 3).
+- **Crédits** (`app/explore/credits.py`, `src/credits.ts`) : **gains** en place — 1/km couru, +2/km de chemin
+  nouveau, 10/km², lieux 1–10, paliers de commune 10–100, 25/badge ; journal par compte (table `credits`, clé unique,
+  jamais payé deux fois) ; l'historique d'avant les crédits ne compte que dans un bonus de bienvenue plafonné à 500 ;
+  solde « ✦ N » dans l'en-tête, section « Crédits » dans Exploration, annonce « +N crédits ». **Suite : les
+  dépenses** (tâche 1 de ROADMAP.md, plan à valider d'abord). Ensuite : notation des tronçons (étape 3).
 - **Lieux notables** (`app/pois/`, `src/pois.ts`) : extraits de l'extrait OSM France dans data/pois/pois.sqlite
   (commun à tous), Overpass hors de France, Wikidata (photo créditée) ; fiche + « Passer par ici » (points de
   passage du générateur, 3 max) ; lieux à ~50 m listés sous chaque itinéraire.
@@ -60,7 +63,7 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   import en arrière-plan, bandeau des nouvelles sorties) ; évaluation de chaque sortie de 1 à 5 sur
   8 critères (sécurité, éclairage, beauté du paysage, plaisir, entretien, abri, tranquillité,
   peu de circulation) + commentaire, en attendant de les reporter sur les tronçons (étape 3).
-- Tests : 104 OK, 1 ignoré.
+- Tests : 108 OK, 1 ignoré.
 
 ## Architecture
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
@@ -126,6 +129,8 @@ Chaque route ne lit et n'écrit que les données du compte connecté (data/users
   POST /api/explore/seen {ids} ; GET /api/explore/fog?bbox= (tronçons faits / à faire, petite zone sinon 422) ;
   GET /api/explore/communes/{id} : contour (GeoJSON + bbox) ; GET /api/explore/veil?bbox=&zoom= : voile du
   brouillard (monde moins la superficie découverte, ≤ 2 deg²)
+- GET  /api/credits : solde, bonus de bienvenue (`welcome`, `history`, `welcome_cap`), `by_kind`, `new` (gagnés depuis
+  la dernière annonce ; POST /api/explore/seen {ids: ["credits"]}), derniers gains (`entries`), barème, `running`
 - POST /api/routes accepte `via` : [[lon, lat], …] (3 max), points de passage
 - GET  /api/activities : traces masquées + simplifiées (~700 Ko), cache data/cache/
 - POST /api/reload : relit data/raw
