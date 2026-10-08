@@ -1,6 +1,6 @@
 /**
  * Credits earned by running (km, new paths and area, places, milestones and badges): the balance in the
- * panel's header, the details in the « Exploration » tab, and a « +N crédits » toast after an import, once
+ * panel's header, the details in the « Exploration » tab, and a « +N points » toast after an import, once
  * the new activities are analysed; what was spent (route generation, 1 per km). Earned by running: capped
  * each month.
  */
@@ -10,7 +10,7 @@ import { escape, formatDate } from "./format";
 interface Entry {
   key: string;
   amount: number;
-  kind: "activity" | "area" | "poi" | "milestone" | "badge" | "spend";
+  kind: string; // activity, area, poi, milestone, badge, rating, welcome; spent: route, level, evolve
   label: string;
   date: string | null;
   detail: { run_m?: number; new_m?: number; area_m2?: number; kind?: string; capped_from?: number };
@@ -26,13 +26,13 @@ interface CreditsSummary {
   by_kind: Record<string, number>;
   new: number;
   entries: Entry[];
-  rates: { route_km: number; km_run: number; km_new: number; km2_area: number; badge: number; milestones: Record<string, number> };
+  rates: { rating: number; route_km: number; km_run: number; km_new: number; km2_area: number; badge: number; milestones: Record<string, number> };
   running: boolean;
 }
 
 const nf = (n: number, digits = 0) => n.toLocaleString("fr-FR", { maximumFractionDigits: digits });
 const km = (m: number) => nf(m / 1000, 1);
-const KINDS: Record<string, string> = { activity: "Sorties", area: "Superficie", poi: "Lieux", milestone: "Paliers", badge: "Badges", spend: "Dépensés" };
+const KINDS: Record<string, string> = { activity: "Sorties", area: "Superficie", poi: "Lieux", milestone: "Paliers", badge: "Badges", rating: "Évaluations", welcome: "Bienvenue", spend: "Dépensés" };
 
 export class Credits {
   private poll = 0;
@@ -62,7 +62,7 @@ export class Credits {
     box.hidden = false;
     if (s.started === false) {  // the very first count (the history, a few seconds to a minute)
       document.getElementById("credits-balance")!.textContent = "…";
-      box.innerHTML = `<p class="muted small">Calcul de vos crédits à partir de vos sorties…</p>`;
+      box.innerHTML = `<p class="muted small">Calcul de vos points à partir de vos sorties…</p>`;
       return;
     }
     document.getElementById("credits-balance")!.textContent = nf(s.balance);
@@ -75,31 +75,32 @@ export class Credits {
     const m = s.rates.milestones;
     box.innerHTML = `
       <div class="credits-head"><span class="spark" aria-hidden="true">✦</span>
-        <div><strong>${nf(s.balance)}</strong> crédit${s.balance > 1 ? "s" : ""}<span class="muted small">${welcome}</span></div></div>
+        <div><strong>${nf(s.balance)}</strong> point${s.balance > 1 ? "s" : ""}<span class="muted small">${welcome}</span></div></div>
       <div class="credits-month"><div class="track"><div style="width:${Math.min(100, (100 * s.month.earned) / s.month.cap)}%"></div></div>
         <span class="muted small">Ce mois-ci : ${nf(s.month.earned)} / ${nf(s.month.cap)} gagnés en courant${s.month.earned >= s.month.cap ? " (plafond atteint)" : ""}</span></div>
       ${kinds ? `<div class="credits-kinds">${kinds}</div>` : ""}
-      <details class="credits-rules"><summary>Comment gagner des crédits</summary><ul>
+      <details class="credits-rules"><summary>Comment gagner des points</summary><ul>
         <li><strong>${nf(s.rates.km_run)}</strong> par km couru (sorties horodatées)</li>
         <li><strong>+${nf(s.rates.km_new)}</strong> par km de chemin jamais couru</li>
         <li><strong>${nf(s.rates.km2_area)}</strong> par km² de superficie découverte</li>
         <li>Lieux : <strong>10</strong> sommet ou cascade, <strong>5</strong> point de vue ou lac, <strong>3</strong> monument, <strong>1–2</strong> les autres</li>
         <li>Paliers d'une commune : ${Object.entries(m).map(([p, v]) => `${p} % → <strong>${v}</strong>`).join(", ")}</li>
         <li><strong>${nf(s.rates.badge)}</strong> par badge</li>
+        <li><strong>${nf(s.rates.rating)}</strong> par sortie évaluée (10 par jour au plus)</li>
         <li>Au plus <strong>${nf(s.month.cap)}</strong> par mois gagnés en courant (selon la date des sorties).</li>
-        <li>Vos sorties d'avant les crédits comptent dans un bonus de bienvenue (${nf(s.welcome_cap)} au plus).</li>
-      </ul><p class="muted small">Les dépenser : générer un itinéraire coûte <strong>${nf(s.rates.route_km)}</strong> crédit par km. Bientôt : la collection.</p></details>
+        <li>Vos sorties d'avant les points comptent dans un bonus de bienvenue (${nf(s.welcome_cap)} au plus).</li>
+      </ul><p class="muted small">Les dépenser : faire progresser votre familier (onglet Familier), générer un itinéraire (<strong>${nf(s.rates.route_km)}</strong> point par km).</p></details>
       <h3>Derniers mouvements</h3>
       <ul class="credits-list">${
         s.entries.length
           ? s.entries.map(entry).join("")
-          : `<li class="empty">Rien encore depuis le bonus de bienvenue : vos prochaines sorties rapporteront des crédits.</li>`
+          : `<li class="empty">Rien encore depuis le bonus de bienvenue : vos prochaines sorties rapporteront des points.</li>`
       }</ul>`;
   }
 
   private announce(s: CreditsSummary) {
     const box = document.getElementById("achievement-toast")!;
-    box.innerHTML = `<span class="spark">✦</span><div><strong>+${nf(s.new)} crédit${s.new > 1 ? "s" : ""}</strong>
+    box.innerHTML = `<span class="spark">✦</span><div><strong>+${nf(s.new)} point${s.new > 1 ? "s" : ""}</strong>
       <span>Solde : ${nf(s.balance)}</span></div>`;
     box.hidden = false;
     box.classList.remove("show");
@@ -128,7 +129,8 @@ function entry(e: Entry): string {
   } else if (e.kind === "poi") meta = "Lieu découvert";
   else if (e.kind === "milestone") meta = "Palier";
   else if (e.kind === "badge") meta = "Badge";
-  else if (e.kind === "spend") meta = formatDate(e.date);
+  else if (e.kind === "rating") meta = formatDate(e.date);
+  else if (e.amount < 0) meta = `${e.kind === "route" ? "Itinéraire" : "Familier"} · ${formatDate(e.date)}`;
   if (e.detail.capped_from) meta += ` · plafond du mois (${nf(e.detail.capped_from)} sans plafond)`;
   return `<li><div><span class="name">${title}</span><span class="meta">${meta}</span></div><strong class="amount ${e.amount < 0 ? "spent" : ""}">${signed(e.amount)}</strong></li>`;
 }

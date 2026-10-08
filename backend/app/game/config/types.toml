@@ -1,0 +1,20 @@
+# Types and their strengths. When A is strong against B, A deals x strong_multiplier to B, and B deals only
+# x weak_multiplier to A; anything else is x1. Every type must have at least one strength and one weakness,
+# and the three starter types form a triangle (Montagne > Vitesse > Endurance > Montagne).
+
+strong_multiplier = 1.5
+weak_multiplier = 0.75
+
+[names]
+montagne = "Montagne"
+vitesse = "Vitesse"
+endurance = "Endurance"
+nocturne = "Nocturne"
+exploration = "Exploration"
+
+[strong]
+montagne = ["vitesse", "nocturne"]        # climbs break the pace; peaks stand in daylight
+vitesse = ["endurance", "exploration"]    # the sprint beats the long haul and the wandering
+endurance = ["montagne", "nocturne"]      # the long haul wears hills down and lasts through the night
+nocturne = ["vitesse", "exploration"]     # nobody runs fast in the dark, nor finds their way
+exploration = ["montagne", "endurance"]   # the side path goes round the peak; variety beats routine

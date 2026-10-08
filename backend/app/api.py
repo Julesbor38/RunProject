@@ -41,6 +41,9 @@ from .workspace import Workspace, user_dir
 from .explore import credits
 from .explore.explorer import Explorer
 from .explore.store import ExploreStore
+from .game.pets import GameError
+from .game.service import Game
+from .game.wallet import InsufficientFunds
 from .pois.catalog import CATEGORIES
 from .pois.overpass import OverpassZones, ZONE_DEG
 from .pois.store import PoiStore
@@ -156,12 +159,23 @@ def _zone_in_france(zone: tuple[int, int]) -> bool:
 # --- exploration: per user (each query asks for the logged-in user only), communes shared ---
 
 _explore: dict = {}
+_game: dict = {}
+
+
+def game() -> Game:
+    """The game (familiers, wallet of points and gems): data/game/game.sqlite, per user like the rest."""
+    path = DATA_DIR / "game" / "game.sqlite"
+    if _game.get("path") != path:
+        _game.update(path=path, game=Game(path))
+    return _game["game"]
 
 
 def explorer() -> Explorer:
     path = DATA_DIR / "explore" / "explore.sqlite"
     if _explore.get("path") != path:
-        _explore.update(path=path, explorer=Explorer(ExploreStore(path), DATA_DIR / "osm", pois_store()), suggestions={})
+        store = ExploreStore(path)
+        credits.adopt_legacy(game().wallet, store)  # the credits ledger kept there before the game's wallet
+        _explore.update(path=path, explorer=Explorer(store, DATA_DIR / "osm", pois_store(), game().wallet), suggestions={})
     return _explore["explorer"]
 
 
@@ -431,7 +445,8 @@ def put_rating(key: str, body: RatingIn, ws: Workspace = Depends(workspace)) -> 
         raise HTTPException(422, "les notes vont de 1 à 5")
     if not body.scores and not body.comment.strip():
         raise HTTPException(422, "rien à enregistrer")
-    return ratings.save(ws.dir, ws.user, key, body.scores, body.comment.strip())
+    out = ratings.save(ws.dir, ws.user, key, body.scores, body.comment.strip())
+    return {**out, "points": credits.reward_rating(game().wallet, ws.user, key)}  # the first rating of an activity earns points
 
 
 @app.delete("/api/ratings/{key}")
@@ -466,7 +481,7 @@ def routing_status(ws: Workspace = Depends(workspace)) -> dict:
     return ws.routing.status()
 
 
-ROUTE_CREDITS = True  # a generation costs credits.ROUTE_PER_KM per km (off in tests)
+ROUTE_CREDITS = True  # a generation costs credits.ROUTE_PER_KM points per km (off in tests)
 
 
 def _route_estimate_km(req: RouteRequest) -> float:
@@ -480,14 +495,14 @@ def _route_estimate_km(req: RouteRequest) -> float:
 
 @app.post("/api/routes")
 def routes(req: RouteRequest, ws: Workspace = Depends(workspace)) -> dict:
-    """Generate up to 3 loops (or one A-to-B route) matching the preferences; costs credits (per km of the
+    """Generate up to 3 loops (or one A-to-B route) matching the preferences; costs points (per km of the
     first route, checked against the distance asked before calculating)."""
-    store = explorer().store
+    wallet = game().wallet
     if ROUTE_CREDITS:
         need = max(1, round(_route_estimate_km(req) * credits.ROUTE_PER_KM))
-        have = credits.balance(store, ws.user)
+        have = wallet.balance(ws.user)
         if have < need:
-            raise HTTPException(402, f"crédits insuffisants : {need} nécessaires, solde de {have}. Courez pour en gagner !")
+            raise HTTPException(402, f"points insuffisants : {need} nécessaires, solde de {have}. Courez pour en gagner !")
     jobs = ws.jobs
     # setdefault: a cancel that arrived before the request itself still applies.
     job = jobs.setdefault(req.request_id, Job()) if req.request_id else Job()
@@ -516,9 +531,9 @@ def routes(req: RouteRequest, ws: Workspace = Depends(workspace)) -> dict:
     if ROUTE_CREDITS and out["features"]:
         km = out["features"][0]["properties"]["distance_m"] / 1000
         cost = max(1, round(km * credits.ROUTE_PER_KM))
-        spent = credits.spend(store, ws.user, f"route:{uuid.uuid4().hex}", cost, f"Itinéraire de {km:.1f} km".replace(".", ","),
-                              {"distance_m": round(km * 1000)})
-        out["credits"] = {"spent": spent, "balance": credits.balance(store, ws.user)}
+        spent = wallet.debit(ws.user, cost, "route", f"route:{uuid.uuid4().hex}", f"Itinéraire de {km:.1f} km".replace(".", ","),
+                             {"distance_m": round(km * 1000)}, up_to=True)  # never below 0
+        out["credits"] = {"spent": spent, "balance": wallet.balance(ws.user)}
     return out
 
 
@@ -643,9 +658,9 @@ def explore_summary(ws: Workspace = Depends(workspace)) -> dict:
 
 @app.get("/api/credits")
 def credits_summary(ws: Workspace = Depends(workspace)) -> dict:
-    """My credits: balance, welcome bonus (the history, capped), latest gains, earned since last announced."""
+    """My points: balance, welcome bonus (the history, capped), latest gains, earned since last announced."""
     ex = explorer()
-    out = credits.summary(ex.store, ws.user)
+    out = credits.summary(game().wallet, ws.user)
     out["running"] = ex.status.get(ws.user, {}).get("state") == "running"
     return out
 
@@ -656,12 +671,124 @@ class SeenIn(BaseModel):
 
 @app.post("/api/explore/seen")
 def explore_seen(body: SeenIn, ws: Workspace = Depends(workspace)) -> dict:
-    """Milestones and badges already announced (not again after the next import); "credits": the credits earned."""
-    store = explorer().store
+    """Milestones and badges already announced (not again after the next import); "credits": the points earned."""
     if "credits" in body.ids:
-        store.mark_credits_seen(ws.user)
-    store.mark_seen(ws.user, [i for i in body.ids if i != "credits"])
+        game().wallet.mark_seen(ws.user)
+    explorer().store.mark_seen(ws.user, [i for i in body.ids if i != "credits"])
     return {"ok": True}
+
+
+# --- the game: familiers bought up with points (app/game/) ---
+
+
+def _game_call(fn, *args, **kwargs):
+    try:
+        return fn(*args, **kwargs)
+    except GameError as e:
+        raise HTTPException(e.status, str(e)) from e
+    except InsufficientFunds as e:
+        raise HTTPException(402, str(e)) from e
+
+
+def _activities_since(user: str):
+    """activities_done rows of the user since a date (None: all), for a familier's running profile."""
+    store = explorer().store
+    return lambda since: [a for a in store.activities_done(user) if since is None or (a["date"] or "") >= since]
+
+
+def _pet_out(ws: Workspace, pet) -> dict:
+    g = game()
+    return g.pet_json(pet, g.wallet.balance(ws.user), _activities_since(ws.user)(pet.profile_since))
+
+
+@app.get("/api/game")
+def game_state(ws: Workspace = Depends(workspace)) -> dict:
+    """Balances, whether the starter is chosen, the familiers (the active one first)."""
+    g = game()
+    pets = sorted(g.pets.all(ws.user), key=lambda p: not p.active)
+    return {"wallet": g.wallet.balances(ws.user), "starter_chosen": g.pets.has_starter(ws.user),
+            "pets": [_pet_out(ws, p) for p in pets],
+            "stages": [{"id": s.id, "name": s.name, "max_level": s.max_level, "evolve_cost": s.evolve_cost} for s in g.cfg.stages]}
+
+
+@app.get("/api/game/starters")
+def game_starters(ws: Workspace = Depends(workspace)) -> dict:
+    g = game()
+    return {"chosen": g.pets.has_starter(ws.user), "starters": [g.species_json(s) for s in g.cfg.starters()]}
+
+
+class StarterIn(BaseModel):
+    species: str = Field(max_length=32)
+    name: str | None = Field(None, max_length=64)
+
+
+@app.post("/api/game/starter")
+def game_choose_starter(body: StarterIn, ws: Workspace = Depends(workspace)) -> dict:
+    """The starter, once per account and for good; it becomes the active familier."""
+    return _pet_out(ws, _game_call(game().pets.choose_starter, ws.user, body.species, body.name))
+
+
+@app.get("/api/game/pets")
+def game_pets(ws: Workspace = Depends(workspace)) -> dict:
+    return {"pets": [_pet_out(ws, p) for p in game().pets.all(ws.user)]}
+
+
+@app.get("/api/game/pets/{pet_id}")
+def game_pet(pet_id: int, ws: Workspace = Depends(workspace)) -> dict:
+    return _pet_out(ws, _game_call(game().pets.get, ws.user, pet_id))
+
+
+@app.post("/api/game/pets/{pet_id}/activate")
+def game_activate(pet_id: int, ws: Workspace = Depends(workspace)) -> dict:
+    return _pet_out(ws, _game_call(game().pets.activate, ws.user, pet_id))
+
+
+class RenameIn(BaseModel):
+    name: str = Field(max_length=64)
+
+
+@app.patch("/api/game/pets/{pet_id}")
+def game_rename(pet_id: int, body: RenameIn, ws: Workspace = Depends(workspace)) -> dict:
+    return _pet_out(ws, _game_call(game().pets.rename, ws.user, pet_id, body.name))
+
+
+class LevelsIn(BaseModel):
+    count: int | str = 1  # a number of levels, or "max"
+    request_id: str = Field(min_length=8, max_length=64)  # the same request retried buys nothing more
+
+
+@app.post("/api/game/pets/{pet_id}/levels")
+def game_levels(pet_id: int, body: LevelsIn, ws: Workspace = Depends(workspace)) -> dict:
+    """Levels bought with points, all at once (or none), up to the stage's max level."""
+    if isinstance(body.count, str) and body.count != "max":
+        raise HTTPException(422, "count : un nombre de niveaux ou \"max\"")
+    pet, spent = _game_call(game().pets.buy_levels, ws.user, pet_id, body.count, body.request_id)
+    return {"pet": _pet_out(ws, pet), "spent": spent, "wallet": game().wallet.balances(ws.user)}
+
+
+class EvolveIn(BaseModel):
+    request_id: str = Field(min_length=8, max_length=64)
+
+
+@app.post("/api/game/pets/{pet_id}/evolve")
+def game_evolve(pet_id: int, body: EvolveIn, ws: Workspace = Depends(workspace)) -> dict:
+    """At the stage's max level: the next stage, for points; the final form's branch follows the running profile."""
+    pet, spent = _game_call(game().pets.evolve, ws.user, pet_id, body.request_id, _activities_since(ws.user))
+    return {"pet": _pet_out(ws, pet), "spent": spent, "wallet": game().wallet.balances(ws.user)}
+
+
+@app.get("/api/game/wallet")
+def game_wallet(ws: Workspace = Depends(workspace)) -> dict:
+    return game().wallet.balances(ws.user)
+
+
+@app.get("/api/game/transactions")
+def game_transactions(currency: str = "points", limit: int = 100, ws: Workspace = Depends(workspace)) -> dict:
+    """My ledger, newest first (history rows: before the points began, counted in the welcome bonus)."""
+    if currency not in ("points", "gems"):
+        raise HTTPException(422, "currency : points ou gems")
+    rows = game().wallet.rows(ws.user, currency, limit=max(1, min(limit, 500)))
+    return {"currency": currency, "balance": game().wallet.balance(ws.user, currency), "transactions": rows}
 
 
 def _bbox(bbox: str, max_area: float) -> list[float]:

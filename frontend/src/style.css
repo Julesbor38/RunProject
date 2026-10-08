@@ -2299,3 +2299,304 @@ input[type="range"] {
   border-radius: 3px;
   background: var(--ember);
 }
+
+/* --- familier --- */
+
+.type-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #fff;
+  background: var(--muted);
+  vertical-align: middle;
+}
+
+.type-badge.t-montagne { background: #6b5a45; }
+.type-badge.t-vitesse { background: #d88400; }
+.type-badge.t-endurance { background: var(--pine-700); }
+.type-badge.t-nocturne { background: #4b3f8f; }
+.type-badge.t-exploration { background: #3f8f4a; }
+
+.starters {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.starter {
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--sand-50);
+}
+
+.starter-art {
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+
+.starter-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.starter-text p {
+  margin: 4px 0;
+}
+
+.starter .choose {
+  margin-top: 6px;
+  width: 100%;
+}
+
+.pet-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pet-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.pet-name {
+  margin: 0;
+  font-family: var(--display);
+  font-size: 26px;
+  line-height: 1.05;
+}
+
+.pet-name .rename {
+  font-size: 16px;
+  vertical-align: middle;
+}
+
+.pet-art {
+  position: relative;
+  align-self: center;
+  display: grid;
+  place-items: center;
+  width: 200px;
+  height: 200px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 60%, var(--pine-50), transparent 70%);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.pet-art:active {
+  transform: scale(0.96);
+}
+
+.pet-art.hint::after {
+  content: "Touche pour le faire progresser";
+  position: absolute;
+  bottom: -2px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--pine-800);
+  color: #fff;
+  font-size: 11.5px;
+  white-space: nowrap;
+  animation: hint 2.4s ease-in-out infinite;
+}
+
+.pet-art .pet-svg {
+  animation: breathe 3.2s ease-in-out infinite;
+  transform-origin: 50% 90%;
+}
+
+.pet-art.level-up .pet-svg {
+  animation: hop 0.6s ease 2;
+}
+
+.pet-art.evolved {
+  animation: evolve-flash 1.2s ease;
+}
+
+.pet-spark {
+  animation: twinkle 1.6s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@keyframes breathe { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.03, 0.97); } }
+@keyframes hop { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-18px) scale(1.04); } }
+@keyframes hint { 0%, 100% { opacity: 0.9; } 50% { opacity: 0.55; } }
+@keyframes twinkle { 0%, 100% { opacity: 0.2; transform: scale(0.6); } 50% { opacity: 1; transform: scale(1.1); } }
+@keyframes evolve-flash {
+  0% { filter: brightness(1); }
+  30% { filter: brightness(2.2) drop-shadow(0 0 18px #ffcf4d); }
+  100% { filter: brightness(1); }
+}
+
+.pet-level {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.pet-level strong {
+  font-family: var(--display);
+  font-size: 20px;
+  color: var(--pine-700);
+}
+
+.pet-level .muted {
+  grid-column: 2;
+}
+
+.pet-card .track,
+.stat-bars .track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--sand-100);
+  overflow: hidden;
+}
+
+.pet-card .track > div,
+.stat-bars .track > div {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--ember);
+}
+
+.pet-upgrade {
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--pine-50);
+  border: 1px solid var(--pine-100);
+}
+
+.pet-upgrade[hidden] {
+  display: none;
+}
+
+.pet-upgrade p {
+  margin: 0 0 8px;
+}
+
+.upgrade-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.upgrade-buttons button,
+.pet-upgrade .evolve {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  min-width: 90px;
+}
+
+.pet-upgrade .evolve {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.upgrade-buttons button span,
+.pet-upgrade .evolve span {
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.evolve-preview {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 10px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.stat-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.stat {
+  display: grid;
+  grid-template-columns: 58px 1fr 34px;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+}
+
+.stat strong {
+  text-align: right;
+  font-family: var(--display);
+  font-size: 15px;
+}
+
+.pet-branches h3 {
+  margin: 4px 0 2px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.branch {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 8px;
+  font-size: 13.5px;
+}
+
+.branch.leading > span:first-child {
+  font-weight: 700;
+}
+
+.branch.leading .track > div {
+  background: var(--pine-600);
+}
+
+.pet-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pet-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+
+.pet-list li > div {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+@media (max-width: 700px) {
+  .tabs button {
+    font-size: 13px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pet-art .pet-svg,
+  .pet-art.hint::after,
+  .pet-spark {
+    animation: none;
+  }
+}

@@ -1,0 +1,45 @@
+# Evolution stages, in order. A pet climbs levels by spending points (cost below) up to its stage's
+# max_level, then evolves (evolve_cost points, to reach that stage) and its stats are multiplied.
+# The last stage is the final form: its branch depends on the running profile (species.toml).
+
+[[stage]]
+id = "egg"
+name = "Œuf"
+max_level = 5
+evolve_cost = 0         # the first stage: given, never bought
+stat_multiplier = 0.5
+
+[[stage]]
+id = "baby"
+name = "Bébé"
+max_level = 15
+evolve_cost = 50        # hatching
+stat_multiplier = 0.7
+
+[[stage]]
+id = "young"
+name = "Jeune"
+max_level = 35
+evolve_cost = 250
+stat_multiplier = 1.0
+
+[[stage]]
+id = "adult"
+name = "Adulte"
+max_level = 60
+evolve_cost = 1000
+stat_multiplier = 1.4
+
+[[stage]]
+id = "final"
+name = "Forme finale"
+max_level = 100
+evolve_cost = 3000
+stat_multiplier = 2.0
+
+[levels]
+# Points to go from level n-1 to level n: ceil(cost_base * n ^ cost_exponent)
+cost_base = 0.5
+cost_exponent = 1.5
+# Stats = base of the species x stage multiplier x (1 + stat_bonus_per_level x (level - 1))
+stat_bonus_per_level = 0.01

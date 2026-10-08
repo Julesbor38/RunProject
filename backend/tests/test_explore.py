@@ -96,7 +96,10 @@ def test_privacy_zone_is_excluded(g):
 
 
 def explorer(tmp_path, g, pois=None):
-    ex = Explorer(ExploreStore(tmp_path / "explore.sqlite"), tmp_path / "osm", pois)
+    from app.game.db import GameDB
+    from app.game.wallet import Wallet
+
+    ex = Explorer(ExploreStore(tmp_path / "explore.sqlite"), tmp_path / "osm", pois, Wallet(GameDB(tmp_path / "game.sqlite")))
     ex._graph_for = lambda parts: (g, EdgeIndex(g))
     return ex
 
@@ -283,7 +286,7 @@ def test_veil_is_cleared_over_the_area_discovered(block):
     assert in_polygons(np.array([node(6, 3)[0]]), np.array([node(6, 3)[1]]), polygons).tolist() == [False]  # after the bend
 
 
-# --- credits ---
+# --- points (credits.py, in the game's wallet) ---
 
 
 def test_credits_history_is_a_capped_welcome_then_new_runs_earn_in_full(tmp_path, g, monkeypatch):
@@ -295,54 +298,77 @@ def test_credits_history_is_a_capped_welcome_then_new_runs_earn_in_full(tmp_path
     ex = explorer(tmp_path, g, pois)
     monkeypatch.setattr(credits, "WELCOME_CAP", 3)
     ex.process("jules", tmp_path, lambda s: s, [Activity("strava:20", "run", "r", T0, track([(2, 0), (2, 10)]))])
-    s = credits.summary(ex.store, "jules")
+    s = credits.summary(ex.wallet, "jules")
     # the history: 1.6 km run, all new, 0.17 km² -> 1.6 + 3.2 + 1.7 = 6 once rounded (capped at 3); quiet
-    assert s["history"] == 6 and s["welcome"] == 3 and s["balance"] == 3 and s["entries"] == [] and s["new"] == 0
+    assert s["history"] == 6 and s["welcome"] == 3 and s["balance"] == 3 and s["new"] == 0
+    assert [e["kind"] for e in s["entries"]] == ["welcome"]
 
     later = datetime.now(timezone.utc)
     ex.process("jules", tmp_path, lambda s: s, [Activity("strava:21", "run", "r", later, track([(8, 0), (8, 5)], start=later))], announce=True)
-    s = credits.summary(ex.store, "jules")
+    s = credits.summary(ex.wallet, "jules")
     by_key = {e["key"]: e for e in s["entries"]}
     run = by_key["act:strava:21"]
     assert run["detail"]["run_m"] == pytest.approx(600, rel=0.05) and run["detail"]["new_m"] == pytest.approx(600, rel=0.02)
     assert run["amount"] == credits.activity_credits(run["detail"]["run_m"], run["detail"]["new_m"], run["detail"]["area_m2"])
     assert by_key["poi:n9"]["amount"] == 10  # a summit
     assert by_key["ach:badge:peaks:1"]["amount"] == credits.BADGE_CREDITS
-    assert s["balance"] == 3 + sum(e["amount"] for e in s["entries"]) and s["new"] == s["balance"] - 3
+    assert s["balance"] == sum(e["amount"] for e in s["entries"]) and s["new"] == s["balance"] - 3
 
     # never twice: the same activity again, a re-processing
-    assert credits.sync(ex.store, "jules", ex._achievements("jules")) == 0
-    ex.store.mark_credits_seen("jules")
-    assert credits.summary(ex.store, "jules")["new"] == 0
+    assert credits.sync(ex.wallet, ex.store, "jules", ex._achievements("jules")) == 0
+    ex.wallet.mark_seen("jules")
+    assert credits.summary(ex.wallet, "jules")["new"] == 0
 
 
 def test_credits_of_an_old_activity_imported_late_go_to_the_welcome(tmp_path, g):
-    from app.explore import credits
-
     ex = explorer(tmp_path, g)
-    ex.process("jules", tmp_path, lambda s: s, [])  # the credits begin (empty account)
+    ex.process("jules", tmp_path, lambda s: s, [])  # the points begin (empty account)
     old, recent = datetime.now(timezone.utc) - timedelta(days=60), datetime.now(timezone.utc) - timedelta(days=3)
     ex.process("jules", tmp_path, lambda s: s, [Activity("strava:30", "run", "r", old, track([(2, 0), (2, 10)], start=old)),
                                                Activity("strava:31", "run", "r", recent, track([(6, 0), (6, 10)], start=recent))], announce=True)
-    rows = {r["key"]: r["history"] for r in ex.store.credits("jules")}
-    assert rows["act:strava:30"] is True and rows["act:strava:31"] is False
+    rows = {r["key"]: r for r in ex.wallet.rows("jules")}
+    assert rows["act:strava:30"]["history"] is True and rows["act:strava:31"]["history"] is False
+    assert rows["welcome:6"]["amount"] == 6  # the old one, as a welcome bonus topped up
 
 
-def test_credits_backfill_the_km_of_activities_processed_before_them(tmp_path, g):
+def test_credits_backfill_the_profile_of_activities_processed_before_it(tmp_path, g):
     from app.explore import credits
 
     ex = explorer(tmp_path, g)
     act = Activity("strava:40", "run", "r", T0, track([(2, 0), (2, 10)]))
     ex.process("jules", tmp_path, lambda s: s, [act])
-    with ex.store._db:  # as recorded before the credits
-        ex.store._db.execute("UPDATE processed SET run_m = NULL, area_m2 = NULL, date = NULL")
-        ex.store._db.execute("DELETE FROM credits")
-        ex.store._db.execute("DELETE FROM credits_meta")
+    with ex.store._db:  # as recorded before the points
+        ex.store._db.execute("UPDATE processed SET run_m = NULL, area_m2 = NULL, date = NULL, ascent_m = NULL")
+    ex.wallet.db.conn.execute("DELETE FROM transactions")
+    ex.wallet.db.conn.execute("DELETE FROM accounts")
+    ex.wallet.db.conn.execute("DELETE FROM wallets")
     ex.process("jules", tmp_path, lambda s: s, [act])
-    rows = {r["key"]: r for r in ex.store.credits("jules")}
+    rows = {r["key"]: r for r in ex.wallet.rows("jules")}
     assert rows["act:strava:40"]["detail"]["run_m"] == pytest.approx(1600, rel=0.05)
     assert rows["history:area"]["detail"]["area_m2"] == ex.store.totals("jules")["area_m2"]
-    assert credits.summary(ex.store, "jules")["history"] == 5 + 2  # the run (4.8), its area apart (1.7)
+    assert credits.summary(ex.wallet, "jules")["history"] == 5 + 2  # the run (4.8), its area apart (1.7)
+    done = ex.store.activities_done("jules")[0]
+    assert done["date"] == T0.isoformat() and done["ascent_m"] == 0 and done["night_m"] == 0  # flat, 10 am in Lyon
+
+
+def test_legacy_credits_move_into_the_wallet_once(tmp_path):
+    from app.explore import credits
+    from app.game.db import GameDB
+    from app.game.wallet import Wallet
+
+    store = ExploreStore(tmp_path / "explore.sqlite")
+    with store._db:
+        store._db.execute("INSERT INTO credits_meta (user, start) VALUES ('jules', '2026-10-08T08:11:30+00:00')")
+        store._db.executemany("INSERT INTO credits (user, key, amount, kind, label, date, detail, history) VALUES (?,?,?,?,?,?,?,?)", [
+            ("jules", "act:strava:1", 3000, "activity", "Sortie", "2026-01-01", "{}", 1),
+            ("jules", "poi:n1", 10, "poi", "Pic", "2026-01-02", "{}", 1),
+            ("jules", "route:abc", -14, "spend", "Itinéraire de 13,7 km", "2026-10-08", "{}", 0),
+        ])
+    wallet = Wallet(GameDB(tmp_path / "game.sqlite"))
+    assert credits.adopt_legacy(wallet, store) == 3
+    assert wallet.balance("jules") == 500 - 14 and wallet.start("jules")[0] == "2026-10-08T08:11:30+00:00"
+    assert credits.summary(wallet, "jules")["new"] == 0  # all of it already seen
+    assert credits.adopt_legacy(wallet, store) == 0 and wallet.balance("jules") == 486
 
 
 def test_credits_api_is_per_user(tmp_path, monkeypatch):
@@ -353,38 +379,54 @@ def test_credits_api_is_per_user(tmp_path, monkeypatch):
     from test_pipeline import make_data
 
     monkeypatch.setattr(api, "DATA_DIR", make_data(tmp_path))
-    store = api.explorer().store
+    store, wallet = api.explorer().store, api.game().wallet
     store.add_activity("tester", "strava:1", [], [{"poi": "n1", "name": "Pic", "category": "nature", "kind": "peak", "first_date": "2026-10-01"}])
-    credits.sync(store, "tester", [])  # history
+    credits.sync(wallet, store, "tester", [])  # history
+    wallet.mark_seen("tester")  # quietly, as at start-up
     store.add_activity("tester", "strava:2", [], [{"poi": "n2", "name": "Saut", "category": "water", "kind": "waterfall",
                                                      "first_date": datetime.now(timezone.utc).isoformat()}])
-    credits.sync(store, "tester", [])
+    credits.sync(wallet, store, "tester", [])
     with TestClient(api.app) as c:
         s = c.get("/api/credits").json()
-        assert s["welcome"] == 10 and s["balance"] == 20 and s["new"] == 10 and [e["label"] for e in s["entries"]] == ["Saut"]
+        assert s["welcome"] == 10 and s["balance"] == 20 and s["new"] == 10 and [e["label"] for e in s["entries"]] == ["Saut", "Bonus de bienvenue"]
         assert c.post("/api/explore/seen", json={"ids": ["credits"]}).json() == {"ok": True}
         assert c.get("/api/credits").json()["new"] == 0
-    assert credits.summary(store, "marie")["balance"] == 0
+    assert credits.summary(wallet, "marie")["balance"] == 0
 
 
 def test_credits_monthly_cap(tmp_path, g, monkeypatch):
     from app.explore import credits
 
     ex = explorer(tmp_path, g)
-    ex.process("jules", tmp_path, lambda s: s, [])  # the credits begin
+    ex.process("jules", tmp_path, lambda s: s, [])  # the points begin
     monkeypatch.setattr(credits, "MONTHLY_CAP", 5)
     now = datetime.now(timezone.utc)
     acts = [Activity(f"strava:5{i}", "run", "r", now - timedelta(hours=i), track([(i * 2, 0), (i * 2, 10)], start=now - timedelta(hours=i)))
             for i in range(3)]
     ex.process("jules", tmp_path, lambda s: s, acts, announce=True)
-    rows = [r for r in ex.store.credits("jules") if r["kind"] == "activity"]
+    rows = [r for r in ex.wallet.rows("jules") if r["kind"] == "activity"]
     assert len(rows) == 3 and sum(r["amount"] for r in rows) == 5  # all recorded, paid up to the cap
     assert any(r["amount"] == 0 and r["detail"]["capped_from"] > 0 for r in rows)  # never paid later
-    s = credits.summary(ex.store, "jules")
+    s = credits.summary(ex.wallet, "jules")
     assert s["month"] == {"earned": 5, "cap": 5} and s["balance"] == 5
 
 
-def test_a_route_costs_a_credit_per_km(tmp_path, monkeypatch):
+def test_rating_an_activity_earns_points_once_and_ten_a_day(tmp_path):
+    from app.explore import credits
+    from app.game.db import GameDB
+    from app.game.wallet import Wallet
+
+    wallet = Wallet(GameDB(tmp_path / "game.sqlite"))
+    assert credits.reward_rating(wallet, "jules", "strava:1") == credits.RATING_CREDITS
+    assert credits.reward_rating(wallet, "jules", "strava:1") == 0  # rated again: nothing more
+    for i in range(2, 12):
+        credits.reward_rating(wallet, "jules", f"strava:{i}")
+    assert wallet.balance("jules") == credits.RATINGS_PER_DAY * credits.RATING_CREDITS
+    tomorrow = datetime.now(timezone.utc) + timedelta(days=1)
+    assert credits.reward_rating(wallet, "jules", "strava:99", now=tomorrow) == credits.RATING_CREDITS
+
+
+def test_a_route_costs_a_point_per_km(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
 
     from app import api
@@ -393,7 +435,7 @@ def test_a_route_costs_a_credit_per_km(tmp_path, monkeypatch):
 
     monkeypatch.setattr(api, "DATA_DIR", make_data(tmp_path))
     monkeypatch.setattr(api, "ROUTE_CREDITS", True)
-    store = api.explorer().store
+    store, wallet = api.explorer().store, api.game().wallet
     fake = {"type": "FeatureCollection", "features": [
         {"type": "Feature", "id": 0, "geometry": {"type": "LineString", "coordinates": [[4.8, 45.7], [4.81, 45.71]]}, "properties": {"distance_m": 2400}}
     ]}
@@ -402,14 +444,14 @@ def test_a_route_costs_a_credit_per_km(tmp_path, monkeypatch):
         monkeypatch.setattr(api._workspaces["tester"].routing, "generate", lambda *x, **k: fake)
         monkeypatch.setattr(api, "places_along", lambda coords: [])
         r = c.post("/api/routes", json={"start": [4.8, 45.7], "distance_km": 2})
-        assert r.status_code == 402 and "crédits insuffisants" in r.json()["detail"]
-        credits.sync(store, "tester", [])  # the credits begin
+        assert r.status_code == 402 and "points insuffisants" in r.json()["detail"]
+        credits.sync(wallet, store, "tester", [])  # the points begin
         store.add_activity("tester", "strava:9", [], [{"poi": "n1", "name": "Pic", "category": "nature", "kind": "peak",
                                                         "first_date": datetime.now(timezone.utc).isoformat()}])
-        credits.sync(store, "tester", [])
-        assert credits.balance(store, "tester") == 10
+        credits.sync(wallet, store, "tester", [])
+        assert wallet.balance("tester") == 10
         out = c.post("/api/routes", json={"start": [4.8, 45.7], "distance_km": 2}).json()
         assert out["credits"] == {"spent": 2, "balance": 8}  # 2.4 km
         s = c.get("/api/credits").json()
-        assert s["entries"][0]["kind"] == "spend" and s["entries"][0]["amount"] == -2 and s["balance"] == 8
+        assert s["entries"][0]["kind"] == "route" and s["entries"][0]["amount"] == -2 and s["balance"] == 8
         assert s["new"] == 10  # the spending is not a gain to announce

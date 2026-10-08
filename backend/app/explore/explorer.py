@@ -15,12 +15,13 @@ from pathlib import Path
 import numpy as np
 
 from ..ingest import load_zones, mask
-from ..ingest.models import Activity, haversine
+from ..ingest.models import Activity
 from ..ingest.pipeline import ingest
 from ..ingest.privacy import DEFAULT_TRIM_M
 from ..routing.graph import EARTH_M_PER_DEG_LAT, Graph, build_graph
 from ..routing.osm import TILE_DEG, load_cached_tiles, tile_path
 from . import credits
+from .profile import profile
 from .area import cell_area, cell_center, corridor_cells, in_polygons, polygons_area
 from .communes import walkable_total
 from .matching import EdgeIndex, edge_midpoint, explorable, moving_parts, segment_key, traversed_edges
@@ -37,8 +38,9 @@ log = logging.getLogger(__name__)
 
 
 class Explorer:
-    def __init__(self, store: ExploreStore, osm_dir: Path, pois=None):
+    def __init__(self, store: ExploreStore, osm_dir: Path, pois=None, wallet=None):
         self.store = store
+        self.wallet = wallet  # game.wallet.Wallet | None: the points earned (credits.py)
         self.osm_dir = osm_dir
         self.pois = pois  # PoiStore | None
         self._graphs: OrderedDict[tuple, tuple[Graph, EdgeIndex]] = OrderedDict()
@@ -75,12 +77,14 @@ class Explorer:
                 touched |= self._activity(user, act, activity_key(act.source), zones, known)
                 self.status[user]["done"] = i + 1
             self._totals(touched)
-            self._backfill_run(user, activities, activity_key, zones)
+            self._backfill_profile(user, activities, activity_key, zones)
             achievements = self._achievements(user)
-            credits.sync(self.store, user, achievements)
+            if self.wallet is not None:
+                credits.sync(self.wallet, self.store, user, achievements)
             if not announce:
                 self.store.mark_seen(user, [a["id"] for a in achievements if a["achieved"]] or ["-"])
-                self.store.mark_credits_seen(user)
+                if self.wallet is not None:
+                    self.wallet.mark_seen(user)
             return len(todo)
         except Exception:
             log.exception("exploration of %s", user)
@@ -110,12 +114,12 @@ class Explorer:
             touched |= {c for _, _, c, _ in placed if c is not None}
         self._totals(touched)
 
-    def _backfill_run(self, user: str, activities: list[Activity], activity_key, zones) -> None:
-        """km run of the activities processed before they were recorded (no new matching needed)."""
-        missing = self.store.without_run(user)
+    def _backfill_profile(self, user: str, activities: list[Activity], activity_key, zones) -> None:
+        """Running profile of the activities processed before it was recorded (no new matching needed)."""
+        missing = self.store.without_profile(user)
         if missing:
-            self.store.set_run(user, [(activity_key(a.source), _run_m(_parts(a, zones)), a.start.isoformat() if a.start else None)
-                                      for a in activities if activity_key(a.source) in missing])
+            self.store.set_profile(user, [(activity_key(a.source), profile(_parts(a, zones)), a.start.isoformat() if a.start else None)
+                                          for a in activities if activity_key(a.source) in missing])
 
     def _activity(self, user: str, act: Activity, key: str, zones, known: set | None = None) -> set[str]:
         """Match one activity and add the area around it; returns the communes it touched."""
@@ -147,7 +151,7 @@ class Explorer:
                 c = self.store.commune_at(poi.lat, poi.lon)
                 pois.append({"poi": poi.id, "name": poi.name, "category": poi.category, "kind": poi.kind,
                              "commune": c.id if c else None, "first_date": date})
-        self.store.add_activity(user, key, segments, pois, cells, run_m=_run_m(parts), date=date)
+        self.store.add_activity(user, key, segments, pois, cells, date=date, profile=profile(parts))
         return communes | {c for _, _, c, _ in cells if c is not None}
 
     def _cells_communes(self, cells: Iterable[tuple[int, int]]) -> list[tuple[int, int, str | None, float]]:
@@ -337,9 +341,6 @@ def _parts(act: Activity, zones) -> list:
     timed = sum(1 for p in act.points if p.time) / max(len(act.points), 1)
     return moving_parts(mask(act, zones, DEFAULT_TRIM_M)) if timed >= TIMED_SHARE else []
 
-
-def _run_m(parts: list) -> float:
-    return sum(haversine(a, b) for part in parts for a, b in zip(part, part[1:]))
 
 
 def _region(a: Activity) -> tuple[int, int] | None:

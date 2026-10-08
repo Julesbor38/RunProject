@@ -3,7 +3,7 @@
 Per user (every row has its user, and every query asks for one user only: nothing is shown to others yet):
 segments traversed (with the date and activity of their first discovery), area cells discovered (a 50 m
 corridor each side of the paths run, see area.py), places discovered, activities
-already processed (with their km run and area added, for the credits), the credits ledger (see credits.py),
+already processed (with their km run, area added and running profile: points and familiers),
 and settings ready for leaderboards (opt-in off by default, pseudonym). Shared, public:
 the communes (OSM boundaries), their area and their total length of walkable paths.
 """
@@ -31,6 +31,7 @@ CREATE VIRTUAL TABLE IF NOT EXISTS traversed_rtree USING rtree(rid, min_lon, max
 CREATE TABLE IF NOT EXISTS processed (
   user TEXT NOT NULL, activity TEXT NOT NULL, version INTEGER NOT NULL, segments INTEGER NOT NULL,
   run_m REAL, area_m2 REAL, date TEXT,            -- km run (visible, <= 25 km/h), new area, start of the activity
+  ascent_m REAL, night_m REAL, fast_m REAL,       -- running profile (profile.py)
   PRIMARY KEY (user, activity)
 );
 CREATE TABLE IF NOT EXISTS area_cells (
@@ -49,7 +50,7 @@ CREATE TABLE IF NOT EXISTS settings (
   pseudonym TEXT,                                 -- shown instead of the account name, if ever shown
   seen TEXT NOT NULL DEFAULT '[]'                 -- milestones and badges already announced
 );
-CREATE TABLE IF NOT EXISTS credits (
+CREATE TABLE IF NOT EXISTS credits (               -- legacy: moved into data/game/game.sqlite (credits.adopt_legacy)
   user TEXT NOT NULL, key TEXT NOT NULL,          -- what earned them, once: act:<activity>, poi:<id>, ach:<id>
   amount INTEGER NOT NULL, kind TEXT NOT NULL, label TEXT NOT NULL, date TEXT, detail TEXT,
   history INTEGER NOT NULL DEFAULT 0,             -- before the credits: only counts in the capped welcome bonus
@@ -105,7 +106,8 @@ class ExploreStore:
         if "area_m2" not in {r[1] for r in self._db.execute("PRAGMA table_info(communes)")}:
             self._db.execute("ALTER TABLE communes ADD COLUMN area_m2 REAL")  # databases of version 1
         columns = {r[1] for r in self._db.execute("PRAGMA table_info(processed)")}
-        for col, kind in (("run_m", "REAL"), ("area_m2", "REAL"), ("date", "TEXT")):  # databases before the credits
+        for col, kind in (("run_m", "REAL"), ("area_m2", "REAL"), ("date", "TEXT"), ("ascent_m", "REAL"), ("night_m", "REAL"),
+                          ("fast_m", "REAL")):  # databases before the credits and the familiers
             if col not in columns:
                 self._db.execute(f"ALTER TABLE processed ADD COLUMN {col} {kind}")
         self._db.commit()
@@ -118,9 +120,10 @@ class ExploreStore:
         return {r[0] for r in rows}
 
     def add_activity(self, user: str, activity: str, segments: Iterable[Segment], pois: Iterable[dict],
-                     cells: Iterable[tuple[int, int, str | None, float]] = (), run_m: float = 0.0, date: str | None = None) -> int:
+                     cells: Iterable[tuple[int, int, str | None, float]] = (), date: str | None = None, profile: dict | None = None) -> int:
         """Record an activity's segments, area cells (cx, cy, commune, m²: only the new ones) and places (an earlier
-        discovery keeps its date), with its km run. Returns new segments."""
+        discovery keeps its date), with its running profile (profile.py). Returns new segments."""
+        prof = {"run_m": 0.0, "ascent_m": 0.0, "night_m": 0.0, "fast_m": 0.0, **(profile or {})}
         new = 0
         cells = list(cells)
         with self._lock, self._db:
@@ -148,72 +151,47 @@ class ExploreStore:
                     (user, p["poi"], p["name"], p["category"], p["kind"], p.get("commune"), p["first_date"], activity),
                 )
             self._db.execute(
-                "INSERT OR REPLACE INTO processed (user, activity, version, segments, run_m, area_m2, date) VALUES (?,?,?,?,?,?,?)",
-                (user, activity, VERSION, new, round(run_m, 1), round(sum(c[3] for c in cells), 1), date),
+                "INSERT OR REPLACE INTO processed (user, activity, version, segments, run_m, area_m2, date, ascent_m, night_m, fast_m)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (user, activity, VERSION, new, round(prof["run_m"], 1), round(sum(c[3] for c in cells), 1), date,
+                 round(prof["ascent_m"], 1), round(prof["night_m"], 1), round(prof["fast_m"], 1)),
             )
         return new
 
-    def without_run(self, user: str) -> set[str]:
-        """Activities processed before the km run were recorded (the credits need them)."""
+    def without_profile(self, user: str) -> set[str]:
+        """Activities processed before their running profile was recorded (points and familiers need it)."""
         with self._lock:
-            return {r[0] for r in self._db.execute("SELECT activity FROM processed WHERE user = ? AND run_m IS NULL", (user,))}
+            return {r[0] for r in self._db.execute(
+                "SELECT activity FROM processed WHERE user = ? AND (run_m IS NULL OR ascent_m IS NULL)", (user,))}
 
-    def set_run(self, user: str, rows: Iterable[tuple[str, float, str | None]]) -> None:
-        """rows: (activity, run_m, date)."""
+    def set_profile(self, user: str, rows: Iterable[tuple[str, dict, str | None]]) -> None:
+        """rows: (activity, profile, date)."""
         with self._lock, self._db:
-            self._db.executemany("UPDATE processed SET run_m = ?, date = ? WHERE user = ? AND activity = ?",
-                                 ((round(m, 1), d, user, a) for a, m, d in rows))
+            self._db.executemany(
+                "UPDATE processed SET run_m = ?, ascent_m = ?, night_m = ?, fast_m = ?, date = ? WHERE user = ? AND activity = ?",
+                ((round(p["run_m"], 1), round(p["ascent_m"], 1), round(p["night_m"], 1), round(p["fast_m"], 1), d, user, a) for a, p, d in rows))
 
     def activities_done(self, user: str) -> list[dict]:
-        """Per activity processed: km run, new km (paths first discovered by it), new area (None: not recorded)."""
+        """Per activity processed: km run, new km (paths first discovered by it), new area (None: not recorded), profile."""
         with self._lock:
             new = dict(self._db.execute("SELECT activity, sum(length_m) FROM traversed WHERE user = ? GROUP BY activity", (user,)).fetchall())
-            rows = self._db.execute("SELECT activity, run_m, area_m2, date FROM processed WHERE user = ? AND version = ?", (user, VERSION)).fetchall()
-        return [{"activity": a, "run_m": m or 0.0, "new_m": new.get(a, 0.0), "area_m2": ar, "date": d} for a, m, ar, d in rows]
+            rows = self._db.execute("SELECT activity, run_m, area_m2, date, ascent_m, night_m, fast_m FROM processed WHERE user = ? AND version = ?",
+                                    (user, VERSION)).fetchall()
+        return [{"activity": a, "run_m": m or 0.0, "new_m": new.get(a, 0.0), "area_m2": ar, "date": d,
+                 "ascent_m": asc or 0.0, "night_m": ni or 0.0, "fast_m": fa or 0.0} for a, m, ar, d, asc, ni, fa in rows]
 
-    # --- credits ledger (credits.py) ---
+    # --- legacy credits ledger (moved into the game's wallet once, see credits.adopt_legacy) ---
 
-    def credits_start(self, user: str) -> tuple[str | None, int]:
+    def legacy_credits(self) -> list[tuple[str, str, list[dict]]]:
+        """(user, start, rows) of the credits recorded here before the game's wallet."""
         with self._lock:
-            row = self._db.execute("SELECT start, seen FROM credits_meta WHERE user = ?", (user,)).fetchone()
-        return (row[0], row[1]) if row else (None, 0)
-
-    def set_credits_start(self, user: str, start: str) -> None:
-        with self._lock, self._db:
-            self._db.execute("INSERT OR IGNORE INTO credits_meta (user, start) VALUES (?, ?)", (user, start))
-
-    def credit_keys(self, user: str) -> set[str]:
-        with self._lock:
-            return {r[0] for r in self._db.execute("SELECT key FROM credits WHERE user = ?", (user,))}
-
-    def add_credits(self, user: str, entries: Iterable[dict]) -> int:
-        """Each key earns once (a re-import, a re-processing never pays twice). Returns rows added."""
-        n = 0
-        with self._lock, self._db:
-            for e in entries:
-                cur = self._db.execute(
-                    "INSERT OR IGNORE INTO credits (user, key, amount, kind, label, date, detail, history) VALUES (?,?,?,?,?,?,?,?)",
-                    (user, e["key"], e["amount"], e["kind"], e["label"], e.get("date"), json.dumps(e.get("detail") or {}), int(e.get("history", False))),
-                )
-                n += cur.rowcount
-        return n
-
-    def credits(self, user: str, history: bool | None = None) -> list[dict]:
-        """Ledger rows, newest first."""
-        where, args = "user = ?", [user]
-        if history is not None:
-            where += " AND history = ?"
-            args.append(int(history))
-        with self._lock:
-            rows = self._db.execute(
-                f"SELECT rowid, key, amount, kind, label, date, detail, history FROM credits WHERE {where} ORDER BY rowid DESC", args
-            ).fetchall()
-        return [{"id": r[0], "key": r[1], "amount": r[2], "kind": r[3], "label": r[4], "date": r[5],
-                 "detail": json.loads(r[6] or "{}"), "history": bool(r[7])} for r in rows]
-
-    def mark_credits_seen(self, user: str) -> None:
-        with self._lock, self._db:
-            self._db.execute("UPDATE credits_meta SET seen = (SELECT coalesce(max(rowid), 0) FROM credits WHERE user = ?) WHERE user = ?", (user, user))
+            starts = dict(self._db.execute("SELECT user, start FROM credits_meta").fetchall())
+            rows = self._db.execute("SELECT rowid, user, key, amount, kind, label, date, detail, history FROM credits").fetchall()
+        out: dict[str, list[dict]] = {}
+        for r in rows:
+            out.setdefault(r[1], []).append({"id": r[0], "key": r[2], "amount": r[3], "kind": r[4], "label": r[5], "date": r[6],
+                                             "detail": json.loads(r[7] or "{}"), "history": bool(r[8])})
+        return [(u, starts.get(u) or min((x["date"] for x in rs if x["date"]), default=""), rs) for u, rs in out.items()]
 
     def segments_in(self, user: str, bbox: Sequence[float], limit: int = 20000) -> list[Segment]:
         min_lon, min_lat, max_lon, max_lat = bbox

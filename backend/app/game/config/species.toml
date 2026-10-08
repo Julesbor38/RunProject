@@ -1,0 +1,82 @@
+# Species. `names`: one per stage before the final form (egg, baby, young, adult); the final form is one of
+# the branches, chosen at the last evolution by the running profile since the pet arrived: the branch with
+# the highest metric / reference wins (ties: the first one). Metrics: ascent_per_km (m of D+ per km),
+# night_share (share of km run at night, sun below -6°), long_share (share of km in runs of 15 km or more),
+# fast_share (share of km faster than 5:00/km), new_share (share of km on paths never run before).
+# `base`: stats at level 1 of the young stage (multiplier 1). `starter = true`: one of the three to choose
+# from, free, once; never sold. All names are provisional.
+
+[[species]]
+id = "galet"
+starter = true
+type = "montagne"
+names = ["Œuf de Galet", "Galet", "Rocaille", "Granitor"]
+color = "#8d7b62"
+description = "Robuste et patient, il encaisse tout. Les côtes le rendent plus fort."
+base = { hp = 85, attack = 60, defense = 95, speed = 60 }
+
+  [[species.branch]]
+  id = "cimeval"
+  name = "Cimeval"
+  type = "montagne"
+  metric = "ascent_per_km"
+  reference = 25.0
+  hint = "beaucoup de dénivelé"
+
+  [[species.branch]]
+  id = "ombrecrete"
+  name = "Ombrecrête"
+  type = "nocturne"
+  metric = "night_share"
+  reference = 0.15
+  hint = "des sorties de nuit"
+
+[[species]]
+id = "fusette"
+starter = true
+type = "vitesse"
+names = ["Œuf de Fusette", "Fusette", "Filou", "Zéphyr"]
+color = "#e8692c"
+description = "Vif et impatient, il frappe le premier. Les allures rapides l'aiguisent."
+base = { hp = 60, attack = 90, defense = 55, speed = 95 }
+
+  [[species.branch]]
+  id = "eclairon"
+  name = "Éclairon"
+  type = "vitesse"
+  metric = "fast_share"
+  reference = 0.2
+  hint = "des allures rapides"
+
+  [[species.branch]]
+  id = "nuitfilante"
+  name = "Nuitfilante"
+  type = "nocturne"
+  metric = "night_share"
+  reference = 0.15
+  hint = "des sorties de nuit"
+
+[[species]]
+id = "foulon"
+starter = true
+type = "endurance"
+names = ["Œuf de Foulon", "Foulon", "Cadence", "Tenace"]
+color = "#23704f"
+description = "Infatigable et équilibré, il tient la distance. Les longues sorties le forgent."
+base = { hp = 95, attack = 70, defense = 70, speed = 65 }
+
+  [[species.branch]]
+  id = "ultravent"
+  name = "Ultravent"
+  type = "endurance"
+  metric = "long_share"
+  reference = 0.3
+  hint = "des sorties longues"
+
+  [[species.branch]]
+  id = "sentinomade"
+  name = "Sentinomade"
+  type = "exploration"
+  metric = "new_share"
+  reference = 0.35
+  hint = "des chemins nouveaux"

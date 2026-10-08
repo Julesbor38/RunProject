@@ -46,7 +46,17 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   et badges (annoncés seulement après un import, les rattrapages sont silencieux), mode « Brouillard » (voile
   percé sur la superficie découverte, contours arrondis, chemins courus en jaune au zoom ≥ 13), suggestions de zones jamais courues -> générateur en
   mode Découverte. Tables prêtes pour un classement (opt-in désactivé par défaut), rien d'exposé aux autres.
-- **Crédits** (`app/explore/credits.py`, `src/credits.ts`) : **gains** en place — 1/km couru, +2/km de chemin
+- **Familiers** (`app/game/`, `src/pet.ts`, `src/pet-art.ts`, onglet « Familier », README dans `app/game/README.md`) :
+  starter choisi une fois parmi 3 (Montagne / Vitesse / Endurance, triangle d'efficacité), niveaux **achetés avec
+  des points** (appui sur l'image ; coût `ceil(0,5 × n^1,5)`) jusqu'au niveau max du stade (œuf 5, bébé 15,
+  jeune 35, adulte 60, finale 100), puis évolution payante (50 / 250 / 1 000 / 3 000) ; forme finale à 2 branches
+  selon le profil de course (D+, nuit, sorties longues, rapides, chemins nouveaux ; `app/explore/profile.py`).
+  Config en TOML (`app/game/config/`), base `data/game/game.sqlite` (migrations numérotées, `PRAGMA user_version`).
+  **Portefeuille** (`app/game/wallet.py`) : points et gemmes, soldes mis à jour dans la même transaction que le
+  journal (`BEGIN IMMEDIATE`, dépense refusée si le solde ne couvre pas : pas de double dépense), clé unique par
+  ligne. Les crédits d'explore.sqlite y ont été déplacés (une fois, `credits.adopt_legacy`).
+  Prochaines étapes validées : duels contre des bots, puis boutique + gemmes (paiement factice d'abord).
+- **Points** (anciennement « crédits » ; `app/explore/credits.py`, `src/credits.ts`) : **gains** en place — 1/km couru, +2/km de chemin
   nouveau, 10/km², lieux 1–10, paliers de commune 10–100, 25/badge ; journal par compte (table `credits`, clé unique,
   jamais payé deux fois) ; l'historique d'avant les crédits ne compte que dans un bonus de bienvenue plafonné à 500 ;
   **2 000 / mois** au plus gagnés en courant (mois de la sortie) ; **un itinéraire coûte 1 crédit / km** (vérifié
@@ -65,7 +75,7 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   import en arrière-plan, bandeau des nouvelles sorties) ; évaluation de chaque sortie de 1 à 5 sur
   8 critères (sécurité, éclairage, beauté du paysage, plaisir, entretien, abri, tranquillité,
   peu de circulation) + commentaire, en attendant de les reporter sur les tronçons (étape 3).
-- Tests : 110 OK, 1 ignoré.
+- Tests : 130 OK, 1 ignoré.
 
 ## Architecture
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
@@ -74,6 +84,7 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   - `app/explore/` : matching (map-matching, `explorable`, `segment_key`), area (bande de 50 m sur grille
     de ~10 m, point dans polygone vectorisé), store (SQLite), communes
     (extraction + total praticable), explorer (traitement incrémental, résumé, paliers, suggestions)
+  - `app/game/` : config (TOML), db (migrations), wallet, pets, service (vues JSON), balance (courbes)
   - `app/auth.py` : comptes (scrypt), sessions (cookie HttpOnly/Secure/SameSite=Strict, seul le SHA-256
     du jeton est stocké), blocage après 5 échecs ; middleware dans `api.py` : toute route /api exige une
     session sauf PUBLIC_API (health, login, logout) ; tests : marqueur `auth`, sinon session simulée (conftest)
@@ -131,6 +142,11 @@ Chaque route ne lit et n'écrit que les données du compte connecté (data/users
   POST /api/explore/seen {ids} ; GET /api/explore/fog?bbox= (tronçons faits / à faire, petite zone sinon 422) ;
   GET /api/explore/communes/{id} : contour (GeoJSON + bbox) ; GET /api/explore/veil?bbox=&zoom= : voile du
   brouillard (monde moins la superficie découverte, ≤ 2 deg²)
+- Jeu (`/api/game…`) : GET /api/game (soldes, starter choisi, familiers) ; GET /api/game/starters ;
+  POST /api/game/starter {species, name} (une fois) ; GET /api/game/pets[/{id}] ; POST …/{id}/activate ;
+  PATCH …/{id} {name} ; POST …/{id}/levels {count | "max", request_id} ; POST …/{id}/evolve {request_id}
+  (402 points insuffisants, 409 refus, 404 familier d'un autre) ; GET /api/game/wallet ; GET /api/game/transactions
+- PUT /api/ratings/{key} renvoie aussi `points` (gagnés à la première évaluation de la sortie)
 - GET  /api/credits : solde, bonus de bienvenue (`welcome`, `history`, `welcome_cap`), `by_kind`, `new` (gagnés depuis
   la dernière annonce ; POST /api/explore/seen {ids: ["credits"]}), `month` {earned, cap}, derniers mouvements
   (`entries`, dépenses négatives), barème, `running`
@@ -222,6 +238,7 @@ Chaque route ne lit et n'écrit que les données du compte connecté (data/users
     (à sauvegarder !) ; privacy.json : zones de confidentialité (optionnel)
 - data/auth/ : comptes (users.json, mots de passe hachés) et sessions (sessions.json), droits 600
 - data/pois/pois.sqlite : lieux notables (extraits de l'OSM France, + Overpass hors France, + cache Wikidata)
+- data/game/game.sqlite : jeu (portefeuille points / gemmes et journal, familiers) : **à sauvegarder**
 - data/explore/explore.sqlite : Exploration (tronçons parcourus et lieux découverts par compte : **à sauvegarder**,
   + contours des communes, recalculables avec `python -m app.explore.communes ../data/osm/france-latest.osm.pbf`)
 - data/osm/ : tuiles OSM (cache, communes), data/dem/ : tuiles d'altitude (communes)

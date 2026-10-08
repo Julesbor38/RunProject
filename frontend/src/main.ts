@@ -12,6 +12,7 @@ import { Planner } from "./planner";
 import { PoiLayer } from "./pois";
 import { Credits } from "./credits";
 import { ExploreView } from "./explore";
+import { PetTab } from "./pet";
 import { Ratings } from "./ratings";
 import { addTerrain } from "./terrain";
 
@@ -19,7 +20,7 @@ import { addTerrain } from "./terrain";
 // (In dev, MapLibre isn't pre-bundled and finds its worker next to itself.)
 if (import.meta.env.PROD) setWorkerUrl(maplibreWorkerUrl);
 
-type Tab = "route" | "activities" | "explore";
+type Tab = "route" | "activities" | "explore" | "pet";
 
 const panel = document.getElementById("panel")!;
 const summary = document.getElementById("summary")!;
@@ -79,11 +80,15 @@ map.on("load", async () => {
     (visible) => activities?.setVisible(visible && (document.getElementById("show-tracks") as HTMLInputElement).checked),
   );
 
+  const pet = new PetTab(); // the familier, bought up with the points earned
+
   const showTab = (tab: Tab) => {
     document.querySelectorAll<HTMLButtonElement>(".tabs [role=tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
     document.getElementById("tab-route")!.hidden = tab !== "route";
     document.getElementById("tab-activities")!.hidden = tab !== "activities";
     document.getElementById("tab-explore")!.hidden = tab !== "explore";
+    document.getElementById("tab-pet")!.hidden = tab !== "pet";
+    if (tab === "pet") pet.refresh();
     if (tab === "explore") {
       explore.refresh();
       credits.refresh();
@@ -93,7 +98,7 @@ map.on("load", async () => {
     if (activities) activities.clickable = (point) => (tab === "activities" ? !pois.hitAt(point) : !planner.claimsClick(point));
   };
   document.querySelectorAll<HTMLButtonElement>(".tabs [role=tab]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab as Tab)));
-  // Credits: the balance in the header (a tap opens their details), « +N crédits » once an import is analysed.
+  // Credits: the balance in the header (a tap opens their details), « +N points » once an import is analysed.
   const credits = new Credits(() => {
     setPanel(true);
     showTab("explore");

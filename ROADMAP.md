@@ -671,6 +671,27 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 - Plus tard : la collection (autre dépense).
 - 110 tests OK, 1 ignoré.
 
+### 2026-10-08 — Jeu, étape 1 : familiers et portefeuille
+- Plan validé (familiers -> duels -> boutique, chaque étape validée) ; **tout se fait en dépensant des points** :
+  niveaux achetés (appui sur l'image du familier), évolution payante au niveau max du stade ; le bonus de
+  bienvenue compte (il est sur le solde).
+- `app/game/` : config TOML (stades, coûts, types, espèces) vérifiée au chargement ; `data/game/game.sqlite` avec
+  migrations numérotées ; **portefeuille** points / gemmes (solde matérialisé, `CHECK >= 0`, dépense conditionnelle
+  sous `BEGIN IMMEDIATE`, clé unique par ligne, `request_id` pour rejouer sans effet) ; le journal des crédits
+  d'explore.sqlite y est déplacé une fois (486 points pour jules, rien de perdu).
+- 3 starters (total 300) : Galet (Montagne : Déf / PV), Fusette (Vitesse : Vit / Att), Foulon (Endurance : PV,
+  équilibré) ; triangle Montagne > Vitesse > Endurance > Montagne ; Nocturne et Exploration ont chacun deux forces
+  et deux faiblesses. Formes finales : Cimeval / Ombrecrête, Éclairon / Nuitfilante, Ultravent / Sentinomade.
+- Coût d'un niveau `ceil(0,5 × n^1,5)`, évolutions 50 / 250 / 1 000 / 3 000 ; du niveau 1 au 100 : 24 601 points
+  (`python -m app.game.balance`). Stats = base × stade (0,5 à 2) × (1 + 0,01 × (niveau − 1)).
+- **Profil de course** par sortie (`app/explore/profile.py`) : D+ (hystérésis 3 m), km de nuit (soleil sous −6°),
+  km à moins de 5:00/km ; recalculé une fois pour l'historique (~35 s). Jules : 20 m/km, 6 % de nuit, 26 % en
+  sorties longues, 40 % rapides, 25 % de chemins nouveaux (-> Cimeval, Éclairon, Ultravent).
+- Points pour les évaluations : 5 par sortie évaluée la première fois, 10 par jour.
+- Front : onglet « Familier » (choix du starter, image cliquable -> +1 / +5 / max niveaux, évolution, aperçu des
+  formes finales dès l'adulte, stats), illustrations SVG provisoires (`src/pet-art.ts`) ; « crédits » -> « points ».
+- 130 tests OK, 1 ignoré.
+
 ---
 
 ## Bilan des 7 et 8 octobre 2026
@@ -703,8 +724,9 @@ Deux journées chargées, détaillées dans le journal ci-dessus :
 
 ## Prochaines tâches
 
-> **Crédits : gains (plafond de 2 000 / mois) et coût des itinéraires (1 / km) en place (2026-10-08).** Suite : la
-> collection (tâche 1), plan à faire valider d'abord.
+> **Jeu, étape 1 (familiers + portefeuille) faite le 2026-10-08.** Suite : **étape 2, duels contre des bots**
+> (plan déjà validé : bots en config, combat au tour par tour côté serveur à graine enregistrée, points pour les
+> victoires, limite quotidienne), à faire valider avant l'étape 3 (boutique, gemmes, paiement factice).
 
 1. **Crédits : gagner en courant, dépenser dans l'app.** **Gains faits**, plafond de 2 000 / mois, itinéraires à
    1 crédit / km (journal du 2026-10-08) ; reste : la collection (rareté), bâtiments, autres dépenses. Notes d'origine :

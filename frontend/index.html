@@ -120,7 +120,7 @@
             <p id="summary">Chargement…</p>
           </div>
         </div>
-        <button id="credits-chip" class="credits-chip" type="button" title="Mes crédits" hidden>
+        <button id="credits-chip" class="credits-chip" type="button" title="Mes points" hidden>
           <span class="spark" aria-hidden="true">✦</span><span id="credits-balance">0</span>
         </button>
         <button id="sign-out" class="icon-btn" aria-label="Se déconnecter" hidden>
@@ -135,6 +135,7 @@
         <button role="tab" data-tab="route" aria-selected="true">Itinéraire</button>
         <button role="tab" data-tab="activities" aria-selected="false">Mes sorties</button>
         <button role="tab" data-tab="explore" aria-selected="false">Exploration</button>
+        <button role="tab" data-tab="pet" aria-selected="false">Familier</button>
       </nav>
 
       <section id="tab-route" class="tab-body">
@@ -256,6 +257,10 @@
           portions à plus de 25 km/h. La superficie découverte d'une commune est la bande de 50 m de chaque côté de vos passages.
           Un chemin est découvert quand vous l'avez suivi sur au moins 80 % de sa longueur ; un lieu,
           quand vous êtes passé à moins de 30 m. Ces données ne sont visibles que par vous.</p>
+      </section>
+
+      <section id="tab-pet" class="tab-body" hidden>
+        <div id="pet-body"><p class="muted small">Chargement…</p></div>
       </section>
 
       <footer class="panel-foot">
