@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from . import config
+from .battles import Battles
 from .db import GameDB
 from .payments import PaymentProvider, provider_from_env
 from .pets import Pet, Pets, branch_scores, profile_metrics, stats
@@ -18,6 +19,7 @@ class Game:
         self.wallet = Wallet(self.db)
         self.pets = Pets(self.db, self.wallet, self.cfg)
         self.shop = Shop(self.db, self.wallet, self.pets, self.cfg, payments or provider_from_env())
+        self.battles = Battles(self.db, self.wallet, self.pets, self.cfg)
 
     def abilities_json(self, sp: config.Species, stage: int | None = None, branch: str | None = None) -> list[dict]:
         """The species' abilities (those of its branch for the final form), and whether they are unlocked."""
@@ -64,6 +66,8 @@ class Game:
             "level": pet.level, "branch": pet.branch, "stats": self.pets.stats(pet),
             "rarity": sp.rarity, "rarity_name": config.RARITIES.get(sp.rarity or ""),
             "abilities": self.abilities_json(sp, pet.stage, pet.branch),
+            "kit": [{"id": m.id, "name": m.name, "kind": m.kind, "type": m.type, "power": m.power, "hits": m.hits, "target": m.target,
+                     "description": m.description} for m in self.battles.bc.kit(self.pets.type_of(pet))],
             "next_level": None if at_cap else {
                 "cost": cfg.level_cost(pet.level + 1),
                 "cost_5": cfg.levels_cost(pet.level, min(stage.max_level, pet.level + 5)),

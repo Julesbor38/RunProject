@@ -1,0 +1,97 @@
+# Battles against bots: an endless trail of levels. Each level is 1 to 3 wild mobs (more often a group as the
+# levels go up); every 5th level a mid-boss, every 10th a big boss (with a second phase). Enemy stats =
+# their species' base x (base_scale + per_level x level) (their stage only changes their look and, for the
+# bosses, their abilities); a mob in a group is weaker (group_scale). HP in battle = the hp stat x hp_factor.
+#
+# Rewards (points, apart from the monthly cap of running): first victory of a level reward_base +
+# reward_per_level x level (x mid_boss_reward / boss_reward for the bosses), a level already won again:
+# replay_share of it; at most daily_rewarded victories rewarded a day.
+
+hp_factor = 5.0
+base_scale = 0.35
+per_level = 0.05
+group_scale = 0.6
+mob_total = 300              # every enemy's base stats are brought to this total (a starter's); bosses then get their scale
+max_turns = 50
+damage_scale = 0.5
+crit_chance = 6
+crit_multiplier = 1.5
+random_spread = 10           # ±% on every blow
+
+reward_base = 20
+reward_per_level = 4
+mid_boss_reward = 3
+boss_reward = 5
+replay_share = 0.25
+daily_rewarded = 10
+
+# wild mobs met on the trail, by stage as the levels go up (stage = 1 + level / mob_stage_every, max 3)
+mob_species = ["galet", "fusette", "foulon", "colossaure", "tempestor", "sylvarion", "brasaltor", "aurorelle"]
+mob_stage_every = 12
+
+# Bosses, in turn: mid-bosses on levels 5, 15, 25…, big bosses on 10, 20, 30… (after the list, it starts again,
+# stronger). A boss is its species at that stage (and branch), with mid_boss_scale / boss_scale on its stats.
+mid_boss_scale = { hp = 1.5, attack = 1.05, defense = 1.05, speed = 1.0 }
+boss_scale = { hp = 2.2, attack = 1.12, defense = 1.1, speed = 1.05 }
+
+[[mid_boss]]
+name = "Granitor le Têtu"
+species = "galet"
+stage = "adult"
+
+[[mid_boss]]
+name = "Zéphyr le Fulgurant"
+species = "fusette"
+stage = "adult"
+
+[[mid_boss]]
+name = "Tenace l'Inusable"
+species = "foulon"
+stage = "adult"
+
+[[mid_boss]]
+name = "Ombrecrête la Silencieuse"
+species = "galet"
+stage = "final"
+branch = "ombrecrete"
+
+[[mid_boss]]
+name = "Nuitfilante l'Insaisissable"
+species = "fusette"
+stage = "final"
+branch = "nuitfilante"
+
+[[boss]]
+name = "Colossaure, Titan de givre"
+species = "colossaure"
+stage = "final"
+branch = "colossaure"
+summon = "foulon"            # second phase (half HP): calls two of these, and gets angry
+
+[[boss]]
+name = "Tempestor, Seigneur de l'orage"
+species = "tempestor"
+stage = "final"
+branch = "tempestor"
+summon = "fusette"
+
+[[boss]]
+name = "Sylvarion, Gardien des mille sentiers"
+species = "sylvarion"
+stage = "final"
+branch = "sylvarion"
+summon = "foulon"
+
+[[boss]]
+name = "Brasaltor, Cœur du volcan"
+species = "brasaltor"
+stage = "final"
+branch = "pyroclaste"
+summon = "galet"
+
+[[boss]]
+name = "Aurorelle, Reine des aurores"
+species = "aurorelle"
+stage = "final"
+branch = "aurorelle_celeste"
+summon = "fusette"

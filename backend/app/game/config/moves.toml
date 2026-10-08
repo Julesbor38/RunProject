@@ -1,0 +1,167 @@
+# Combat moves. Every familier fights with the kit of its type (its final form's type once evolved): two
+# attacks and one defence, each with its own animation (`anim`, drawn by frontend/src/battle.ts); plus the
+# special abilities of its species (species.toml) once unlocked, usable every `special_cooldown` turns; a
+# defence then waits `defense_cooldown` turns.
+#
+# Attacks: `power` (100 = a normal blow), `target` = one or all (all enemies, for groups), `hits` (several
+# blows), `priority` (acts first), `crit` (extra critical chance), `drain` (% of the damage healed), `dot`
+# (% of the target's max HP lost per turn, for `dot_turns`). Defences: `guard` (defence +% for `turns`),
+# `dodge` (attacks avoided), `heal` (% of max HP), `regen` (% per turn for `turns`).
+
+special_cooldown = 3
+defense_cooldown = 1         # turns to wait after a defence before the next one (no endless dodging or healing)
+
+[kits]
+montagne = { attacks = ["eboulement", "poing_de_granit"], defense = "rempart_rocheux" }
+vitesse = { attacks = ["eclair", "rafale_de_coups"], defense = "esquive" }
+endurance = { attacks = ["charge_lourde", "coup_de_fond"], defense = "second_souffle" }
+nocturne = { attacks = ["griffe_d_ombre", "nuee_nocturne"], defense = "voile_de_nuit" }
+exploration = { attacks = ["ronces", "pluie_de_feuilles"], defense = "racines" }
+
+# --- Montagne: heavy, slow, area damage; defence: a wall of rock
+
+[[move]]
+id = "eboulement"
+name = "Éboulement"
+type = "montagne"
+power = 75
+target = "all"
+anim = "rockfall"
+description = "Des rochers dévalent sur tous les adversaires."
+
+[[move]]
+id = "poing_de_granit"
+name = "Poing de granit"
+type = "montagne"
+power = 115
+anim = "smash"
+description = "Un coup de poing lourd comme une montagne."
+
+[[move]]
+id = "rempart_rocheux"
+name = "Rempart rocheux"
+type = "montagne"
+guard = 70
+turns = 2
+anim = "stonewall"
+description = "Un mur de pierre surgit : défense +70 % pendant 2 tours."
+
+# --- Vitesse: strikes first, several blows; defence: dodge
+
+[[move]]
+id = "eclair"
+name = "Éclair"
+type = "vitesse"
+power = 85
+priority = true
+crit = 20
+anim = "lightning"
+description = "Frappe avant tout le monde, souvent en plein dans le mille."
+
+[[move]]
+id = "rafale_de_coups"
+name = "Rafale de coups"
+type = "vitesse"
+power = 40
+hits = 3
+anim = "flurry"
+description = "Trois coups si rapides qu'on ne les voit pas."
+
+[[move]]
+id = "esquive"
+name = "Esquive"
+type = "vitesse"
+dodge = 1
+priority = true
+anim = "afterimage"
+description = "Laisse une image derrière soi : évite la prochaine attaque."
+
+# --- Endurance: steady, heals while hitting; defence: second wind
+
+[[move]]
+id = "charge_lourde"
+name = "Charge"
+type = "endurance"
+power = 105
+anim = "charge"
+description = "Fonce tête baissée, de tout son poids."
+
+[[move]]
+id = "coup_de_fond"
+name = "Coup de fond"
+type = "endurance"
+power = 80
+drain = 40
+anim = "shockwave"
+description = "Un coup régulier qui redonne de l'énergie : soigne 40 % des dégâts."
+
+[[move]]
+id = "second_souffle"
+name = "Second souffle"
+type = "endurance"
+heal = 30
+anim = "breath"
+description = "Reprend son souffle : récupère 30 % de ses PV."
+
+# --- Nocturne: critical blows, darkness; defence: a veil of night
+
+[[move]]
+id = "griffe_d_ombre"
+name = "Griffe d'ombre"
+type = "nocturne"
+power = 95
+crit = 25
+anim = "shadowclaw"
+description = "Une griffure surgie de l'ombre, souvent critique."
+
+[[move]]
+id = "nuee_nocturne"
+name = "Nuée nocturne"
+type = "nocturne"
+power = 65
+target = "all"
+dot = 5
+dot_turns = 2
+anim = "swarm"
+description = "Une nuée d'ombres sur tous les adversaires, qui les ronge 2 tours."
+
+[[move]]
+id = "voile_de_nuit"
+name = "Voile de nuit"
+type = "nocturne"
+dodge = 1
+guard = 30
+turns = 2
+anim = "nightveil"
+description = "Disparaît dans la nuit : évite la prochaine attaque, défense +30 %."
+
+# --- Exploration: poison, area; defence: roots that hold and heal
+
+[[move]]
+id = "ronces"
+name = "Ronces"
+type = "exploration"
+power = 85
+dot = 8
+dot_turns = 3
+anim = "thorns"
+description = "Des ronces l'enserrent et l'écorchent pendant 3 tours."
+
+[[move]]
+id = "pluie_de_feuilles"
+name = "Pluie de feuilles"
+type = "exploration"
+power = 70
+target = "all"
+anim = "leafstorm"
+description = "Des feuilles tranchantes sur tous les adversaires."
+
+[[move]]
+id = "racines"
+name = "Racines"
+type = "exploration"
+guard = 40
+regen = 6
+turns = 3
+anim = "roots"
+description = "S'enracine : défense +40 % et 6 % de PV par tour pendant 3 tours."

@@ -61,7 +61,12 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   3–4 capacités chacun ; 3 000 / 6 000 / 10 000 points ou 300 / 600 / 1 000 gemmes), achat déterministe, une fois
   par compte ; capacités (`[[species.ability]]`) pour tous, débloquées par stade, affichées (serviront aux duels) ;
   gemmes : `payments.py` (`PaymentProvider`, factice avec `TRAILMAP_PAYMENTS=mock`, sinon 503).
-  Prochaine étape : duels contre des bots.
+  **Combats contre des bots** (`app/game/combat.py`, `battles.py`, `config/moves.toml`, `config/battles.toml`,
+  `src/battle.ts`, sous-onglet « Combats ») : tour par tour, je choisis l'attaque (et la cible), le serveur résout
+  (graine enregistrée, rejouable) ; kit par type (2 attaques + 1 défense, une animation chacune : Éboulement,
+  Racines…) + capacités spéciales ; sentier de niveaux (mobs seuls ou en groupe, boss tous les 5, grand boss tous
+  les 10 avec rage et renforts) ; victoire : points (première fois 20 + 4 × niveau, × 3 / × 5 boss, rejouer 25 %,
+  10 par jour). Prochaine étape : brancher un vrai paiement (App Store / Stripe) ; équipes de familiers peut-être.
 - **Points** (anciennement « crédits » ; `app/explore/credits.py`, `src/credits.ts`) : **gains** en place — 1/km couru, +2/km de chemin
   nouveau, 10/km², lieux 1–10, paliers de commune 10–100, 25/badge ; journal par compte (table `credits`, clé unique,
   jamais payé deux fois) ; l'historique d'avant les crédits ne compte que dans un bonus de bienvenue plafonné à 500 ;
@@ -81,7 +86,7 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   import en arrière-plan, bandeau des nouvelles sorties) ; évaluation de chaque sortie de 1 à 5 sur
   8 critères (sécurité, éclairage, beauté du paysage, plaisir, entretien, abri, tranquillité,
   peu de circulation) + commentaire, en attendant de les reporter sur les tronçons (étape 3).
-- Tests : 137 OK, 1 ignoré.
+- Tests : 146 OK, 1 ignoré.
 
 ## Architecture
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
@@ -153,7 +158,9 @@ Chaque route ne lit et n'écrit que les données du compte connecté (data/users
   PATCH …/{id} {name} ; POST …/{id}/levels {count | "max", request_id} ; POST …/{id}/evolve {request_id}
   (402 points insuffisants, 409 refus, 404 familier d'un autre) ; GET /api/game/wallet ; GET /api/game/transactions ;
   GET /api/game/shop ; POST /api/game/shop/buy {item, currency: points|gems, request_id} ;
-  POST /api/game/gems/buy {pack, request_id, receipt?} (503 tant que le paiement n'est pas branché)
+  POST /api/game/gems/buy {pack, request_id, receipt?} (503 tant que le paiement n'est pas branché) ;
+  GET /api/game/battles (sentier, combat en cours, gains du jour) ; POST /api/game/battles {level} ;
+  GET /api/game/battles/{id} ; POST …/{id}/turn {move, target?} (événements à animer + état) ; POST …/{id}/flee
 - PUT /api/ratings/{key} renvoie aussi `points` (gagnés à la première évaluation de la sortie)
 - GET  /api/credits : solde, bonus de bienvenue (`welcome`, `history`, `welcome_cap`), `by_kind`, `new` (gagnés depuis
   la dernière annonce ; POST /api/explore/seen {ids: ["credits"]}), `month` {earned, cap}, derniers mouvements

@@ -87,6 +87,42 @@ preuve, gardée avec l'achat (un même reçu n'est jamais crédité deux fois). 
 gemmes répond 503. À brancher plus tard : achats intégrés App Store (obligatoires dans l'app iOS pour une
 monnaie virtuelle), Stripe sur le web. Packs de gemmes : `[[gem_pack]]` dans `shop.toml`.
 
+## Combats contre des bots
+
+Tour par tour, résolus par le serveur (`combat.py`, `battles.py`) ; le front (`frontend/src/battle.ts`) ne fait
+que choisir l'attaque et rejouer les événements renvoyés (animations).
+
+- **Kit par type** (`config/moves.toml`, `[kits]`) : 2 attaques + 1 défense par type, chacune avec son animation
+  (`anim`, dessinée par les classes `.fx-<anim>` de `style.css`). Un familier combat avec le kit de son type (celui
+  de sa forme finale une fois évolué), plus ses capacités spéciales débloquées (`species.toml`, recharge de
+  `special_cooldown` tours) ; une défense attend `defense_cooldown` tour avant d'être rejouée.
+- **Sentier de niveaux** (`config/battles.toml`) : 1 à 3 mobs sauvages (plus souvent en groupe en avançant), un
+  boss intermédiaire tous les 5 niveaux, un grand boss tous les 10 (rage à mi-PV, + 2 renforts pour le grand). Les
+  ennemis sont ramenés à la puissance d'un starter (`mob_total`) puis × `base_scale + per_level × niveau` (× le bonus
+  de boss). Les ennemis d'un niveau sont toujours les mêmes.
+- **Dégâts** : puissance / 100 × Att × Att / (Att + Déf) × efficacité du type × ±10 % (× 1,5 sur un critique,
+  6 % + le bonus de l'attaque) ; ordre : attaques prioritaires, puis Vitesse.
+- **Déterministe** : l'aléatoire d'un tour vient de `Random(f"{graine}:{tour}")` ; un combat garde son état initial
+  et les coups joués : `Battles.check_replay` rejoue et compare.
+- **Gains** : première victoire d'un niveau `reward_base + reward_per_level × niveau` points (× 3 boss, × 5 grand
+  boss), rejouer : 25 % ; `daily_rewarded` victoires récompensées par jour (la progression continue au-delà).
+
+Équilibrage : modifier `battles.toml` et vérifier avec une simulation (pour chaque familier type, le taux de victoire
+par niveau, en choisissant à chaque tour l'attaque la plus forte) : bébé ~niveaux 1–5, jeune ~8–15, adulte ~20,
+forme finale niveau 100 ~40–55.
+
 ## Ajouter un bot
 
-Étape des duels (pas encore faite) : `config/bots.toml`, décrit ici quand elle sera là.
+- Un **mob** : ajouter son espèce à `mob_species` dans `battles.toml` (il prend l'apparence du stade du niveau).
+- Un **boss** : un bloc `[[mid_boss]]` (niveaux 5, 15, 25…) ou `[[boss]]` (10, 20, 30…), dans l'ordre d'apparition :
+
+```toml
+[[boss]]
+name = "Lucifère, Ombre des cols"
+species = "lucine"
+stage = "final"
+branch = "eclipse"
+summon = "galet"             # grand boss : les 2 renforts de sa seconde phase
+```
+
+Après la liste, les boss reviennent, plus forts (`+` dans leur nom).

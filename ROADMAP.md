@@ -716,6 +716,28 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
   d'évolution, stats, capacités, « +30 % vs les starters »), confirmation qui dit exactement ce qu'on obtient.
 - 137 tests OK, 1 ignoré.
 
+### 2026-10-08 — Jeu : combats contre des bots
+- Choix validés : je choisis l'attaque à chaque tour ; mon familier actif seul ; victoires en points, plafonnées
+  par jour.
+- **Kits par type** (`config/moves.toml`) : Montagne Éboulement (zone) / Poing de granit / Rempart rocheux ;
+  Vitesse Éclair (prioritaire) / Rafale de coups (×3) / Esquive ; Endurance Charge / Coup de fond (vol de vie) /
+  Second souffle ; Nocturne Griffe d'ombre (critiques) / Nuée nocturne (zone, ronge) / Voile de nuit ; Exploration
+  Ronces (ronge) / Pluie de feuilles (zone) / Racines (défense + régénération). Capacités spéciales des espèces
+  utilisables en combat (recharge 3 tours) ; une défense attend 1 tour (sinon esquives et soins à l'infini).
+- **Moteur** (`combat.py`) : ordre priorité puis Vitesse, dégâts Att² / (Att + Déf) × type × ±10 %, critiques
+  rares, effets (garde, esquive, régénération, poison, vitesse), IA des mobs, boss en rage à mi-PV (le grand boss
+  appelle 2 renforts), 50 tours au plus ; aléatoire `Random(graine:tour)` : un combat se rejoue à l'identique.
+- **Sentier** (`config/battles.toml`, `battles.py`) : niveaux sans fin, mobs seuls ou en groupe, boss intermédiaire
+  tous les 5 (Granitor, Zéphyr, Tenace, Ombrecrête, Nuitfilante), grand boss tous les 10 (Colossaure, Tempestor,
+  Sylvarion, Brasaltor, Aurorelle), puis ils reviennent plus forts. Équilibré par simulation : bébé ~1–5,
+  jeune ~8–15, adulte ~20, forme finale niveau 100 ~40–55 ; les types comptent (on change de familier contre un
+  boss qui nous contre). Combat en cours repris à la réouverture. Migration 005.
+- Front : sous-onglet « Combats » (sentier en zigzag, ennemis et gains de chaque niveau), arène plein écran (fond
+  selon le type, barres de PV, cible à toucher, 2 attaques + défense + spéciales), une animation CSS par attaque
+  (rochers qui tombent, éclair, griffes d'ombre, ronces, racines…), dégâts flottants, critiques, efficacité,
+  K.O., rage, renforts, écran de victoire / défaite ; le kit de combat affiché sur la fiche du familier.
+- 146 tests OK, 1 ignoré.
+
 ---
 
 ## Bilan des 7 et 8 octobre 2026
@@ -748,9 +770,9 @@ Deux journées chargées, détaillées dans le journal ci-dessus :
 
 ## Prochaines tâches
 
-> **Jeu : familiers, portefeuille et boutique faits le 2026-10-08.** Suite : **les duels contre des bots** (plan
-> validé : bots en config, combat au tour par tour côté serveur à graine enregistrée, avec les capacités déjà
-> définies, points pour les victoires, limite quotidienne) ; puis brancher un vrai paiement (App Store / Stripe).
+> **Jeu : familiers, portefeuille, boutique et combats contre des bots faits le 2026-10-08.** Suite : tester les
+> combats sur le téléphone (rendu, rythme des animations, équilibrage réel), puis brancher un vrai paiement
+> (App Store / Stripe) ; idées : équipes de 3 familiers, duels entre comptes.
 
 1. **Crédits : gagner en courant, dépenser dans l'app.** **Gains faits**, plafond de 2 000 / mois, itinéraires à
    1 crédit / km (journal du 2026-10-08) ; reste : la collection (rareté), bâtiments, autres dépenses. Notes d'origine :

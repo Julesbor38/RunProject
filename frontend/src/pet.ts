@@ -7,6 +7,7 @@
  * Everything is decided by the server; this only shows it.
  */
 import { apiFetch } from "./api";
+import { BattleView } from "./battle";
 import { escape } from "./format";
 import { petArt } from "./pet-art";
 
@@ -56,6 +57,7 @@ interface PetView {
   rarity: string | null;
   rarity_name: string | null;
   abilities: Ability[];
+  kit: { id: string; name: string; kind: "attack" | "defense"; type: string; power: number; hits: number; target: string; description: string }[];
   next_level: { cost: number; cost_5: number; levels_5: number; affordable: number; affordable_cost?: number } | null;
   evolution: { stage: string; level: number; ready: boolean; cost: number; stats: Stats; form: string | null; branches?: BranchView[] } | null;
 }
@@ -120,7 +122,8 @@ export class PetTab {
   private open = false; // the upgrade sheet under the picture
   private busy = false;
   private box = document.getElementById("pet-body")!;
-  private view: "pets" | "shop" = "pets";
+  private view: "pets" | "shop" | "battles" = "pets";
+  private battle = new BattleView(() => this.refresh()); // back to the trail when a battle closes
   private shop: ShopState | null = null;
 
   async refresh() {
@@ -130,6 +133,7 @@ export class PetTab {
       return;
     }
     this.state = (await r.json()) as GameState;
+    if (this.view === "battles") return this.battle.renderTrail(this.box, this.views(), () => this.bindViews());
     if (this.view === "shop") {
       const rs = await apiFetch("/api/game/shop");
       if (rs.ok) {
@@ -148,13 +152,14 @@ export class PetTab {
   private views(): string {
     return `<div class="pet-views" role="tablist">
       <button type="button" role="tab" data-view="pets" aria-selected="${this.view === "pets"}">Mes familiers</button>
+      <button type="button" role="tab" data-view="battles" aria-selected="${this.view === "battles"}">Combats ⚔</button>
       <button type="button" role="tab" data-view="shop" aria-selected="${this.view === "shop"}">Boutique <span class="shop-spark">✦</span></button></div>`;
   }
 
   private bindViews() {
     this.box.querySelectorAll<HTMLButtonElement>(".pet-views button").forEach((b) =>
       b.addEventListener("click", () => {
-        const v = b.dataset.view as "pets" | "shop";
+        const v = b.dataset.view as "pets" | "shop" | "battles";
         if (v === this.view) return;
         this.view = v;
         this.refresh();
@@ -244,7 +249,12 @@ export class PetTab {
           <span class="muted small">max ${st.max_level} au stade ${escape(st.name.toLowerCase())}</span></div>
         <div class="pet-upgrade" ${this.open ? "" : "hidden"}>${this.upgrade(pet, s.wallet.points)}</div>
         ${statBars(pet.stats, STAT_SCALE)}
-        ${pet.abilities.length ? `<div class="abilities"><h3>Capacités</h3><ul>${pet.abilities
+        <div class="abilities"><h3>En combat (${escape(pet.type_name)})</h3><ul>${pet.kit
+          .map((m) => `<li class="ability on k-${m.kind === "defense" ? "guard" : "strike"}"><span class="ability-icon">${m.kind === "defense" ? "⛨" : "⚔"}</span>
+            <div><strong>${escape(m.name)}</strong> <span class="muted small">${m.kind === "defense" ? "défense" : `puissance ${m.power}${m.hits > 1 ? ` ×${m.hits}` : ""}${m.target === "all" ? ", tous les adversaires" : ""}`}</span>
+            <span class="muted small">${escape(m.description)}</span></div></li>`)
+          .join("")}</ul></div>
+        ${pet.abilities.length ? `<div class="abilities"><h3>Capacités spéciales</h3><ul>${pet.abilities
           .filter((a) => !a.branch || !pet.branch || a.branch === pet.branch)
           .map((a) => abilityLine(a, a.branch ? pet.evolution?.branches?.find((b) => b.id === a.branch)?.name : undefined))
           .join("")}</ul></div>` : ""}

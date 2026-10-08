@@ -818,6 +818,57 @@ def game_buy_gems(body: GemsIn, ws: Workspace = Depends(workspace)) -> dict:
             "wallet": g.wallet.balances(ws.user)}
 
 
+# --- battles against bots (app/game/combat.py, battles.py) ---
+
+
+def _battle_out(battle_id: int, battle, extra: dict | None = None) -> dict:
+    from .game import combat
+
+    g = game()
+    return {"id": battle_id, **combat.battle_view(g.cfg, g.battles.bc, battle), **(extra or {})}
+
+
+@app.get("/api/game/battles")
+def game_trail(ws: Workspace = Depends(workspace)) -> dict:
+    """The trail: levels won, the next ones (with their enemies and rewards), the battle in progress, today's rewards."""
+    return game().battles.trail(ws.user)
+
+
+class BattleIn(BaseModel):
+    level: int = Field(ge=1, le=10000)
+
+
+@app.post("/api/game/battles")
+def game_start_battle(body: BattleIn, ws: Workspace = Depends(workspace)) -> dict:
+    """A battle on an open level with the active familier (one at a time: a battle in progress is given up)."""
+    bid, battle = _game_call(game().battles.start, ws.user, body.level)
+    return _battle_out(bid, battle)
+
+
+@app.get("/api/game/battles/{battle_id}")
+def game_battle(battle_id: int, ws: Workspace = Depends(workspace)) -> dict:
+    battle, info = _game_call(game().battles.get, ws.user, battle_id)
+    return _battle_out(battle_id, battle, {"reward": info["reward"]})
+
+
+class TurnIn(BaseModel):
+    move: str = Field(max_length=64)
+    target: str | None = Field(None, max_length=8)
+
+
+@app.post("/api/game/battles/{battle_id}/turn")
+def game_turn(battle_id: int, body: TurnIn, ws: Workspace = Depends(workspace)) -> dict:
+    """One turn: my move (and target), the mobs' moves; the events to animate, in order, and the new state."""
+    battle, events, reward = _game_call(game().battles.turn, ws.user, battle_id, body.move, body.target)
+    return _battle_out(battle_id, battle, {"events": events, "reward": reward, "wallet": game().wallet.balances(ws.user)})
+
+
+@app.post("/api/game/battles/{battle_id}/flee")
+def game_flee(battle_id: int, ws: Workspace = Depends(workspace)) -> dict:
+    game().battles.flee(ws.user, battle_id)
+    return {"ok": True}
+
+
 @app.get("/api/game/wallet")
 def game_wallet(ws: Workspace = Depends(workspace)) -> dict:
     return game().wallet.balances(ws.user)

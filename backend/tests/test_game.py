@@ -387,3 +387,161 @@ def test_shop_api(tmp_path, monkeypatch):
         assert c.post("/api/game/shop/buy", json={"item": "nope", "currency": "points", "request_id": "buy-00003"}).status_code == 404
         assert c.post("/api/game/shop/buy", json={"item": "oeuf_aurorelle", "currency": "euros", "request_id": "buy-00004"}).status_code == 422
     assert g.shop.owned_species("marie") == set()
+
+
+# --- battles ---
+
+
+from app.game import combat  # noqa: E402
+
+BC = combat.default(CFG)
+
+
+def test_every_type_has_two_attacks_and_a_defence_of_its_own():
+    for t in CFG.types:
+        kit = BC.kit(t)
+        assert [m.kind for m in kit] == ["attack", "attack", "defense"] and {m.type for m in kit} == {t}
+        assert len({m.anim for m in kit}) == 3  # an animation each
+    assert BC.moves["eboulement"].target == "all" and BC.moves["racines"].regen  # the examples asked for
+
+
+def test_levels_mobs_groups_and_bosses():
+    assert [combat.level_kind(n) for n in (1, 4, 5, 9, 10, 15, 20)] == ["mobs", "mobs", "mid_boss", "mobs", "boss", "mid_boss", "boss"]
+    assert len(combat.enemies_for(CFG, BC, 1)) == 1
+    assert any(len(combat.enemies_for(CFG, BC, n)) > 1 for n in range(11, 20))  # groups as the levels go up
+    mid, big = combat.enemies_for(CFG, BC, 5)[0], combat.enemies_for(CFG, BC, 10)[0]
+    assert mid.boss == "mid" and big.boss == "big" and big.summon
+    assert combat.enemies_for(CFG, BC, 7)[0].max_hp < combat.enemies_for(CFG, BC, 27)[0].max_hp  # stronger further on
+    assert [e.name for e in combat.enemies_for(CFG, BC, 13)] == [e.name for e in combat.enemies_for(CFG, BC, 13)]  # always the same
+    assert combat.reward_for(BC, 10, True) == (20 + 40) * 5 and combat.reward_for(BC, 3, False) == round(32 * 0.25)
+
+
+class _Pet:
+    def __init__(self, species, stage, level, branch=None):
+        self.species, self.stage, self.level, self.branch, self.name = species, stage, level, branch, "Test"
+
+
+def fighter(species="foulon", stage=2, level=20, branch=None):
+    from app.game.pets import stats
+
+    sp = CFG.species[species]
+    b = sp.branch(branch)
+    return combat.player_fighter(CFG, BC, _Pet(species, stage, level, branch), stats(CFG, sp, stage, level), b.type if b else sp.type, "x")
+
+
+def test_a_battle_is_the_same_again_with_the_same_seed():
+    def fight(seed):
+        b = combat.new_battle(CFG, BC, 3, fighter(), seed)
+        initial = b.to_dict()
+        moves = []
+        while b.status == "running":
+            moves.append(("charge_lourde", None))
+            combat.play_turn(CFG, BC, b, *moves[-1])
+        return initial, moves, b
+
+    initial, moves, b = fight("abc")
+    assert combat.replay(CFG, BC, initial, moves).to_dict() == b.to_dict()
+    assert fight("abc")[2].to_dict() == b.to_dict()
+    assert any(fight(s)[2].to_dict() != b.to_dict() for s in ("x", "y", "z"))  # another seed, another battle
+
+
+def test_speed_decides_who_strikes_first_and_priority_beats_it():
+    b = combat.new_battle(CFG, BC, 1, fighter("galet", 2, 5), "s")
+    me, foe = b.player, b.alive("enemy")[0]
+    me.speed, foe.speed = 10, 999
+    ev = combat.play_turn(CFG, BC, b, "poing_de_granit", None)
+    assert [e["actor"] for e in ev if e["t"] == "move"][0] == foe.id
+    b2 = combat.new_battle(CFG, BC, 1, fighter("fusette", 2, 5), "s")
+    b2.player.speed, b2.alive("enemy")[0].speed = 10, 999
+    ev = combat.play_turn(CFG, BC, b2, "eclair", None)  # priority
+    assert [e["actor"] for e in ev if e["t"] == "move"][0] == "p"
+
+
+def test_damage_spread_is_bounded_and_types_matter():
+    from random import Random
+
+    a, t = fighter("galet", 2, 20), fighter("fusette", 2, 20)
+    t.type = "vitesse"
+    poing = BC.moves["poing_de_granit"]
+    dmgs = [combat._damage(CFG, BC, a, t, poing, Random(i)) for i in range(300)]
+    normal = [d for d, crit, _ in dmgs if not crit]
+    assert max(normal) / min(normal) <= 1.1 / 0.9 + 0.05 and all(eff == "super" for _, _, eff in dmgs)  # montagne > vitesse
+    assert any(crit for _, crit, _ in dmgs) and sum(crit for _, crit, _ in dmgs) < 60  # rare criticals
+
+
+def test_defences_dodge_guard_regen_and_cooldown():
+    b = combat.new_battle(CFG, BC, 1, fighter("fusette", 2, 20), "s")
+    ev = combat.play_turn(CFG, BC, b, "esquive", None)
+    assert any(e["t"] == "dodge" and e["target"] == "p" for e in ev) or "dodge" in b.player.effects
+    with pytest.raises(combat.InvalidAction, match="pas encore prête"):
+        combat.play_turn(CFG, BC, b, "esquive", None)  # a defence waits a turn
+    b = combat.new_battle(CFG, BC, 1, fighter("sylvarion", 3, 30), "s")
+    combat.play_turn(CFG, BC, b, "racines", None)
+    assert b.player.effects["guard"]["pct"] == 40 and b.player.effects["regen"]["pct"] == 6
+
+
+def test_a_big_boss_gets_angry_and_calls_reinforcements():
+    b = combat.new_battle(CFG, BC, 10, fighter("brasaltor", 4, 100, "pyroclaste"), "s")
+    boss = b.alive("enemy")[0]
+    boss.hp = boss.max_hp // 2 + 1
+    events = []
+    while b.status == "running" and not any(e["t"] == "summon" for e in events):
+        events += combat.play_turn(CFG, BC, b, "poing_de_granit", "e1")
+    assert boss.angry and sum(e["t"] == "summon" for e in events) == 2 and len(b.fighters) == 4
+
+
+def test_trail_rewards_and_daily_limit(game, monkeypatch):
+    pet = game.pets.choose_starter("jules", "foulon")
+    with pytest.raises(GameError, match="œuf"):
+        game.battles.start("jules", 1)
+    with game.db.tx() as conn:  # a strong one, to win quickly
+        conn.execute("UPDATE pets SET stage = 4, level = 100, branch = 'ultravent' WHERE id = ?", (pet.id,))
+    with pytest.raises(GameError, match="pas encore ouvert"):
+        game.battles.start("jules", 2)
+
+    def win(level):
+        bid, b = game.battles.start("jules", level)
+        reward = 0
+        while b.status == "running":
+            b, _, reward = game.battles.turn("jules", bid, "charge_lourde", None)
+        assert b.status == "won"
+        return bid, reward
+
+    bid, reward = win(1)
+    assert reward == combat.reward_for(game.battles.bc, 1, True) and game.battles.cleared("jules") == 1
+    assert game.wallet.balance("jules") == reward and game.battles.check_replay("jules", bid)
+    assert win(1)[1] == combat.reward_for(game.battles.bc, 1, False)  # again: a quarter
+    monkeypatch.setitem(game.battles.bc.p, "daily_rewarded", 2)
+    assert win(2)[1] == 0 and game.battles.cleared("jules") == 2  # over the daily limit: progress, no points
+    with pytest.raises(GameError, match="terminé"):
+        game.battles.turn("jules", bid, "charge_lourde", None)
+
+
+def test_battle_api_is_per_user(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app import api
+    from test_pipeline import make_data
+
+    monkeypatch.setattr(api, "DATA_DIR", make_data(tmp_path))
+    g = api.game()
+    pet = g.pets.choose_starter("tester", "galet")
+    with g.db.tx() as conn:
+        conn.execute("UPDATE pets SET stage = 2, level = 20 WHERE id = ?", (pet.id,))
+    with TestClient(api.app) as c:
+        trail = c.get("/api/game/battles").json()
+        assert trail["cleared"] == 0 and trail["levels"][0]["open"] and not trail["levels"][1]["open"]
+        b = c.post("/api/game/battles", json={"level": 1}).json()
+        me = next(f for f in b["fighters"] if f["side"] == "player")
+        assert [m["id"] for m in me["moves"]][:3] == ["eboulement", "poing_de_granit", "rempart_rocheux"]
+        assert c.post(f"/api/game/battles/{b['id']}/turn", json={"move": "nope"}).status_code == 422
+        out = c.post(f"/api/game/battles/{b['id']}/turn", json={"move": "eboulement"}).json()
+        assert out["events"][0]["t"] == "turn" and any(e["t"] == "move" and e["anim"] == "rockfall" for e in out["events"])
+        assert c.get("/api/game/battles").json()["running"] == b["id"]
+    g.pets.choose_starter("marie", "fusette")
+    with g.db.tx() as conn:
+        conn.execute("UPDATE pets SET stage = 2 WHERE user = 'marie'")
+    mid, _ = g.battles.start("marie", 1)
+    with TestClient(api.app) as c:
+        assert c.get(f"/api/game/battles/{mid}").status_code == 404
+        assert c.post(f"/api/game/battles/{mid}/turn", json={"move": "eclair"}).status_code == 404
