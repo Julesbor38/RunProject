@@ -242,12 +242,16 @@ def test_game_api_flow_and_privacy(tmp_path, monkeypatch):
         assert [s["id"] for s in c.get("/api/game/starters").json()["starters"]] == ["galet", "fusette", "foulon"]
         pet = c.post("/api/game/starter", json={"species": "foulon", "name": "Tempo"}).json()
         assert pet["name"] == "Tempo" and pet["type"] == "endurance" and pet["active"] and pet["next_level"]["cost"] == 2
+        assert pet["next_level"]["affordable"] == 0 and pet["next_level"]["affordable_cost"] == 0
         assert c.post("/api/game/starter", json={"species": "foulon"}).status_code == 409  # already adopted
         assert [s["adopted"] for s in c.get("/api/game/starters").json()["starters"]] == [False, False, True]
         r = c.post(f"/api/game/pets/{pet['id']}/levels", json={"count": 1, "request_id": "req-00001"})
         assert r.status_code == 402 and "points insuffisants" in r.json()["detail"]
         give(g, "tester", 100)
+        shown = c.get(f"/api/game/pets/{pet['id']}").json()["next_level"]
+        assert shown["affordable"] == 4 and shown["affordable_cost"] == CFG.levels_cost(1, 5)  # what « Max » will cost
         out = c.post(f"/api/game/pets/{pet['id']}/levels", json={"count": "max", "request_id": "req-00002"}).json()
+        assert out["spent"] == shown["affordable_cost"]
         assert out["pet"]["level"] == 5 and out["pet"]["evolution"]["ready"] and out["wallet"]["points"] == 100 - out["spent"]
         assert c.post(f"/api/game/pets/{pet['id']}/levels", json={"count": "5", "request_id": "req-00003"}).status_code == 422
         out = c.post(f"/api/game/pets/{pet['id']}/evolve", json={"request_id": "evo-00001"}).json()

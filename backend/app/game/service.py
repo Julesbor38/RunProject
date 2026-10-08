@@ -28,6 +28,7 @@ class Game:
         stage = cfg.stages[pet.stage]
         at_cap = pet.level >= stage.max_level
         nxt = cfg.stages[pet.stage + 1] if pet.stage < cfg.final else None
+        affordable = 0 if at_cap else self.pets.levels_affordable(pet, balance)
         out = {
             "id": pet.id, "name": pet.name, "species": sp.id, "form": self.pets.form_name(pet), "type": self.pets.type_of(pet),
             "type_name": cfg.types[self.pets.type_of(pet)], "color": sp.color, "active": pet.active, "origin": pet.origin,
@@ -37,7 +38,8 @@ class Game:
                 "cost": cfg.level_cost(pet.level + 1),
                 "cost_5": cfg.levels_cost(pet.level, min(stage.max_level, pet.level + 5)),
                 "levels_5": min(5, stage.max_level - pet.level),
-                "affordable": self.pets.levels_affordable(pet, balance),
+                "affordable": affordable,  # « Max » : what the points buy now, and its cost
+                "affordable_cost": cfg.levels_cost(pet.level, pet.level + affordable),
             },
             "evolution": None if not nxt else {
                 "stage": nxt.name, "level": stage.max_level, "ready": at_cap, "cost": nxt.evolve_cost,

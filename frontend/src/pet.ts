@@ -40,7 +40,7 @@ interface PetView {
   level: number;
   branch: string | null;
   stats: Stats;
-  next_level: { cost: number; cost_5: number; levels_5: number; affordable: number } | null;
+  next_level: { cost: number; cost_5: number; levels_5: number; affordable: number; affordable_cost?: number } | null;
   evolution: { stage: string; level: number; ready: boolean; cost: number; stats: Stats; form: string | null; branches?: BranchView[] } | null;
 }
 
@@ -199,7 +199,7 @@ export class PetTab {
       return `${wallet}<div class="upgrade-buttons">
         <button type="button" class="primary" data-levels="1" ${disabled(n.cost)}>+1 niveau<span>✦ ${nf(n.cost)}</span></button>
         ${n.levels_5 > 1 ? `<button type="button" class="action" data-levels="${n.levels_5}" ${disabled(n.cost_5)}>+${n.levels_5} niveaux<span>✦ ${nf(n.cost_5)}</span></button>` : ""}
-        ${n.affordable > 1 ? `<button type="button" class="action" data-levels="max" ${this.busy ? "disabled" : ""}>Max : +${n.affordable}</button>` : ""}
+        ${n.affordable > 1 ? `<button type="button" class="action" data-levels="max" ${this.busy ? "disabled" : ""}>Max : +${n.affordable} niveaux${n.affordable_cost !== undefined ? `<span>✦ ${nf(n.affordable_cost)}</span>` : ""}</button>` : ""}
       </div>${n.cost > points ? `<p class="muted small">Il te manque ${nf(n.cost - points)} points : cours, explore, évalue tes sorties !</p>` : ""}`;
     }
     const e = pet.evolution;
