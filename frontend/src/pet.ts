@@ -238,15 +238,24 @@ export class PetTab {
   private async post(url: string, body: object, effect: string) {
     if (this.busy) return;
     this.busy = true;
+    this.box.querySelectorAll<HTMLButtonElement>(".pet-upgrade button").forEach((b) => (b.disabled = true)); // no double tap
+    let ok = false;
+    let error: string | null = null;
     try {
       const r = await apiFetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
       const out = await r.json().catch(() => ({}));
-      if (!r.ok) return this.status(out.detail ?? `erreur ${r.status}`, true);
-      await this.refresh();
+      if (!r.ok) error = out.detail ?? `erreur ${r.status}`;
+      ok = r.ok;
+    } catch (e) {
+      error = (e as Error).message;
+    } finally {
+      this.busy = false; // before redrawing: the new buttons must be usable
+    }
+    await this.refresh(); // also after a refusal: the buttons come back as they should be
+    if (error) this.status(error, true);
+    if (ok) {
       this.box.querySelector(".pet-art")?.classList.add(effect);
       window.dispatchEvent(new CustomEvent("credits:changed")); // the balance in the header
-    } finally {
-      this.busy = false;
     }
   }
 
