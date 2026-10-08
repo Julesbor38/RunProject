@@ -753,6 +753,19 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 - À la demande d'un ami testeur : **générer un itinéraire redevient gratuit** (`ROUTE_CREDITS = False`).
 - 152 tests OK, 1 ignoré.
 
+### 2026-10-08 — Combats en 3 contre 3, chat des combats amicaux
+- Choix validés : 3 contre 3 contre les bots et entre amis ; contre les bots, un sentier d'équipe à part.
+- Moteur : plusieurs combattants par camp (`p1`..`p3`, `e1`..), un coup et une cible par combattant
+  (`play_round`), l'IA vise le plus faible 6 fois sur 10 ; sentier d'équipe : 3 mobs au niveau du sentier, ou le
+  boss et 2 gardes (`team_scale`, `team_guard_scale`), progression à part, mêmes gains et même limite du jour.
+- Combats amicaux : format 1 contre 1 ou 3 contre 3 choisi au défi, équipe choisie par chacun (au défi, à
+  l'acceptation) ; fin aux 50 tours : le camp qui garde la plus grande part de ses PV. **Chat** pendant le combat
+  (les deux joueurs seulement, 200 caractères, un message par seconde ; bulle au-dessus de l'adversaire).
+- Front : bascule « Solo / Équipe de 3 » sur le sentier, sélecteur des 3 familiers, dans l'arène « Coup de X (1/3) »
+  avec « refaire le précédent », cible à toucher ; défi : format et niveaux au choix ; champ « Ajouter un ami »
+  en pleine largeur, bouton dessous.
+- 155 tests OK, 1 ignoré.
+
 ---
 
 ## Bilan des 7 et 8 octobre 2026

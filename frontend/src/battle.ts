@@ -9,6 +9,7 @@
 import { apiFetch } from "./api";
 import { escape } from "./format";
 import { petArt } from "./pet-art";
+import { pickTeam } from "./team-picker";
 
 interface Move {
   id: string;
@@ -55,6 +56,8 @@ interface BattleState {
   friend_played?: boolean;
   seconds_left?: number;
   result?: "won" | "lost" | "draw";
+  team?: boolean;
+  chat?: ChatMessage[];
   level: number;
   kind: "mobs" | "mid_boss" | "boss";
   turn: number;
@@ -68,6 +71,14 @@ interface BattleState {
 
 type Ev = { t: string; [k: string]: any };
 
+interface ChatMessage {
+  id: number;
+  from: string;
+  mine: boolean;
+  text: string;
+  at: string;
+}
+
 interface Level {
   level: number;
   kind: "mobs" | "mid_boss" | "boss";
@@ -78,6 +89,8 @@ interface Level {
 }
 
 interface Trail {
+  team: boolean;
+  team_size: number;
   cleared: number;
   running: number | null;
   daily: { rewarded: number; limit: number };
@@ -97,6 +110,8 @@ export class BattleView {
   private target: string | null = null;
   private playing = false;
   private poll = 0;
+  private team = false; // the team trail (3 against 3)
+  private chatSeen = 0;
 
   constructor(private onClose: () => void) {
     this.overlay = document.createElement("div");
@@ -108,7 +123,7 @@ export class BattleView {
   // --- the trail ---
 
   async renderTrail(box: HTMLElement, header: string, bind: () => void) {
-    const r = await apiFetch("/api/game/battles");
+    const r = await apiFetch(`/api/game/battles${this.team ? "?team=1" : ""}`);
     if (!r.ok) {
       box.innerHTML = `${header}<p class="status error">Combats indisponibles (${r.status}).</p>`;
       return bind();
@@ -116,14 +131,23 @@ export class BattleView {
     const t = (await r.json()) as Trail;
     const left = Math.max(0, t.daily.limit - t.daily.rewarded);
     box.innerHTML = `${header}
+      <div class="trail-mode" role="tablist"><button type="button" role="tab" data-team="0" aria-selected="${!t.team}">Solo</button>
+        <button type="button" role="tab" data-team="1" aria-selected="${t.team}">Équipe de ${t.team_size}</button></div>
       <div class="trail-head"><span><strong>Niveau ${t.cleared + 1}</strong> à conquérir</span>
         <span class="muted small">${left ? `${left} victoire${left > 1 ? "s" : ""} récompensée${left > 1 ? "s" : ""} encore aujourd'hui` : "Plus de points aujourd'hui (la progression continue)"}</span></div>
       ${t.running ? `<button type="button" class="primary resume">Reprendre le combat en cours</button>` : ""}
-      <p class="muted small">Ton familier actif combat seul, face à des mobs seuls ou en groupe. Un boss tous les 5 niveaux, un grand boss
+      <p class="muted small">${t.team ? `Ton équipe de ${t.team_size} familiers (choisis avant chaque combat) affronte ${t.team_size} ennemis, ou un boss et ses
+        2 gardes. Chacun de tes familiers choisit son coup et sa cible. Ce sentier a sa propre progression.` : "Ton familier actif combat seul, face à des mobs seuls ou en groupe."} Un boss tous les 5 niveaux, un grand boss
         tous les 10. Chaque type a ses 2 attaques et sa défense ; les types comptent (▲ Montagne bat ϟ Vitesse, qui bat ◉ Endurance,
         qui bat ▲ Montagne…).</p>
       <ol class="trail">${t.levels.map((l, i) => this.levelNode(l, i)).join("")}</ol>`;
     bind();
+    box.querySelectorAll<HTMLButtonElement>("[data-team]").forEach((b) =>
+      b.addEventListener("click", () => {
+        this.team = b.dataset.team === "1";
+        this.renderTrail(box, header, bind);
+      }),
+    );
     box.querySelector(".resume")?.addEventListener("click", () => this.resume(t.running!));
     box.querySelectorAll<HTMLButtonElement>("[data-level]").forEach((b) => b.addEventListener("click", () => this.start(Number(b.dataset.level))));
   }
@@ -144,8 +168,18 @@ export class BattleView {
 
   // --- the arena ---
 
-  private async start(level: number) {
-    const r = await apiFetch("/api/game/battles", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ level }) });
+  private async start(level: number, pets?: number[]) {
+    if (this.team && !pets) {
+      const chosen = await pickTeam(`Équipe pour le niveau ${level}`);
+      if (!chosen) return;
+      pets = chosen;
+    }
+    this.lastTeam = pets ?? null;
+    const r = await apiFetch("/api/game/battles", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ level, team: this.team, pets: pets ?? [] }),
+    });
     const out = await r.json().catch(() => ({}));
     if (!r.ok) return alert(out.detail ?? `erreur ${r.status}`);
     this.open(out as BattleState);
@@ -155,6 +189,8 @@ export class BattleView {
     const r = await apiFetch(`/api/game/battles/${id}`);
     if (r.ok) this.open((await r.json()) as BattleState);
   }
+
+  private lastTeam: number[] | null = null; // « Niveau suivant » with the same team
 
   /** A friendly battle, live: the arena, kept up to date by polling (my friend's move, the time left). */
   async openPvp(id: number) {
@@ -192,11 +228,43 @@ export class BattleView {
       this.playing = false;
     }
     next.round = rounds.length ? rounds[rounds.length - 1].turn : s.round;
+    if (rounds.length) this.picks = {}; // a new round: everyone chooses again
     this.state = next;
+    this.drawChat(next.chat ?? []);
     this.drawFighters();
     this.drawMoves();
     this.pvpStatus();
     if (next.status === "done") this.showResult();
+  }
+
+  private drawChat(messages: ChatMessage[]) {
+    const log = this.overlay.querySelector<HTMLElement>(".chat-log");
+    if (!log) return;
+    const last = messages.length ? messages[messages.length - 1].id : 0;
+    if (last === this.chatSeen) return;
+    const fresh = messages.filter((m) => m.id > this.chatSeen && !m.mine);
+    this.chatSeen = last;
+    log.innerHTML = messages.slice(-30).map((m) => `<p class="${m.mine ? "mine" : ""}"><strong>${escape(m.mine ? "Moi" : m.from)}</strong> ${escape(m.text)}</p>`).join("");
+    log.scrollTop = log.scrollHeight;
+    const latest = fresh.pop();
+    if (latest) this.float(this.state!.fighters.find((f) => f.side === "enemy" && f.hp > 0)?.id ?? "", `💬 ${latest.text.slice(0, 40)}`, "chat-bubble");
+  }
+
+  private async sendChat(e: Event) {
+    e.preventDefault();
+    const form = e.target as HTMLFormElement;
+    const input = form.elements.namedItem("text") as HTMLInputElement;
+    const text = input.value.trim();
+    if (!text || !this.state?.pvp) return;
+    const r = await apiFetch(`/api/game/pvp/${this.state.id}/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    const out = await r.json().catch(() => ({}));
+    if (!r.ok) return this.log(out.detail ?? `erreur ${r.status}`);
+    input.value = "";
+    this.drawChat(out.chat ?? []);
   }
 
   private pvpStatus() {
@@ -208,6 +276,7 @@ export class BattleView {
 
   private open(s: BattleState) {
     clearTimeout(this.poll);
+    this.picks = {};
     this.state = s;
     this.target = null;
     this.overlay.hidden = false;
@@ -222,8 +291,14 @@ export class BattleView {
         <div class="me"></div>
         <div class="log" aria-live="polite"></div>
         <div class="moves"></div>
+        ${s.pvp ? `<div class="chat"><div class="chat-log" aria-live="polite"></div>
+          <form class="chat-form"><input name="text" maxlength="200" placeholder="Message à ${escape(s.friend ?? "")}" autocomplete="off" />
+          <button type="submit" class="action">Envoyer</button></form></div>` : ""}
         <div class="result" hidden></div>
       </div>`;
+    this.chatSeen = 0;
+    this.overlay.querySelector<HTMLFormElement>(".chat-form")?.addEventListener("submit", (e) => this.sendChat(e));
+    if (s.pvp) this.drawChat(s.chat ?? []);
     this.overlay.querySelector(".flee")!.addEventListener("click", () => this.flee());
     this.drawFighters();
     this.drawMoves();
@@ -247,13 +322,25 @@ export class BattleView {
   }
 
   private sprite(f: Fighter): string {
-    const size = f.side === "player" ? 130 : f.boss === "big" ? 160 : f.boss === "mid" ? 140 : 100;
+    const team = this.state!.fighters.filter((x) => x.side === f.side).length > 1;
+    const size = f.side === "player" ? (team ? 92 : 130) : f.boss === "big" ? (team ? 130 : 160) : f.boss === "mid" ? (team ? 115 : 140) : 100;
     const pct = Math.round((100 * f.hp) / f.max_hp);
     return `<div class="fighter ${f.side} ${f.boss ? `boss-${f.boss}` : ""} ${f.hp <= 0 ? "down" : ""} ${f.angry ? "angry" : ""}" data-id="${f.id}">
       <div class="plate"><span class="fname">${escape(f.name)}</span><span class="ftype t-${f.type}">${TYPE_ICON[f.type]} ${escape(f.type_name)}</span>
         <div class="hp"><div class="hp-fill ${pct < 25 ? "low" : pct < 50 ? "mid" : ""}" style="width:${pct}%"></div></div>
         <span class="hp-num">${nf(f.hp)} / ${nf(f.max_hp)}</span><span class="fx-icons">${f.effects.map((e) => `<i class="st-${e}"></i>`).join("")}</span></div>
       <div class="body">${art(f, size)}<div class="fx-layer"></div></div></div>`;
+  }
+
+  /** My fighters still standing, in order: each chooses a move (and a target), then the turn is sent. */
+  private picks: Record<string, { move: string; target: string | null }> = {};
+
+  private mine(): Fighter[] {
+    return this.state!.fighters.filter((f) => f.side === "player" && f.hp > 0);
+  }
+
+  private chooser(): Fighter | undefined {
+    return this.mine().find((f) => !(f.id in this.picks));
   }
 
   private drawFighters() {
@@ -264,7 +351,15 @@ export class BattleView {
     const box = this.overlay.querySelector(".foes")!;
     box.className = `foes n${foes.length}`;
     box.innerHTML = foes.map((f) => this.sprite(f)).join("");
-    this.overlay.querySelector(".me")!.innerHTML = this.sprite(s.fighters.find((f) => f.side === "player")!);
+    const me = s.fighters.filter((f) => f.side === "player");
+    const meBox = this.overlay.querySelector(".me")!;
+    meBox.className = `me n${me.length}`;
+    meBox.innerHTML = me.map((f) => this.sprite(f)).join("");
+    const current = this.chooser();
+    meBox.querySelectorAll<HTMLElement>(".fighter").forEach((el) => {
+      el.classList.toggle("choosing", me.length > 1 && el.dataset.id === current?.id && s.status === "running");
+      el.classList.toggle("ready", el.dataset.id! in this.picks);
+    });
     this.overlay.querySelector(".turn")!.textContent = s.turn ? `Tour ${s.turn} / ${s.max_turns}` : "";
     box.querySelectorAll<HTMLElement>(".fighter.enemy").forEach((el) => {
       el.classList.toggle("targeted", alive.length > 1 && el.dataset.id === this.target);
@@ -278,33 +373,60 @@ export class BattleView {
 
   private drawMoves() {
     const s = this.state!;
-    const me = s.fighters.find((f) => f.side === "player")!;
     const box = this.overlay.querySelector(".moves")!;
     if (s.status !== "running" || (s.pvp && s.played)) {
       box.innerHTML = s.pvp && s.played && s.status === "running" ? `<p class="waiting">En attente de ${escape(s.friend ?? "")}…</p>` : "";
       return;
     }
+    const me = this.chooser();
+    if (!me) return;
+    const team = s.fighters.filter((f) => f.side === "player").length > 1;
+    const step = this.mine().indexOf(me) + 1;
     const several = s.fighters.filter((f) => f.side === "enemy" && f.hp > 0).length > 1;
-    box.innerHTML = (me.moves ?? [])
+    box.innerHTML = (team ? `<p class="chooser">Coup de <strong>${escape(me.name)}</strong> (${step}/${this.mine().length})
+        ${Object.keys(this.picks).length ? `<button type="button" class="text-btn back-pick">← refaire le précédent</button>` : ""}</p>` : "")
+      + (me.moves ?? [])
       .map((m) => {
         const info = m.kind === "defense" ? "défense" : m.kind === "special" ? "spéciale" : `${m.power}${m.hits > 1 ? ` ×${m.hits}` : ""}${m.target === "all" ? " · zone" : ""}${m.priority ? " · en premier" : ""}`;
         return `<button type="button" class="move k-${m.kind} t-${m.type}" data-move="${m.id}" ${m.cooldown > 0 || this.playing ? "disabled" : ""} title="${escape(m.description)}">
           <span class="mv-icon">${TYPE_ICON[m.type]}</span><span class="mv-name">${escape(m.name)}</span><span class="mv-info">${m.cooldown > 0 ? `prête dans ${m.cooldown} tour${m.cooldown > 1 ? "s" : ""}` : info}</span></button>`;
       })
       .join("") + (several ? `<p class="muted small hint-target">Touche un adversaire pour le viser.</p>` : "");
-    box.querySelectorAll<HTMLButtonElement>("[data-move]").forEach((b) => b.addEventListener("click", () => this.play(b.dataset.move!)));
+    box.querySelectorAll<HTMLButtonElement>("[data-move]").forEach((b) => b.addEventListener("click", () => this.pick(me.id, b.dataset.move!)));
+    box.querySelector(".back-pick")?.addEventListener("click", () => {
+      const last = Object.keys(this.picks).pop();
+      if (last) delete this.picks[last];
+      this.drawFighters();
+      this.drawMoves();
+    });
   }
 
-  private async play(move: string) {
+  private pick(fid: string, move: string) {
+    if (this.playing) return;
+    this.picks[fid] = { move, target: this.target };
+    if (this.chooser()) {
+      this.drawFighters();
+      this.drawMoves();
+      return;
+    }
+    const picks = this.picks;
+    this.picks = {};
+    const body = Object.keys(picks).length === 1 && !this.state!.fighters.some((f) => f.side === "player" && f.id !== fid)
+      ? { move: picks[fid].move, target: picks[fid].target }
+      : { choices: picks };
+    if (this.state!.pvp) this.playPvp(body);
+    else this.play(body);
+  }
+
+  private async play(body: object) {
     if (this.playing || !this.state) return;
-    if (this.state.pvp) return this.playPvp(move);
     this.playing = true;
     this.overlay.querySelectorAll<HTMLButtonElement>(".move").forEach((b) => (b.disabled = true));
     try {
       const r = await apiFetch(`/api/game/battles/${this.state.id}/turn`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ move, target: this.target }),
+        body: JSON.stringify(body),
       });
       const out = await r.json().catch(() => ({}));
       if (!r.ok) {
@@ -317,21 +439,23 @@ export class BattleView {
       if (this.state.status !== "running") this.showResult();
     } finally {
       this.playing = false;
+      this.drawFighters();
       this.drawMoves();
     }
   }
 
-  private async playPvp(move: string) {
+  private async playPvp(body: object) {
     const s = this.state!;
     this.overlay.querySelectorAll<HTMLButtonElement>(".move").forEach((b) => (b.disabled = true));
     const r = await apiFetch(`/api/game/pvp/${s.id}/move`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ move, target: this.target }),
+      body: JSON.stringify(body),
     });
     const out = await r.json().catch(() => ({}));
     if (!r.ok) {
       this.log(out.detail ?? `erreur ${r.status}`);
+      this.drawFighters();
       return this.drawMoves();
     }
     out.rounds = (out.rounds ?? []).filter((x: { turn: number }) => x.turn > (s.round ?? 0));
@@ -491,7 +615,7 @@ export class BattleView {
         <button type="button" class="${won && ev?.first ? "action" : "primary"} back">Retour au sentier</button></div>`;
     if (won) window.dispatchEvent(new CustomEvent("credits:changed"));
     box.querySelector(".back")!.addEventListener("click", () => this.close());
-    box.querySelector(".next")?.addEventListener("click", () => this.start(s.level + 1));
+    box.querySelector(".next")?.addEventListener("click", () => this.start(s.level + 1, this.lastTeam ?? undefined));
   }
 }
 

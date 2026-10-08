@@ -18,6 +18,10 @@ crit_chance = 6
 crit_multiplier = 1.5
 random_spread = 10           # ±% on every blow
 
+# team trail (3 against 3): every enemy at team_scale (a guard of a boss at team_guard_scale on top)
+team_scale = 1.0
+team_guard_scale = 0.75
+
 reward_base = 20
 reward_per_level = 4
 mid_boss_reward = 3

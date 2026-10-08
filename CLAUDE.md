@@ -72,7 +72,12 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   l'identifiant, les familiers et le bilan, **jamais** les sorties, traces, communes ni le solde. Défi (5 min) en
   mode normal ou équilibré (adulte niveau 50 pour les deux) ; chacun choisit son coup, le tour se résout quand les
   deux ont joué ou au bout de 30 s (l'IA joue pour l'absent, 2 tours manqués = défaite) ; pas de points, un bilan ;
-  le front interroge toutes les 6 s (toast « X te défie ») et 1,2 s pendant le combat.
+  le front interroge toutes les 6 s (toast « X te défie ») et 1,2 s pendant le combat ; **chat** pendant le combat
+  (les deux joueurs seulement, 200 caractères, un message par seconde).
+  **3 contre 3** : contre les bots, un **sentier d'équipe** à part (3 ennemis, ou le boss et 2 gardes ; progression
+  `team_cleared`, gains et limite du jour partagés avec le solo) ; entre amis, format 1 contre 1 ou 3 contre 3 au
+  défi ; on choisit ses 3 familiers éclos (`src/team-picker.ts`), chacun choisit son coup et sa cible ; l'IA vise le
+  plus faible le plus souvent. Migration 007.
   Prochaine étape : brancher un vrai paiement (App Store / Stripe).
 - **Points** (anciennement « crédits » ; `app/explore/credits.py`, `src/credits.ts`) : **gains** en place — 1/km couru, +2/km de chemin
   nouveau, 10/km², lieux 1–10, paliers de commune 10–100, 25/badge ; journal par compte (table `credits`, clé unique,
@@ -93,7 +98,7 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   import en arrière-plan, bandeau des nouvelles sorties) ; évaluation de chaque sortie de 1 à 5 sur
   8 critères (sécurité, éclairage, beauté du paysage, plaisir, entretien, abri, tranquillité,
   peu de circulation) + commentaire, en attendant de les reporter sur les tronçons (étape 3).
-- Tests : 152 OK, 1 ignoré.
+- Tests : 155 OK, 1 ignoré.
 
 ## Architecture
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
@@ -170,7 +175,9 @@ Chaque route ne lit et n'écrit que les données du compte connecté (data/users
   GET /api/game/battles/{id} ; POST …/{id}/turn {move, target?} (événements à animer + état) ; POST …/{id}/flee ;
   GET /api/game/friends ; POST /api/game/friends {username} ; POST …/friends/{nom}/accept|decline|block ;
   DELETE …/friends/{nom}[/block] ; GET|POST /api/game/pvp ({friend, mode}) ; POST …/pvp/{id}/accept|decline|move|forfeit ;
-  GET …/pvp/{id}?since=N (tours à animer, qui a joué, secondes restantes)
+  GET …/pvp/{id}?since=N (tours à animer, qui a joué, secondes restantes, chat) ; POST …/pvp/{id}/chat {text} ;
+  équipes : GET /api/game/battles?team=1, POST /api/game/battles {level, team, pets}, tours {choices: {id: {move, target}}},
+  POST /api/game/pvp {…, team, pets}, POST …/accept {pets}
 - PUT /api/ratings/{key} renvoie aussi `points` (gagnés à la première évaluation de la sortie)
 - GET  /api/credits : solde, bonus de bienvenue (`welcome`, `history`, `welcome_cap`), `by_kind`, `new` (gagnés depuis
   la dernière annonce ; POST /api/explore/seen {ids: ["credits"]}), `month` {earned, cap}, derniers mouvements

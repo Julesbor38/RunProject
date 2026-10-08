@@ -503,7 +503,7 @@ def test_trail_rewards_and_daily_limit(game, monkeypatch):
         bid, b = game.battles.start("jules", level)
         reward = 0
         while b.status == "running":
-            b, _, reward = game.battles.turn("jules", bid, "charge_lourde", None)
+            b, _, reward = game.battles.turn("jules", bid, {"p": ("charge_lourde", None)})
         assert b.status == "won"
         return bid, reward
 
@@ -514,7 +514,7 @@ def test_trail_rewards_and_daily_limit(game, monkeypatch):
     monkeypatch.setitem(game.battles.bc.p, "daily_rewarded", 2)
     assert win(2)[1] == 0 and game.battles.cleared("jules") == 2  # over the daily limit: progress, no points
     with pytest.raises(GameError, match="terminé"):
-        game.battles.turn("jules", bid, "charge_lourde", None)
+        game.battles.turn("jules", bid, {"p": ("charge_lourde", None)})
 
 
 def test_battle_api_is_per_user(tmp_path, monkeypatch):
@@ -614,18 +614,18 @@ def test_a_live_battle_resolves_once_both_have_played(tmp_path):
     assert next(f for f in a["fighters"] if f["side"] == "player")["id"] == "p"
     assert next(f for f in b["fighters"] if f["side"] == "player")["id"] == "e1"
     assert [m["id"] for m in next(f for f in b["fighters"] if f["side"] == "player")["moves"]][:3] == ["eclair", "rafale_de_coups", "esquive"]
-    out = g.pvp.move("jules", pid, "eboulement", None)
+    out = g.pvp.move("jules", pid, {"p": ("eboulement", None)})
     assert out["played"] and not out["friend_played"] and out["round"] == 0
     with pytest.raises(GameError, match="connaît pas"):
-        g.pvp.move("ethan", pid, "eboulement", None)  # not one of his moves
-    out = g.pvp.move("ethan", pid, "eclair", None)
+        g.pvp.move("ethan", pid, {"e1": ("eboulement", None)})  # not one of his moves
+    out = g.pvp.move("ethan", pid, {"e1": ("eclair", None)})
     assert out["round"] == 1 and not out["played"] and out["rounds"][0]["events"][0]["t"] == "turn"
     assert g.pvp.view("jules", pid, since=1)["rounds"] == []
     # until the end
     while g.pvp.view("jules", pid)["status"] == "running":
-        g.pvp.move("jules", pid, "poing_de_granit", None)
+        g.pvp.move("jules", pid, {"p": ("poing_de_granit", None)})
         if g.pvp.view("ethan", pid)["status"] == "running":
-            g.pvp.move("ethan", pid, "rafale_de_coups", None)
+            g.pvp.move("ethan", pid, {"e1": ("rafale_de_coups", None)})
     a, b = g.pvp.view("jules", pid), g.pvp.view("ethan", pid)
     assert {a["result"], b["result"]} in ({"won", "lost"}, {"draw"}) and g.pvp.check_replay(pid)
     rec = g.pvp.record("jules", "ethan")
@@ -641,11 +641,11 @@ def test_who_does_not_play_in_time_loses(tmp_path):
         with g.db.tx() as conn:
             conn.execute("UPDATE pvp SET deadline = '2000-01-01T00:00:00+00:00' WHERE id = ?", (pid,))
 
-    g.pvp.move("jules", pid, "eboulement", None)
+    g.pvp.move("jules", pid, {"p": ("eboulement", None)})
     late()
     v = g.pvp.view("jules", pid)  # resolved by whoever asks: the AI played for ethan
     assert v["round"] == 1 and v["status"] == "running"
-    g.pvp.move("jules", pid, "eboulement", None)
+    g.pvp.move("jules", pid, {"p": ("eboulement", None)})
     late()
     v = g.pvp.view("jules", pid)
     assert v["status"] == "done" and v["result"] == "won" and "pas joué à temps" in v["end_reason"]
@@ -666,7 +666,7 @@ def test_balanced_mode_and_privacy_of_battles(tmp_path):
         g.pvp.view("marie", pid)
     assert e.value.status == 404
     with pytest.raises(GameError):
-        g.pvp.move("marie", pid, "charge_lourde", None)
+        g.pvp.move("marie", pid, {"e1": ("charge_lourde", None)})
     g.pvp.forfeit("ethan", pid)
     assert g.pvp.view("jules", pid)["result"] == "won"
 
@@ -687,3 +687,70 @@ def test_friends_api(tmp_path, monkeypatch):
         out = c.get("/api/game/friends").json()
         assert [f["name"] for f in out["friends"]] == ["ethan"] and out["pvp"]["running"] is None
         assert c.post("/api/game/pvp", json={"friend": "ethan"}).status_code == 409  # no familier yet
+
+
+# --- teams of 3, chat ---
+
+
+def test_team_trail_three_against_three(game):
+    pets = [game.pets.choose_starter("jules", sp) for sp in ("galet", "fusette", "foulon")]
+    with game.db.tx() as conn:
+        conn.execute("UPDATE pets SET stage = 4, level = 100 WHERE user = 'jules'")
+    with pytest.raises(GameError, match="3 familiers différents"):
+        game.battles.start("jules", 1, team=True, pet_ids=[pets[0].id, pets[0].id, pets[1].id])
+    assert [len(combat.enemies_for(CFG, BC, n, team=True)) for n in (1, 5, 10)] == [3, 3, 3]
+    boss_team = combat.enemies_for(CFG, BC, 10, team=True)
+    assert boss_team[0].boss == "big" and all(e.name.startswith("Garde") for e in boss_team[1:])
+    bid, b = game.battles.start("jules", 1, team=True, pet_ids=[p.id for p in pets])
+    assert [f.id for f in b.side_of("player")] == ["p1", "p2", "p3"]
+    with pytest.raises(GameError, match="chacun de tes familiers"):
+        game.battles.turn("jules", bid, {"e1": ("eboulement", None)})
+    while b.status == "running":
+        choices = {f.id: (f.moves[0], b.alive("enemy")[-1].id) for f in b.alive("player")}
+        b, events, reward = game.battles.turn("jules", bid, choices)
+    assert b.status == "won" and game.battles.cleared("jules", team=True) == 1 and game.battles.cleared("jules") == 0
+    assert game.battles.check_replay("jules", bid) and reward == combat.reward_for(BC, 1, True)
+    assert game.battles.trail("jules", team=True)["levels"][0]["won"]
+
+
+def test_targets_are_chosen_and_kept(game):
+    b = combat.new_battle(CFG, BC, 12, [fighter("galet", 3, 60)], "s", team=True)
+    target = b.alive("enemy")[2].id
+    ev = combat.play_round(CFG, BC, b, {"p": ("poing_de_granit", target)})
+    mine = next(e for e in ev if e["t"] == "move" and e["actor"] == "p")
+    assert mine["targets"] == [target]
+
+
+def test_friendly_three_against_three_and_chat(tmp_path):
+    g = Game(tmp_path / "game.sqlite", exists=lambda n: n in ("jules", "ethan", "marie"))
+    for user in ("jules", "ethan"):
+        for sp in ("galet", "fusette", "foulon"):
+            g.pets.choose_starter(user, sp)
+    with g.db.tx() as conn:
+        conn.execute("UPDATE pets SET stage = 2, level = 20")
+    g.friends.request("jules", "ethan")
+    g.friends.respond("ethan", "jules", True)
+    jp, ep = [p.id for p in g.pets.all("jules")], [p.id for p in g.pets.all("ethan")]
+    pid = g.pvp.challenge("jules", "ethan", "normal", team=True, pets=jp)
+    assert g.pvp.inbox("ethan")["incoming"][0]["team"]
+    with pytest.raises(GameError, match="3 familiers"):
+        g.pvp.accept("ethan", pid, ep[:2])
+    g.pvp.accept("ethan", pid, ep)
+    v = g.pvp.view("ethan", pid)
+    assert v["team"] and sorted(f["id"] for f in v["fighters"] if f["side"] == "player") == ["e1", "e2", "e3"]
+    with pytest.raises(GameError, match="chacun de tes familiers"):
+        g.pvp.move("jules", pid, {"p1": ("eboulement", None)})
+    g.pvp.move("jules", pid, {"p1": ("eboulement", None), "p2": ("eclair", "e2"), "p3": ("charge_lourde", "e3")})
+    out = g.pvp.move("ethan", pid, {"e1": ("eboulement", None), "e2": ("eclair", "p1"), "e3": ("charge_lourde", "p1")})
+    assert out["round"] == 1 and g.pvp.check_replay(pid)
+    # the chat: the two players only, one message a second, trimmed
+    g.pvp.say("jules", pid, "  bien   joué  ")
+    with pytest.raises(GameError, match="un message par seconde"):
+        g.pvp.say("jules", pid, "encore")
+    g.pvp.say("ethan", pid, "x" * 500)
+    chat = g.pvp.view("ethan", pid)["chat"]
+    assert [(m["from"], m["mine"]) for m in chat] == [("jules", False), ("ethan", True)] and chat[0]["text"] == "bien joué"
+    assert len(chat[1]["text"]) == 200
+    with pytest.raises(GameError) as e:
+        g.pvp.say("marie", pid, "coucou")
+    assert e.value.status == 404

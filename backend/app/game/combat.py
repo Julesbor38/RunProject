@@ -1,4 +1,4 @@
-"""Turn-based combat against bots, resolved by the server only.
+"""Turn-based combat against bots (solo, or a team of 3 against 3), resolved by the server only.
 
 A battle is a plain state (fighters, turn, status) that `play_turn` moves forward: the player's move, then the
 mobs' (chosen by a small AI), in order of priority then speed; damage from attack, defence, type effectiveness,
@@ -184,7 +184,11 @@ class Battle:
 
     @property
     def player(self) -> Fighter:
+        """The first of the player's side (solo: the only one)."""
         return next(f for f in self.fighters if f.side == "player")
+
+    def side_of(self, side: str) -> list[Fighter]:
+        return [f for f in self.fighters if f.side == side]
 
     def alive(self, side: str) -> list[Fighter]:
         return [f for f in self.fighters if f.side == side and f.alive]
@@ -209,11 +213,11 @@ def _moves_of(game: GameConfig, bc: BattleConfig, sp: Species, stage: int, branc
     return [m.id for m in kit] + list(extra), extra
 
 
-def player_fighter(game: GameConfig, bc: BattleConfig, pet, stats: dict, type_: str, form: str) -> Fighter:
+def player_fighter(game: GameConfig, bc: BattleConfig, pet, stats: dict, type_: str, form: str, fid: str = "p", side: str = "player") -> Fighter:
     sp = game.species[pet.species]
     moves, _ = _moves_of(game, bc, sp, pet.stage, pet.branch, type_, specials=True)
     hp = round(stats["hp"] * bc.p["hp_factor"])
-    return Fighter("p", "player", pet.name, sp.id, pet.stage, pet.branch, type_, hp, hp, stats["attack"], stats["defense"], stats["speed"],
+    return Fighter(fid, side, pet.name, sp.id, pet.stage, pet.branch, type_, hp, hp, stats["attack"], stats["defense"], stats["speed"],
                    moves, level=pet.level)
 
 
@@ -248,8 +252,11 @@ def _wild_name(game: GameConfig, species: str, stage: int) -> str:
     return f"{game.species[species].names[stage]} sauvage"
 
 
-def enemies_for(game: GameConfig, bc: BattleConfig, level: int) -> list[Fighter]:
-    """The enemies of a level, always the same for that level."""
+def enemies_for(game: GameConfig, bc: BattleConfig, level: int, team: bool = False) -> list[Fighter]:
+    """The enemies of a level, always the same for that level. `team`: the team trail, three against three
+    (three mobs, or the boss and two guards)."""
+    if team:
+        return _team_enemies(game, bc, level)
     rng = random.Random(f"level:{level}")
     k = _scale(bc, level)
     kind = level_kind(level)
@@ -275,8 +282,29 @@ def enemies_for(game: GameConfig, bc: BattleConfig, level: int) -> list[Fighter]
     return out
 
 
-def new_battle(game: GameConfig, bc: BattleConfig, level: int, player: Fighter, seed: str) -> Battle:
-    return Battle(seed, level, [player] + enemies_for(game, bc, level))
+def _team_enemies(game: GameConfig, bc: BattleConfig, level: int) -> list[Fighter]:
+    rng = random.Random(f"team:{level}")
+    k = _scale(bc, level) * bc.p["team_scale"]
+    stage = _mob_stage(bc, level)
+    out = []
+    if level_kind(level) != "mobs":
+        boss = enemies_for(game, bc, level)[0]
+        out.append(_enemy(game, bc, "e1", boss.species, boss.stage, boss.branch, k, bc.p["boss_scale" if boss.boss == "big" else "mid_boss_scale"],
+                          boss.name, boss=boss.boss, summon=boss.summon))
+        guards = k * bc.p["team_guard_scale"]
+        for i in (2, 3):
+            species = rng.choice(bc.mob_species)
+            out.append(_enemy(game, bc, f"e{i}", species, stage, None, guards, None, f"Garde {_wild_name(game, species, stage).removesuffix(' sauvage')}"))
+        return out
+    for i in (1, 2, 3):
+        species = rng.choice(bc.mob_species)
+        out.append(_enemy(game, bc, f"e{i}", species, stage, None, k, None, _wild_name(game, species, stage)))
+    return out
+
+
+def new_battle(game: GameConfig, bc: BattleConfig, level: int, player: Fighter | list[Fighter], seed: str, team: bool = False) -> Battle:
+    players = player if isinstance(player, list) else [player]
+    return Battle(seed, level, players + enemies_for(game, bc, level, team))
 
 
 def reward_for(bc: BattleConfig, level: int, first: bool) -> int:
@@ -342,7 +370,7 @@ def play_round(game: GameConfig, bc: BattleConfig, b: Battle, choices: dict[str,
                 target = foes[0]
             actions.append((f, move_of(game, bc, f, move_id), target))
         else:
-            actions.append((f, _ai_move(game, bc, b, f, rng), foes[0]))
+            actions.append((f, _ai_move(game, bc, b, f, rng), _ai_target(foes, rng)))
     tiebreak = {id(a[0]): rng.random() for a in actions}
     actions.sort(key=lambda a: (not a[1].priority, -_eff_speed(a[0]), tiebreak[id(a[0])]))
     for actor, move, tgt in actions:
@@ -359,6 +387,13 @@ def play_round(game: GameConfig, bc: BattleConfig, b: Battle, choices: dict[str,
             b.status, b.end_reason = "lost", "à bout de souffle"
             events.append({"t": "end", "result": "lost", "reason": b.end_reason})
     return events
+
+
+def _ai_target(foes: list[Fighter], rng: random.Random) -> Fighter:
+    """The weakest one most of the time (finish it off), anyone otherwise."""
+    if len(foes) > 1 and rng.random() < 0.6:
+        return min(foes, key=lambda f: f.hp / f.max_hp)
+    return rng.choice(foes)
 
 
 def ai_choice(game: GameConfig, bc: BattleConfig, b: Battle, fid: str) -> str:
@@ -503,7 +538,7 @@ def _end_of_round(b: Battle, events: list) -> None:
 def _check_end(b: Battle, events: list) -> None:
     if b.status != "running":
         return
-    if not b.player.alive:
+    if not b.alive("player"):
         b.status, b.end_reason = "lost", "K.O."
         events.append({"t": "end", "result": "lost", "reason": b.end_reason})
     elif not b.alive("enemy"):

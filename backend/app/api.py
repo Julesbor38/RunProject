@@ -829,20 +829,24 @@ def _battle_out(battle_id: int, battle, extra: dict | None = None) -> dict:
 
 
 @app.get("/api/game/battles")
-def game_trail(ws: Workspace = Depends(workspace)) -> dict:
-    """The trail: levels won, the next ones (with their enemies and rewards), the battle in progress, today's rewards."""
-    return game().battles.trail(ws.user)
+def game_trail(team: bool = False, ws: Workspace = Depends(workspace)) -> dict:
+    """The trail (solo, or `team`: 3 against 3): levels won, the next ones (enemies, rewards), the battle in progress,
+    today's rewards."""
+    return game().battles.trail(ws.user, team)
 
 
 class BattleIn(BaseModel):
     level: int = Field(ge=1, le=10000)
+    team: bool = False
+    pets: list[int] = Field(default_factory=list, max_length=3)  # team: the 3 familiers chosen
 
 
 @app.post("/api/game/battles")
 def game_start_battle(body: BattleIn, ws: Workspace = Depends(workspace)) -> dict:
-    """A battle on an open level with the active familier (one at a time: a battle in progress is given up)."""
-    bid, battle = _game_call(game().battles.start, ws.user, body.level)
-    return _battle_out(bid, battle)
+    """A battle on an open level with the active familier, or 3 chosen ones (one battle at a time: a battle in
+    progress is given up)."""
+    bid, battle = _game_call(game().battles.start, ws.user, body.level, body.team, body.pets)
+    return _battle_out(bid, battle, {"team": body.team})
 
 
 @app.get("/api/game/battles/{battle_id}")
@@ -851,15 +855,28 @@ def game_battle(battle_id: int, ws: Workspace = Depends(workspace)) -> dict:
     return _battle_out(battle_id, battle, {"reward": info["reward"]})
 
 
-class TurnIn(BaseModel):
+class ChoiceIn(BaseModel):
     move: str = Field(max_length=64)
     target: str | None = Field(None, max_length=8)
 
 
+class TurnIn(BaseModel):
+    move: str | None = Field(None, max_length=64)  # solo: my move (and target)
+    target: str | None = Field(None, max_length=8)
+    choices: dict[str, ChoiceIn] | None = Field(None, max_length=3)  # a team: a move (and target) per fighter id
+
+    def as_choices(self, solo_id: str) -> dict[str, tuple[str, str | None]]:
+        if self.choices:
+            return {fid: (c.move, c.target) for fid, c in self.choices.items()}
+        if not self.move:
+            raise HTTPException(422, "move, ou choices pour une équipe")
+        return {solo_id: (self.move, self.target)}
+
+
 @app.post("/api/game/battles/{battle_id}/turn")
 def game_turn(battle_id: int, body: TurnIn, ws: Workspace = Depends(workspace)) -> dict:
-    """One turn: my move (and target), the mobs' moves; the events to animate, in order, and the new state."""
-    battle, events, reward = _game_call(game().battles.turn, ws.user, battle_id, body.move, body.target)
+    """One turn: my moves (and targets), the mobs' moves; the events to animate, in order, and the new state."""
+    battle, events, reward = _game_call(game().battles.turn, ws.user, battle_id, body.as_choices("p"))
     return _battle_out(battle_id, battle, {"events": events, "reward": reward, "wallet": game().wallet.balances(ws.user)})
 
 
@@ -924,6 +941,12 @@ def game_unblock(name: str, ws: Workspace = Depends(workspace)) -> dict:
 class ChallengeIn(BaseModel):
     friend: str = Field(min_length=3, max_length=32)
     mode: str = Field("normal", pattern="^(normal|balanced)$")
+    team: bool = False  # 3 against 3
+    pets: list[int] = Field(default_factory=list, max_length=3)
+
+
+class AcceptIn(BaseModel):
+    pets: list[int] = Field(default_factory=list, max_length=3)  # 3 against 3: the 3 familiers I bring
 
 
 @app.get("/api/game/pvp")
@@ -934,13 +957,14 @@ def game_pvp_inbox(ws: Workspace = Depends(workspace)) -> dict:
 
 @app.post("/api/game/pvp")
 def game_challenge(body: ChallengeIn, ws: Workspace = Depends(workspace)) -> dict:
-    """Challenge a friend (valid 5 min): normal (familiers as they are) or balanced (same stage and level)."""
-    return {"id": _game_call(game().pvp.challenge, ws.user, body.friend.strip().lower(), body.mode)}
+    """Challenge a friend (valid 5 min): normal (familiers as they are) or balanced (same stage and level), 1 against
+    1 (my active familier) or 3 against 3 (`team`, the 3 I choose)."""
+    return {"id": _game_call(game().pvp.challenge, ws.user, body.friend.strip().lower(), body.mode, body.team, body.pets)}
 
 
 @app.post("/api/game/pvp/{pvp_id}/accept")
-def game_pvp_accept(pvp_id: int, ws: Workspace = Depends(workspace)) -> dict:
-    _game_call(game().pvp.accept, ws.user, pvp_id)
+def game_pvp_accept(pvp_id: int, body: AcceptIn | None = None, ws: Workspace = Depends(workspace)) -> dict:
+    _game_call(game().pvp.accept, ws.user, pvp_id, body.pets if body else None)
     return game().pvp.view(ws.user, pvp_id)
 
 
@@ -959,8 +983,23 @@ def game_pvp(pvp_id: int, since: int = 0, ws: Workspace = Depends(workspace)) ->
 
 @app.post("/api/game/pvp/{pvp_id}/move")
 def game_pvp_move(pvp_id: int, body: TurnIn, ws: Workspace = Depends(workspace)) -> dict:
-    """My move for this round (resolved as soon as my friend has played, or when the time is up)."""
-    return _game_call(game().pvp.move, ws.user, pvp_id, body.move, body.target)
+    """My moves for this round (resolved as soon as my friend has played, or when the time is up)."""
+    g = game()
+    view = _game_call(g.pvp.view, ws.user, pvp_id)
+    mine = [f["id"] for f in view.get("fighters", []) if f["side"] == "player" and f["hp"] > 0]
+    return _game_call(g.pvp.move, ws.user, pvp_id, body.as_choices(mine[0] if mine else "p"))
+
+
+class ChatIn(BaseModel):
+    text: str = Field(min_length=1, max_length=500)
+
+
+@app.post("/api/game/pvp/{pvp_id}/chat")
+def game_pvp_chat(pvp_id: int, body: ChatIn, ws: Workspace = Depends(workspace)) -> dict:
+    """A message in the battle's chat (the two players only; 200 characters, one a second)."""
+    g = game()
+    _game_call(g.pvp.say, ws.user, pvp_id, body.text)
+    return {"chat": g.pvp.chat(ws.user, pvp_id)}
 
 
 @app.post("/api/game/pvp/{pvp_id}/forfeit")

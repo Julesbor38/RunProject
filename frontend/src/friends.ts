@@ -10,6 +10,7 @@ import { apiFetch } from "./api";
 import type { BattleView } from "./battle";
 import { escape } from "./format";
 import { petArt } from "./pet-art";
+import { pickTeam } from "./team-picker";
 
 interface FriendPet {
   id: number;
@@ -37,6 +38,7 @@ interface Challenge {
   from: string;
   to: string;
   mode: "normal" | "balanced";
+  team: boolean;
   expires: string;
 }
 
@@ -56,6 +58,20 @@ interface FriendsState {
 
 const art = (p: FriendPet, size: number) => petArt({ species: p.species, stage: p.stage.index, branch: p.branch, color: p.color, type: p.type }, size);
 const MODE = { normal: "normal", balanced: "équilibré" };
+const label = (c: Challenge) => `${c.team ? "3 contre 3" : "1 contre 1"}, ${MODE[c.mode]}`;
+
+/** Take up a challenge (in 3 against 3, with the team I choose). */
+async function acceptChallenge(c: Challenge, battle: BattleView): Promise<string | null> {
+  let pets: number[] | undefined;
+  if (c.team) {
+    const chosen = await pickTeam(`Ton équipe contre ${c.from}`);
+    if (!chosen) return "";
+    pets = chosen;
+  }
+  const err = await post(`/api/game/pvp/${c.id}/accept`, { pets: pets ?? [] });
+  if (!err) battle.openPvp(c.id);
+  return err;
+}
 
 async function post(url: string, body?: object, method = "POST"): Promise<string | null> {
   const r = await apiFetch(url, { method, headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
@@ -75,16 +91,18 @@ export class FriendsView {
     const s = (await r.json()) as FriendsState;
     const again = () => this.render(box, header, bind);
     box.innerHTML = `${header}
-      <form class="add-friend"><input name="username" placeholder="Identifiant de ton ami" autocomplete="off" autocapitalize="none" required minlength="3" maxlength="32" />
-        <button type="submit" class="primary">Ajouter</button></form>
+      <form class="add-friend"><label for="add-friend-name">Ajouter un ami</label>
+        <input id="add-friend-name" name="username" placeholder="Son identifiant, par exemple ethan" autocomplete="off" autocapitalize="none"
+          spellcheck="false" required minlength="3" maxlength="32" />
+        <button type="submit" class="primary">Envoyer la demande</button></form>
       <p id="friends-status" class="status" hidden></p>
       ${s.pvp.running ? `<button type="button" class="primary resume-pvp">Reprendre le combat amical en cours</button>` : ""}
       ${s.pvp.incoming.length ? `<h3>Défis reçus</h3><ul class="friend-rows">${s.pvp.incoming
-        .map((c) => `<li><span><strong>${escape(c.from)}</strong> te défie <span class="muted small">(${MODE[c.mode]})</span></span>
+        .map((c) => `<li><span><strong>${escape(c.from)}</strong> te défie <span class="muted small">(${label(c)})</span></span>
           <span><button type="button" class="primary" data-pvp-accept="${c.id}">Combattre</button> <button type="button" class="text-btn" data-pvp-decline="${c.id}">Refuser</button></span></li>`)
         .join("")}</ul>` : ""}
       ${s.pvp.outgoing.length ? `<h3>Défis envoyés</h3><ul class="friend-rows">${s.pvp.outgoing
-        .map((c) => `<li><span>En attente de <strong>${escape(c.to)}</strong> <span class="muted small">(${MODE[c.mode]}, 5 min)</span></span>
+        .map((c) => `<li><span>En attente de <strong>${escape(c.to)}</strong> <span class="muted small">(${label(c)}, 5 min)</span></span>
           <button type="button" class="text-btn" data-pvp-decline="${c.id}">Annuler</button></li>`)
         .join("")}</ul>` : ""}
       ${s.incoming.length ? `<h3>Demandes d'amis</h3><ul class="friend-rows">${s.incoming
@@ -127,15 +145,19 @@ export class FriendsView {
     act("data-block", async (n) => (confirm(`Bloquer ${n} ? Il ne pourra plus te demander en ami.`) ? post(`/api/game/friends/${encodeURIComponent(n)}/block`) : ""));
     act("data-unfriend", async (n) => (confirm(`Retirer ${n} de tes amis ?`) ? post(`/api/game/friends/${encodeURIComponent(n)}`, undefined, "DELETE") : ""));
     act("data-pvp-decline", (id) => post(`/api/game/pvp/${id}/decline`));
-    act("data-pvp-accept", async (id) => {
-      const err = await post(`/api/game/pvp/${id}/accept`);
-      if (!err) this.battle.openPvp(Number(id));
-      return err;
-    });
+    act("data-pvp-accept", (id) => acceptChallenge(s.pvp.incoming.find((c) => c.id === Number(id))!, this.battle));
     box.querySelectorAll<HTMLButtonElement>("[data-challenge]").forEach((b) =>
       b.addEventListener("click", async () => {
-        const mode = b.dataset.mode as "normal" | "balanced";
-        const err = await post("/api/game/pvp", { friend: b.dataset.challenge, mode });
+        const card = b.closest<HTMLElement>(".friend")!;
+        const mode = card.querySelector<HTMLSelectElement>(".pvp-mode")!.value as "normal" | "balanced";
+        const team = card.querySelector<HTMLSelectElement>(".pvp-format")!.value === "3";
+        let pets: number[] = [];
+        if (team) {
+          const chosen = await pickTeam(`Ton équipe contre ${b.dataset.challenge}`);
+          if (!chosen) return;
+          pets = chosen;
+        }
+        const err = await post("/api/game/pvp", { friend: b.dataset.challenge, mode, team, pets });
         if (err) return status(err);
         again();
       }),
@@ -153,8 +175,9 @@ export class FriendsView {
         ${active ? `<span class="small">${escape(active.name)} · ${escape(active.form)} · niv. ${active.level} <span class="type-badge t-${active.type}">${escape(active.type_name)}</span></span>` : `<span class="muted small">Pas encore de familier</span>`}
         <div class="friend-pets">${f.pets.filter((p) => p !== active).map((p) => `<span title="${escape(p.name)} · niv. ${p.level}">${art(p, 34)}</span>`).join("")}</div>
         <div class="friend-actions">
-          <button type="button" class="primary" data-challenge="${escape(f.name)}" data-mode="normal" ${active ? "" : "disabled"}>Défier</button>
-          <button type="button" class="action" data-challenge="${escape(f.name)}" data-mode="balanced" ${active ? "" : "disabled"} title="Même stade et même niveau pour les deux">Défi équilibré</button>
+          <select class="pvp-format" aria-label="Format"><option value="1">1 contre 1</option><option value="3">3 contre 3</option></select>
+          <select class="pvp-mode" aria-label="Niveaux"><option value="normal">Niveaux réels</option><option value="balanced">Équilibré</option></select>
+          <button type="button" class="primary" data-challenge="${escape(f.name)}" ${active ? "" : "disabled"}>Défier</button>
           <button type="button" class="text-btn" data-unfriend="${escape(f.name)}">Retirer</button>
         </div>
       </div></article>`;
@@ -178,14 +201,13 @@ export function watchChallenges(battle: BattleView) {
         const c = inbox.incoming.find((x) => !seen.has(x.id));
         if (c && !battle.isOpen) {
           seen.add(c.id);
-          toast.innerHTML = `<span>⚔ <strong>${escape(c.from)}</strong> te défie en combat amical (${MODE[c.mode]})</span>
+          toast.innerHTML = `<span>⚔ <strong>${escape(c.from)}</strong> te défie en combat amical (${label(c)})</span>
             <span><button type="button" class="primary yes">Combattre</button><button type="button" class="text-btn no">Refuser</button></span>`;
           toast.hidden = false;
           toast.querySelector(".yes")!.addEventListener("click", async () => {
             toast.hidden = true;
-            const err = await post(`/api/game/pvp/${c.id}/accept`);
+            const err = await acceptChallenge(c, battle);
             if (err) alert(err);
-            else battle.openPvp(c.id);
           });
           toast.querySelector(".no")!.addEventListener("click", async () => {
             toast.hidden = true;
