@@ -660,7 +660,7 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 - 108 tests OK, 1 ignoré.
 
 ### 2026-10-08 — Crédits : plafond mensuel et coût des itinéraires
-- À la demande : **5 000 crédits par mois** au plus gagnés en courant (mois de la date de la sortie, ou du jour
+- À la demande : **5 000 crédits par mois** (abaissé à **2 000** le même jour, pour limiter les abus) au plus gagnés en courant (mois de la date de la sortie, ou du jour
   pour un palier / badge : les exports Strava hebdomadaires se lissent sur le mois) ; au-delà, le gain est
   inscrit au journal mais réduit (jusqu'à 0, `capped_from` garde le montant d'origine) : jamais payé plus tard.
 - **Dépense** : générer un itinéraire coûte **1 crédit par km** (`credits.ROUTE_PER_KM`) du premier itinéraire
@@ -703,10 +703,10 @@ Deux journées chargées, détaillées dans le journal ci-dessus :
 
 ## Prochaines tâches
 
-> **Crédits : gains (plafond de 5 000 / mois) et coût des itinéraires (1 / km) en place (2026-10-08).** Suite : la
+> **Crédits : gains (plafond de 2 000 / mois) et coût des itinéraires (1 / km) en place (2026-10-08).** Suite : la
 > collection (tâche 1), plan à faire valider d'abord.
 
-1. **Crédits : gagner en courant, dépenser dans l'app.** **Gains faits**, plafond de 5 000 / mois, itinéraires à
+1. **Crédits : gagner en courant, dépenser dans l'app.** **Gains faits**, plafond de 2 000 / mois, itinéraires à
    1 crédit / km (journal du 2026-10-08) ; reste : la collection (rareté), bâtiments, autres dépenses. Notes d'origine :
    - **Gagner des crédits** :
      - selon les **kilomètres parcourus** (sorties horodatées seulement, mêmes règles que l'Exploration : parties

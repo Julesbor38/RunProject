@@ -22,7 +22,7 @@ POI_KIND_CREDITS = {"peak": 10, "waterfall": 10, "viewpoint": 5, "lake": 5}
 POI_CATEGORY_CREDITS = {"heritage": 3, "nature": 2, "water": 2, "park": 1, "utility": 1}
 WELCOME_CAP = 500
 ROUTE_PER_KM = 1  # cost of a generated route, per km
-MONTHLY_CAP = 5000  # earned by running in a calendar month (spending does not give room back)
+MONTHLY_CAP = 2000  # earned by running in a calendar month (spending does not give room back)
 HISTORY_GRACE = timedelta(days=14)  # an activity of the last two weeks, imported late, still earns in full
 
 
