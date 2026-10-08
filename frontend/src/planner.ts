@@ -363,7 +363,9 @@ export class Planner {
             ? `Le terrain ne permet pas ${this.mode === "loop" ? "de boucle" : "d'itinéraire"} de ${this.distance} km dans la tranche ${rangeText(range)} ici : voici les plus proches.` +
               (fc.features.some((f) => f.properties.ascent_m > range[1]) ? " Pour le moins de dénivelé possible, choisissez « Le plus plat »." : "")
             : null;
-      this.status([note, fc.notice, fc.warning].filter(Boolean).join(" ") || null, false);
+      const cost = fc.credits ? `−${fc.credits.spent} crédit${fc.credits.spent > 1 ? "s" : ""} (solde : ${fc.credits.balance.toLocaleString("fr-FR")}).` : null;
+      if (fc.credits) window.dispatchEvent(new CustomEvent("credits:changed"));
+      this.status([note, fc.notice, fc.warning, cost].filter(Boolean).join(" ") || null, false);
     } catch (e) {
       if (abort.signal.aborted) this.status("Génération annulée.");
       else this.status(`Impossible de générer l'itinéraire : ${(e as Error).message}`, true);

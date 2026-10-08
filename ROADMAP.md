@@ -659,6 +659,18 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
 - Historique réel (jules) : 2 150 km courus, 545 km nouveaux, 52,9 km² -> historique de 5 715, solde de départ 500.
 - 108 tests OK, 1 ignoré.
 
+### 2026-10-08 — Crédits : plafond mensuel et coût des itinéraires
+- À la demande : **5 000 crédits par mois** au plus gagnés en courant (mois de la date de la sortie, ou du jour
+  pour un palier / badge : les exports Strava hebdomadaires se lissent sur le mois) ; au-delà, le gain est
+  inscrit au journal mais réduit (jusqu'à 0, `capped_from` garde le montant d'origine) : jamais payé plus tard.
+- **Dépense** : générer un itinéraire coûte **1 crédit par km** (`credits.ROUTE_PER_KM`) du premier itinéraire
+  proposé, au moins 1 ; vérifié avant le calcul sur la distance demandée (sinon 1,2 × la distance à vol d'oiseau),
+  402 « crédits insuffisants » sinon ; jamais en dessous de 0. Lignes `spend` (négatives) dans le journal.
+- Front : « −N crédits (solde : M) » après la génération, solde de l'en-tête mis à jour ; section Crédits : barre
+  du mois, « Dépensés », derniers mouvements.
+- Plus tard : la collection (autre dépense).
+- 110 tests OK, 1 ignoré.
+
 ---
 
 ## Bilan des 7 et 8 octobre 2026
@@ -691,10 +703,11 @@ Deux journées chargées, détaillées dans le journal ci-dessus :
 
 ## Prochaines tâches
 
-> **Crédits : les gains sont en place (2026-10-08).** Suite : les dépenses (tâche 1), plan à faire valider d'abord.
+> **Crédits : gains (plafond de 5 000 / mois) et coût des itinéraires (1 / km) en place (2026-10-08).** Suite : la
+> collection (tâche 1), plan à faire valider d'abord.
 
-1. **Crédits : gagner en courant, dépenser dans l'app.** **Gains faits** (voir le journal du 2026-10-08) ; reste :
-   dépenses, plafonds anti-abus éventuels (par jour ?), bâtiments, rareté. Notes d'origine :
+1. **Crédits : gagner en courant, dépenser dans l'app.** **Gains faits**, plafond de 5 000 / mois, itinéraires à
+   1 crédit / km (journal du 2026-10-08) ; reste : la collection (rareté), bâtiments, autres dépenses. Notes d'origine :
    - **Gagner des crédits** :
      - selon les **kilomètres parcourus** (sorties horodatées seulement, mêmes règles que l'Exploration : parties
        visibles, ≤ 25 km/h ; peut-être un bonus pour les km nouveaux par rapport aux km déjà connus) ;

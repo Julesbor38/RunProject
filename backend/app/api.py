@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import shutil
 import tempfile
@@ -465,9 +466,28 @@ def routing_status(ws: Workspace = Depends(workspace)) -> dict:
     return ws.routing.status()
 
 
+ROUTE_CREDITS = True  # a generation costs credits.ROUTE_PER_KM per km (off in tests)
+
+
+def _route_estimate_km(req: RouteRequest) -> float:
+    """Length to afford before generating: the distance asked, else 1.2 x as the crow flies."""
+    if req.distance_km:
+        return req.distance_km
+    (lon1, lat1), (lon2, lat2) = req.start, req.end or req.start
+    k = 111_320 * math.cos(math.radians((lat1 + lat2) / 2))
+    return 1.2 * math.hypot((lon2 - lon1) * k, (lat2 - lat1) * 111_320) / 1000
+
+
 @app.post("/api/routes")
 def routes(req: RouteRequest, ws: Workspace = Depends(workspace)) -> dict:
-    """Generate up to 3 loops (or one A-to-B route) matching the preferences."""
+    """Generate up to 3 loops (or one A-to-B route) matching the preferences; costs credits (per km of the
+    first route, checked against the distance asked before calculating)."""
+    store = explorer().store
+    if ROUTE_CREDITS:
+        need = max(1, round(_route_estimate_km(req) * credits.ROUTE_PER_KM))
+        have = credits.balance(store, ws.user)
+        if have < need:
+            raise HTTPException(402, f"crédits insuffisants : {need} nécessaires, solde de {have}. Courez pour en gagner !")
     jobs = ws.jobs
     # setdefault: a cancel that arrived before the request itself still applies.
     job = jobs.setdefault(req.request_id, Job()) if req.request_id else Job()
@@ -493,6 +513,12 @@ def routes(req: RouteRequest, ws: Workspace = Depends(workspace)) -> dict:
     for f in out["features"]:
         f["properties"]["pois"] = places_along(f["geometry"]["coordinates"])
         save_route(ws.dir, f, f"Trail Map {kind} {f['properties']['distance_m'] / 1000:.1f} km".replace(".", ","))
+    if ROUTE_CREDITS and out["features"]:
+        km = out["features"][0]["properties"]["distance_m"] / 1000
+        cost = max(1, round(km * credits.ROUTE_PER_KM))
+        spent = credits.spend(store, ws.user, f"route:{uuid.uuid4().hex}", cost, f"Itinéraire de {km:.1f} km".replace(".", ","),
+                              {"distance_m": round(km * 1000)})
+        out["credits"] = {"spent": spent, "balance": credits.balance(store, ws.user)}
     return out
 
 

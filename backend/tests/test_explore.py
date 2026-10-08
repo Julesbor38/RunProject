@@ -365,3 +365,51 @@ def test_credits_api_is_per_user(tmp_path, monkeypatch):
         assert c.post("/api/explore/seen", json={"ids": ["credits"]}).json() == {"ok": True}
         assert c.get("/api/credits").json()["new"] == 0
     assert credits.summary(store, "marie")["balance"] == 0
+
+
+def test_credits_monthly_cap(tmp_path, g, monkeypatch):
+    from app.explore import credits
+
+    ex = explorer(tmp_path, g)
+    ex.process("jules", tmp_path, lambda s: s, [])  # the credits begin
+    monkeypatch.setattr(credits, "MONTHLY_CAP", 5)
+    now = datetime.now(timezone.utc)
+    acts = [Activity(f"strava:5{i}", "run", "r", now - timedelta(hours=i), track([(i * 2, 0), (i * 2, 10)], start=now - timedelta(hours=i)))
+            for i in range(3)]
+    ex.process("jules", tmp_path, lambda s: s, acts, announce=True)
+    rows = [r for r in ex.store.credits("jules") if r["kind"] == "activity"]
+    assert len(rows) == 3 and sum(r["amount"] for r in rows) == 5  # all recorded, paid up to the cap
+    assert any(r["amount"] == 0 and r["detail"]["capped_from"] > 0 for r in rows)  # never paid later
+    s = credits.summary(ex.store, "jules")
+    assert s["month"] == {"earned": 5, "cap": 5} and s["balance"] == 5
+
+
+def test_a_route_costs_a_credit_per_km(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app import api
+    from app.explore import credits
+    from test_pipeline import make_data
+
+    monkeypatch.setattr(api, "DATA_DIR", make_data(tmp_path))
+    monkeypatch.setattr(api, "ROUTE_CREDITS", True)
+    store = api.explorer().store
+    fake = {"type": "FeatureCollection", "features": [
+        {"type": "Feature", "id": 0, "geometry": {"type": "LineString", "coordinates": [[4.8, 45.7], [4.81, 45.71]]}, "properties": {"distance_m": 2400}}
+    ]}
+    with TestClient(api.app) as c:
+        c.get("/api/activities")
+        monkeypatch.setattr(api._workspaces["tester"].routing, "generate", lambda *x, **k: fake)
+        monkeypatch.setattr(api, "places_along", lambda coords: [])
+        r = c.post("/api/routes", json={"start": [4.8, 45.7], "distance_km": 2})
+        assert r.status_code == 402 and "crédits insuffisants" in r.json()["detail"]
+        credits.sync(store, "tester", [])  # the credits begin
+        store.add_activity("tester", "strava:9", [], [{"poi": "n1", "name": "Pic", "category": "nature", "kind": "peak",
+                                                        "first_date": datetime.now(timezone.utc).isoformat()}])
+        credits.sync(store, "tester", [])
+        assert credits.balance(store, "tester") == 10
+        out = c.post("/api/routes", json={"start": [4.8, 45.7], "distance_km": 2}).json()
+        assert out["credits"] == {"spent": 2, "balance": 8}  # 2.4 km
+        s = c.get("/api/credits").json()
+        assert s["entries"][0]["kind"] == "spend" and s["entries"][0]["amount"] == -2 and s["balance"] == 8
+        assert s["new"] == 10  # the spending is not a gain to announce

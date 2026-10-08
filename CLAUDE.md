@@ -49,8 +49,10 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
 - **Crédits** (`app/explore/credits.py`, `src/credits.ts`) : **gains** en place — 1/km couru, +2/km de chemin
   nouveau, 10/km², lieux 1–10, paliers de commune 10–100, 25/badge ; journal par compte (table `credits`, clé unique,
   jamais payé deux fois) ; l'historique d'avant les crédits ne compte que dans un bonus de bienvenue plafonné à 500 ;
-  solde « ✦ N » dans l'en-tête, section « Crédits » dans Exploration, annonce « +N crédits ». **Suite : les
-  dépenses** (tâche 1 de ROADMAP.md, plan à valider d'abord). Ensuite : notation des tronçons (étape 3).
+  **5 000 / mois** au plus gagnés en courant (mois de la sortie) ; **un itinéraire coûte 1 crédit / km** (vérifié
+  avant le calcul, 402 sinon ; `ROUTE_CREDITS` coupé dans les tests) ; solde « ✦ N » dans l'en-tête, section
+  « Crédits » dans Exploration, annonce « +N crédits ». **Suite : la collection** (tâche 1 de ROADMAP.md, plan à
+  valider d'abord). Ensuite : notation des tronçons (étape 3).
 - **Lieux notables** (`app/pois/`, `src/pois.ts`) : extraits de l'extrait OSM France dans data/pois/pois.sqlite
   (commun à tous), Overpass hors de France, Wikidata (photo créditée) ; fiche + « Passer par ici » (points de
   passage du générateur, 3 max) ; lieux à ~50 m listés sous chaque itinéraire.
@@ -63,7 +65,7 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   import en arrière-plan, bandeau des nouvelles sorties) ; évaluation de chaque sortie de 1 à 5 sur
   8 critères (sécurité, éclairage, beauté du paysage, plaisir, entretien, abri, tranquillité,
   peu de circulation) + commentaire, en attendant de les reporter sur les tronçons (étape 3).
-- Tests : 108 OK, 1 ignoré.
+- Tests : 110 OK, 1 ignoré.
 
 ## Architecture
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
@@ -130,12 +132,14 @@ Chaque route ne lit et n'écrit que les données du compte connecté (data/users
   GET /api/explore/communes/{id} : contour (GeoJSON + bbox) ; GET /api/explore/veil?bbox=&zoom= : voile du
   brouillard (monde moins la superficie découverte, ≤ 2 deg²)
 - GET  /api/credits : solde, bonus de bienvenue (`welcome`, `history`, `welcome_cap`), `by_kind`, `new` (gagnés depuis
-  la dernière annonce ; POST /api/explore/seen {ids: ["credits"]}), derniers gains (`entries`), barème, `running`
+  la dernière annonce ; POST /api/explore/seen {ids: ["credits"]}), `month` {earned, cap}, derniers mouvements
+  (`entries`, dépenses négatives), barème, `running`
 - POST /api/routes accepte `via` : [[lon, lat], …] (3 max), points de passage
 - GET  /api/activities : traces masquées + simplifiées (~700 Ko), cache data/cache/
 - POST /api/reload : relit data/raw
 - GET  /api/routing/status : avancement du pré-téléchargement OSM
 - POST /api/routes : génère des itinéraires (boucle / aller simple, préférences, tranche de D+ ou `flat: true`) ;
+  coûte 1 crédit / km du premier itinéraire (402 si le solde ne couvre pas la distance demandée ; `credits` dans la réponse) ;
   `request_id` optionnel pour suivre / annuler ; `warning` si des tuiles OSM manquent
   Chaque itinéraire reçoit `route_id`, `name`, `gpx_filename` et est gardé dans data/routes/ (300 derniers)
 - GET  /api/routes/{route_id}/gpx : GPX 1.1 (application/gpx+xml, attachment, nom ASCII .gpx)

@@ -86,6 +86,7 @@ export interface RouteCollection {
   elevation: boolean;
   warning?: string; // some OSM tiles could not be downloaded
   notice?: string; // e.g. the points de passage make the route longer than asked
+  credits?: { spent: number; balance: number }; // what the generation cost
 }
 
 export async function fetchActivities(): Promise<ActivityCollection> {

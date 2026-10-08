@@ -2278,3 +2278,24 @@ input[type="range"] {
   color: var(--muted);
   font-size: 13px;
 }
+
+.credits-list .amount.spent {
+  color: var(--muted);
+}
+
+.credits-month {
+  margin-top: 10px;
+}
+
+.credits-month .track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.credits-month .track div {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--ember);
+}

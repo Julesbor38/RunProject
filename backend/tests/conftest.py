@@ -8,6 +8,7 @@ def no_osm_prefetch(monkeypatch):
     """The API must never reach Overpass during tests."""
     monkeypatch.setattr(api, "PREFETCH_OSM", False)
     monkeypatch.setattr(api, "EXPLORE_AUTO", False)
+    monkeypatch.setattr(api, "ROUTE_CREDITS", False)  # free routes, except in the credits tests
 
 
 @pytest.fixture(autouse=True)
