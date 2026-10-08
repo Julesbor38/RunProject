@@ -35,6 +35,7 @@ interface PetView {
   type_name: string;
   color: string;
   active: boolean;
+  origin: string;
   stage: { index: number; id: string; name: string; max_level: number; final: boolean };
   level: number;
   branch: string | null;
@@ -150,7 +151,7 @@ export class PetTab {
     if (!pet) return;
     const st = pet.stage;
     const levelPct = Math.round((100 * pet.level) / st.max_level);
-    const others = this.starters.filter((x) => !x.adopted);
+    const others = this.starters.filter((x) => !x.adopted && !s.pets.some((p) => p.origin === "starter" && p.species === x.id));
     this.box.innerHTML = `
       ${s.pets.length > 1 ? `<div class="pet-switch" role="tablist">${s.pets
         .map((p) => `<button type="button" role="tab" data-id="${p.id}" aria-selected="${p.id === pet.id}">${petArt(art(p), 46)}
