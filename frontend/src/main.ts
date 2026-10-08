@@ -113,6 +113,60 @@ document.getElementById("panel-toggle")!.addEventListener("click", () => setPane
 window.addEventListener("resize", () => setPanel(!panel.classList.contains("closed")));
 setPanel(true);
 
+// --- phone: swipe the bottom sheet down to fold it ---
+// From the header, or from the content once it is scrolled to its top (otherwise the swipe scrolls it).
+
+let drag: { y0: number; t0: number; dy: number; target: HTMLElement; active: boolean } | null = null;
+
+/** Whether something between the touched element and the panel is scrolled down (the swipe is a scroll then). */
+function scrolledAbove(el: HTMLElement): boolean {
+  for (let e: HTMLElement | null = el; e && e !== panel; e = e.parentElement) if (e.scrollTop > 0) return true;
+  return false;
+}
+
+panel.addEventListener(
+  "touchstart",
+  (e) => {
+    drag = null;
+    const target = e.target as HTMLElement;
+    if (e.touches.length !== 1 || window.matchMedia("(min-width: 701px)").matches) return;
+    if (target.closest("input, select, textarea")) return; // sliders drag sideways, fields keep their gestures
+    drag = { y0: e.touches[0].clientY, t0: e.timeStamp, dy: 0, target, active: false };
+  },
+  { passive: true },
+);
+panel.addEventListener(
+  "touchmove",
+  (e) => {
+    if (!drag) return;
+    const dy = e.touches[0].clientY - drag.y0;
+    if (!drag.active) {
+      if (Math.abs(dy) < 8) return;
+      if (dy < 0 || scrolledAbove(drag.target)) {
+        drag = null;
+        return;
+      }
+      drag.active = true;
+      panel.style.transition = "none";
+    }
+    e.preventDefault(); // the sheet follows the finger, the content does not scroll
+    drag.dy = Math.max(0, dy);
+    panel.style.transform = `translateY(${drag.dy}px)`;
+  },
+  { passive: false },
+);
+function endDrag(e: TouchEvent) {
+  const d = drag;
+  drag = null;
+  if (!d?.active) return;
+  panel.style.transition = "";
+  panel.style.transform = "";
+  const fast = d.dy > 30 && d.dy / Math.max(1, e.timeStamp - d.t0) > 0.5; // a flick, px/ms
+  if (fast || d.dy > Math.min(120, panel.offsetHeight * 0.25)) setPanel(false);
+}
+panel.addEventListener("touchend", endDrag);
+panel.addEventListener("touchcancel", endDrag);
+
 // --- background OSM download progress ---
 
 async function pollOsmStatus() {
