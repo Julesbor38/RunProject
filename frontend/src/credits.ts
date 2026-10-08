@@ -89,7 +89,7 @@ export class Credits {
         <li><strong>${nf(s.rates.rating)}</strong> par sortie évaluée (10 par jour au plus)</li>
         <li>Au plus <strong>${nf(s.month.cap)}</strong> par mois gagnés en courant (selon la date des sorties).</li>
         <li>Vos sorties d'avant les points comptent dans un bonus de bienvenue (${nf(s.welcome_cap)} au plus).</li>
-      </ul><p class="muted small">Les dépenser : faire progresser votre familier (onglet Familier), générer un itinéraire (<strong>${nf(s.rates.route_km)}</strong> point par km).</p></details>
+      </ul><p class="muted small">Les dépenser : faire progresser vos familiers, la boutique (onglet Familier). Générer un itinéraire est gratuit.</p></details>
       <h3>Derniers mouvements</h3>
       <ul class="credits-list">${
         s.entries.length

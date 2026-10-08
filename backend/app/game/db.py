@@ -61,6 +61,6 @@ class GameDB:
 
 
 def _statements(script: str) -> list[str]:
-    """The statements of a migration file (no ';' inside strings in our migrations)."""
-    lines = [l for l in script.splitlines() if not l.strip().startswith("--")]
+    """The statements of a migration file, without their comments (our migrations have no ';' nor '--' in strings)."""
+    lines = [l.split("--", 1)[0] for l in script.splitlines()]
     return [s.strip() for s in "\n".join(lines).split(";") if s.strip()]

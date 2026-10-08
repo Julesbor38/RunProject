@@ -66,7 +66,14 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   (graine enregistrée, rejouable) ; kit par type (2 attaques + 1 défense, une animation chacune : Éboulement,
   Racines…) + capacités spéciales ; sentier de niveaux (mobs seuls ou en groupe, boss tous les 5, grand boss tous
   les 10 avec rage et renforts) ; victoire : points (première fois 20 + 4 × niveau, × 3 / × 5 boss, rejouer 25 %,
-  10 par jour). Prochaine étape : brancher un vrai paiement (App Store / Stripe) ; équipes de familiers peut-être.
+  10 par jour).
+  **Amis et combats amicaux en direct** (`app/game/friends.py`, `pvp.py`, `src/friends.ts`, sous-onglet « Amis ») :
+  demande par identifiant, acceptée ou refusée, retrait, blocage (sans dire qui a bloqué) ; un ami ne voit que
+  l'identifiant, les familiers et le bilan, **jamais** les sorties, traces, communes ni le solde. Défi (5 min) en
+  mode normal ou équilibré (adulte niveau 50 pour les deux) ; chacun choisit son coup, le tour se résout quand les
+  deux ont joué ou au bout de 30 s (l'IA joue pour l'absent, 2 tours manqués = défaite) ; pas de points, un bilan ;
+  le front interroge toutes les 6 s (toast « X te défie ») et 1,2 s pendant le combat.
+  Prochaine étape : brancher un vrai paiement (App Store / Stripe).
 - **Points** (anciennement « crédits » ; `app/explore/credits.py`, `src/credits.ts`) : **gains** en place — 1/km couru, +2/km de chemin
   nouveau, 10/km², lieux 1–10, paliers de commune 10–100, 25/badge ; journal par compte (table `credits`, clé unique,
   jamais payé deux fois) ; l'historique d'avant les crédits ne compte que dans un bonus de bienvenue plafonné à 500 ;
@@ -86,7 +93,7 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   import en arrière-plan, bandeau des nouvelles sorties) ; évaluation de chaque sortie de 1 à 5 sur
   8 critères (sécurité, éclairage, beauté du paysage, plaisir, entretien, abri, tranquillité,
   peu de circulation) + commentaire, en attendant de les reporter sur les tronçons (étape 3).
-- Tests : 146 OK, 1 ignoré.
+- Tests : 152 OK, 1 ignoré.
 
 ## Architecture
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
@@ -160,7 +167,10 @@ Chaque route ne lit et n'écrit que les données du compte connecté (data/users
   GET /api/game/shop ; POST /api/game/shop/buy {item, currency: points|gems, request_id} ;
   POST /api/game/gems/buy {pack, request_id, receipt?} (503 tant que le paiement n'est pas branché) ;
   GET /api/game/battles (sentier, combat en cours, gains du jour) ; POST /api/game/battles {level} ;
-  GET /api/game/battles/{id} ; POST …/{id}/turn {move, target?} (événements à animer + état) ; POST …/{id}/flee
+  GET /api/game/battles/{id} ; POST …/{id}/turn {move, target?} (événements à animer + état) ; POST …/{id}/flee ;
+  GET /api/game/friends ; POST /api/game/friends {username} ; POST …/friends/{nom}/accept|decline|block ;
+  DELETE …/friends/{nom}[/block] ; GET|POST /api/game/pvp ({friend, mode}) ; POST …/pvp/{id}/accept|decline|move|forfeit ;
+  GET …/pvp/{id}?since=N (tours à animer, qui a joué, secondes restantes)
 - PUT /api/ratings/{key} renvoie aussi `points` (gagnés à la première évaluation de la sortie)
 - GET  /api/credits : solde, bonus de bienvenue (`welcome`, `history`, `welcome_cap`), `by_kind`, `new` (gagnés depuis
   la dernière annonce ; POST /api/explore/seen {ids: ["credits"]}), `month` {earned, cap}, derniers mouvements
@@ -170,7 +180,7 @@ Chaque route ne lit et n'écrit que les données du compte connecté (data/users
 - POST /api/reload : relit data/raw
 - GET  /api/routing/status : avancement du pré-téléchargement OSM
 - POST /api/routes : génère des itinéraires (boucle / aller simple, préférences, tranche de D+ ou `flat: true`) ;
-  coûte 1 crédit / km du premier itinéraire (402 si le solde ne couvre pas la distance demandée ; `credits` dans la réponse) ;
+  gratuit (le coût en points, `ROUTE_CREDITS`, est coupé) ;
   `request_id` optionnel pour suivre / annuler ; `warning` si des tuiles OSM manquent
   Chaque itinéraire reçoit `route_id`, `name`, `gpx_filename` et est gardé dans data/routes/ (300 derniers)
 - GET  /api/routes/{route_id}/gpx : GPX 1.1 (application/gpx+xml, attachment, nom ASCII .gpx)

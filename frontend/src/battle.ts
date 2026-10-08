@@ -3,6 +3,8 @@
  * every 10), then a full-screen arena where each turn I pick a move (and a target against a group). The
  * server resolves the turn; this plays its events back: the move's own animation (one per attack and
  * defence, in the style of its type), damage numbers, dodges, heals, K.O., a boss's rage and reinforcements.
+ * Friendly battles, live (`openPvp`): the same arena; both players choose, the round is played back once both
+ * have (or when the time is up), the screen polls for my friend's move.
  */
 import { apiFetch } from "./api";
 import { escape } from "./format";
@@ -44,11 +46,20 @@ interface Fighter {
 
 interface BattleState {
   id: number;
+  pvp?: boolean;
+  friend?: string;
+  mode?: string;
+  round?: number;
+  rounds?: { turn: number; events: Ev[] }[];
+  played?: boolean;
+  friend_played?: boolean;
+  seconds_left?: number;
+  result?: "won" | "lost" | "draw";
   level: number;
   kind: "mobs" | "mid_boss" | "boss";
   turn: number;
   max_turns: number;
-  status: "running" | "won" | "lost";
+  status: "running" | "won" | "lost" | "done" | "invited" | "declined" | "cancelled" | "expired";
   end_reason: string;
   fighters: Fighter[];
   events?: Ev[];
@@ -85,6 +96,7 @@ export class BattleView {
   private state: BattleState | null = null;
   private target: string | null = null;
   private playing = false;
+  private poll = 0;
 
   constructor(private onClose: () => void) {
     this.overlay = document.createElement("div");
@@ -144,15 +156,67 @@ export class BattleView {
     if (r.ok) this.open((await r.json()) as BattleState);
   }
 
+  /** A friendly battle, live: the arena, kept up to date by polling (my friend's move, the time left). */
+  async openPvp(id: number) {
+    if (this.state?.pvp && this.state.id === id) return;
+    const r = await apiFetch(`/api/game/pvp/${id}`);
+    if (!r.ok) return;
+    const s = (await r.json()) as BattleState;
+    s.round = s.rounds?.length ? s.rounds[s.rounds.length - 1].turn : s.round ?? 0;
+    this.open(s);
+    this.pvpTick();
+  }
+
+  get isOpen(): boolean {
+    return this.state !== null;
+  }
+
+  private async pvpTick() {
+    clearTimeout(this.poll);
+    const s = this.state;
+    if (!s?.pvp || this.overlay.hidden) return;
+    if (!this.playing) {
+      const r = await apiFetch(`/api/game/pvp/${s.id}?since=${s.round ?? 0}`).catch(() => null);
+      if (r?.ok) await this.pvpUpdate((await r.json()) as BattleState);
+    }
+    if (this.state?.pvp && this.state.status === "running") this.poll = window.setTimeout(() => this.pvpTick(), 1200);
+  }
+
+  /** New rounds to play back, then the state as the server has it. */
+  private async pvpUpdate(next: BattleState) {
+    const s = this.state!;
+    const rounds = next.rounds ?? [];
+    if (rounds.length) {
+      this.playing = true;
+      for (const r of rounds) await this.animate(r.events);
+      this.playing = false;
+    }
+    next.round = rounds.length ? rounds[rounds.length - 1].turn : s.round;
+    this.state = next;
+    this.drawFighters();
+    this.drawMoves();
+    this.pvpStatus();
+    if (next.status === "done") this.showResult();
+  }
+
+  private pvpStatus() {
+    const s = this.state!;
+    if (!s.pvp || s.status !== "running") return;
+    const left = s.seconds_left ?? 0;
+    this.log(s.played ? `En attente de ${s.friend}… (${left} s)` : `${s.friend_played ? `${s.friend} a choisi. ` : ""}À toi : choisis ton attaque (${left} s)`);
+  }
+
   private open(s: BattleState) {
+    clearTimeout(this.poll);
     this.state = s;
     this.target = null;
     this.overlay.hidden = false;
     document.body.classList.add("in-battle");
     this.overlay.innerHTML = `
       <div class="arena t-${s.fighters.find((f) => f.side === "player")!.type}">
-        <header class="arena-head"><strong>Niveau ${s.level}</strong>${KIND_LABEL[s.kind] ? ` <span class="boss-tag ${s.kind}">${KIND_LABEL[s.kind]}</span>` : ""}
-          <span class="turn muted small"></span><button type="button" class="text-btn flee">Fuir</button></header>
+        <header class="arena-head">${s.pvp ? `<strong>Contre ${escape(s.friend ?? "")}</strong> <span class="boss-tag mid_boss">Amical${s.mode === "balanced" ? " · équilibré" : ""}</span>`
+          : `<strong>Niveau ${s.level}</strong>${KIND_LABEL[s.kind] ? ` <span class="boss-tag ${s.kind}">${KIND_LABEL[s.kind]}</span>` : ""}`}
+          <span class="turn muted small"></span><button type="button" class="text-btn flee">${s.pvp ? "Abandonner" : "Fuir"}</button></header>
         <div class="foes"></div>
         <div class="banner" hidden></div>
         <div class="me"></div>
@@ -166,6 +230,7 @@ export class BattleView {
   }
 
   private close() {
+    clearTimeout(this.poll);
     this.overlay.hidden = true;
     this.overlay.innerHTML = "";
     document.body.classList.remove("in-battle");
@@ -175,8 +240,9 @@ export class BattleView {
 
   private async flee() {
     if (this.playing) return;
-    if (this.state?.status === "running" && !confirm("Fuir ce combat ? Il sera perdu.")) return;
-    if (this.state?.status === "running") await apiFetch(`/api/game/battles/${this.state.id}/flee`, { method: "POST" });
+    const s = this.state;
+    if (s?.status === "running" && !confirm(s.pvp ? `Abandonner ? ${s.friend} gagne le combat.` : "Fuir ce combat ? Il sera perdu.")) return;
+    if (s?.status === "running") await apiFetch(s.pvp ? `/api/game/pvp/${s.id}/forfeit` : `/api/game/battles/${s.id}/flee`, { method: "POST" });
     this.close();
   }
 
@@ -199,7 +265,7 @@ export class BattleView {
     box.className = `foes n${foes.length}`;
     box.innerHTML = foes.map((f) => this.sprite(f)).join("");
     this.overlay.querySelector(".me")!.innerHTML = this.sprite(s.fighters.find((f) => f.side === "player")!);
-    this.overlay.querySelector(".turn")!.textContent = `Tour ${s.turn} / ${s.max_turns}`;
+    this.overlay.querySelector(".turn")!.textContent = s.turn ? `Tour ${s.turn} / ${s.max_turns}` : "";
     box.querySelectorAll<HTMLElement>(".fighter.enemy").forEach((el) => {
       el.classList.toggle("targeted", alive.length > 1 && el.dataset.id === this.target);
       el.addEventListener("click", () => {
@@ -214,8 +280,8 @@ export class BattleView {
     const s = this.state!;
     const me = s.fighters.find((f) => f.side === "player")!;
     const box = this.overlay.querySelector(".moves")!;
-    if (s.status !== "running") {
-      box.innerHTML = "";
+    if (s.status !== "running" || (s.pvp && s.played)) {
+      box.innerHTML = s.pvp && s.played && s.status === "running" ? `<p class="waiting">En attente de ${escape(s.friend ?? "")}…</p>` : "";
       return;
     }
     const several = s.fighters.filter((f) => f.side === "enemy" && f.hp > 0).length > 1;
@@ -231,6 +297,7 @@ export class BattleView {
 
   private async play(move: string) {
     if (this.playing || !this.state) return;
+    if (this.state.pvp) return this.playPvp(move);
     this.playing = true;
     this.overlay.querySelectorAll<HTMLButtonElement>(".move").forEach((b) => (b.disabled = true));
     try {
@@ -252,6 +319,24 @@ export class BattleView {
       this.playing = false;
       this.drawMoves();
     }
+  }
+
+  private async playPvp(move: string) {
+    const s = this.state!;
+    this.overlay.querySelectorAll<HTMLButtonElement>(".move").forEach((b) => (b.disabled = true));
+    const r = await apiFetch(`/api/game/pvp/${s.id}/move`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ move, target: this.target }),
+    });
+    const out = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      this.log(out.detail ?? `erreur ${r.status}`);
+      return this.drawMoves();
+    }
+    out.rounds = (out.rounds ?? []).filter((x: { turn: number }) => x.turn > (s.round ?? 0));
+    await this.pvpUpdate(out as BattleState);
+    this.pvpTick();
   }
 
   // --- playing a turn back ---
@@ -384,6 +469,17 @@ export class BattleView {
   private showResult() {
     const s = this.state!;
     const box = this.overlay.querySelector<HTMLElement>(".result")!;
+    if (s.pvp) {
+      clearTimeout(this.poll);
+      box.hidden = false;
+      box.className = `result ${s.result === "won" ? "won" : "lost"}`;
+      box.innerHTML = `<h2>${s.result === "won" ? "Victoire !" : s.result === "draw" ? "Égalité" : "Défaite"}</h2>
+        <p>${s.end_reason === "abandon" ? (s.result === "won" ? `${escape(s.friend ?? "")} a abandonné.` : "Tu as abandonné.") : escape(s.end_reason)}</p>
+        <p class="muted small">Combat amical : pas de points, le bilan est mis à jour.</p>
+        <div class="result-buttons"><button type="button" class="primary back">Retour</button></div>`;
+      box.querySelector(".back")!.addEventListener("click", () => this.close());
+      return;
+    }
     const won = s.status === "won";
     const ev = s.events?.find((e) => e.t === "reward");
     box.hidden = false;

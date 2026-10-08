@@ -545,3 +545,145 @@ def test_battle_api_is_per_user(tmp_path, monkeypatch):
     with TestClient(api.app) as c:
         assert c.get(f"/api/game/battles/{mid}").status_code == 404
         assert c.post(f"/api/game/battles/{mid}/turn", json={"move": "eclair"}).status_code == 404
+
+
+# --- friends and friendly battles ---
+
+
+def friends_game(tmp_path, *names):
+    g = Game(tmp_path / "game.sqlite", exists=lambda n: n in names)
+    for n in names:
+        pet = g.pets.choose_starter(n, {"jules": "galet", "ethan": "fusette"}.get(n, "foulon"))
+        with g.db.tx() as conn:
+            conn.execute("UPDATE pets SET stage = 2, level = 20 WHERE id = ?", (pet.id,))
+    return g
+
+
+def test_friend_requests_accept_decline_block(tmp_path):
+    g = friends_game(tmp_path, "jules", "ethan", "marie")
+    f = g.friends
+    with pytest.raises(GameError, match="aucun compte"):
+        f.request("jules", "nobody")
+    with pytest.raises(GameError, match="toi-même"):
+        f.request("jules", "jules")
+    assert f.request("jules", "Ethan ") == "pending" and not f.are_friends("jules", "ethan")
+    assert f.lists("ethan")["incoming"] == ["jules"] and f.lists("jules")["outgoing"] == ["ethan"]
+    with pytest.raises(GameError, match="déjà envoyée"):
+        f.request("jules", "ethan")
+    f.respond("ethan", "jules", True)
+    assert f.are_friends("jules", "ethan") and f.lists("jules")["friends"] == ["ethan"]
+    # asking someone who already asked me: friends at once
+    f.request("marie", "jules")
+    assert f.request("jules", "marie") == "accepted"
+    f.remove("jules", "marie")
+    assert not f.are_friends("jules", "marie")
+    # a block: no more requests, and it does not say who blocked whom
+    f.block("marie", "jules")
+    with pytest.raises(GameError, match="demande impossible"):
+        f.request("jules", "marie")
+    assert f.lists("marie")["blocked"] == ["jules"] and f.lists("jules")["blocked"] == []
+    f.unblock("marie", "jules")
+    assert f.request("jules", "marie") == "pending"
+
+
+def test_a_friend_sees_familiers_but_no_running_data(tmp_path):
+    g = friends_game(tmp_path, "jules", "ethan")
+    view = g.friend_json("jules", "ethan")
+    assert set(view) == {"name", "record", "pets"} and view["pets"][0]["species"] == "fusette"
+    assert not {"wallet", "points", "activities", "communes"} & set(view["pets"][0])
+
+
+def live(g, mode="normal"):
+    g.friends.request("jules", "ethan")
+    g.friends.respond("ethan", "jules", True)
+    pid = g.pvp.challenge("jules", "ethan", mode)
+    assert g.pvp.inbox("ethan")["incoming"][0]["id"] == pid
+    g.pvp.accept("ethan", pid)
+    return pid
+
+
+def test_a_live_battle_resolves_once_both_have_played(tmp_path):
+    from app.game import pvp
+
+    g = friends_game(tmp_path, "jules", "ethan")
+    with pytest.raises(GameError, match="pas \\(encore\\) ton ami"):
+        g.pvp.challenge("jules", "ethan", "normal")
+    pid = live(g)
+    a, b = g.pvp.view("jules", pid), g.pvp.view("ethan", pid)
+    # each sees the battle from their own side, with their own moves
+    assert next(f for f in a["fighters"] if f["side"] == "player")["id"] == "p"
+    assert next(f for f in b["fighters"] if f["side"] == "player")["id"] == "e1"
+    assert [m["id"] for m in next(f for f in b["fighters"] if f["side"] == "player")["moves"]][:3] == ["eclair", "rafale_de_coups", "esquive"]
+    out = g.pvp.move("jules", pid, "eboulement", None)
+    assert out["played"] and not out["friend_played"] and out["round"] == 0
+    with pytest.raises(GameError, match="connaît pas"):
+        g.pvp.move("ethan", pid, "eboulement", None)  # not one of his moves
+    out = g.pvp.move("ethan", pid, "eclair", None)
+    assert out["round"] == 1 and not out["played"] and out["rounds"][0]["events"][0]["t"] == "turn"
+    assert g.pvp.view("jules", pid, since=1)["rounds"] == []
+    # until the end
+    while g.pvp.view("jules", pid)["status"] == "running":
+        g.pvp.move("jules", pid, "poing_de_granit", None)
+        if g.pvp.view("ethan", pid)["status"] == "running":
+            g.pvp.move("ethan", pid, "rafale_de_coups", None)
+    a, b = g.pvp.view("jules", pid), g.pvp.view("ethan", pid)
+    assert {a["result"], b["result"]} in ({"won", "lost"}, {"draw"}) and g.pvp.check_replay(pid)
+    rec = g.pvp.record("jules", "ethan")
+    assert rec["wins"] + rec["losses"] + rec["draws"] == 1 and g.wallet.balance("jules") == 0  # no points
+    assert pvp.MAX_MISSES == 2
+
+
+def test_who_does_not_play_in_time_loses(tmp_path):
+    g = friends_game(tmp_path, "jules", "ethan")
+    pid = live(g)
+
+    def late():
+        with g.db.tx() as conn:
+            conn.execute("UPDATE pvp SET deadline = '2000-01-01T00:00:00+00:00' WHERE id = ?", (pid,))
+
+    g.pvp.move("jules", pid, "eboulement", None)
+    late()
+    v = g.pvp.view("jules", pid)  # resolved by whoever asks: the AI played for ethan
+    assert v["round"] == 1 and v["status"] == "running"
+    g.pvp.move("jules", pid, "eboulement", None)
+    late()
+    v = g.pvp.view("jules", pid)
+    assert v["status"] == "done" and v["result"] == "won" and "pas joué à temps" in v["end_reason"]
+
+
+def test_balanced_mode_and_privacy_of_battles(tmp_path):
+    g = friends_game(tmp_path, "jules", "ethan", "marie")
+    with g.db.tx() as conn:
+        conn.execute("UPDATE pets SET stage = 4, level = 100, branch = 'eclairon' WHERE user = 'ethan'")
+    pid = live(g, "balanced")
+    fighters = {f["id"]: f for f in g.pvp.view("jules", pid)["fighters"]}
+    galet, fusette = CFG.species["galet"], CFG.species["fusette"]
+    from app.game.pets import stats
+
+    assert fighters["p"]["max_hp"] == round(stats(CFG, galet, 3, 50)["hp"] * BC.p["hp_factor"])
+    assert fighters["e1"]["max_hp"] == round(stats(CFG, fusette, 3, 50)["hp"] * BC.p["hp_factor"])
+    with pytest.raises(GameError) as e:
+        g.pvp.view("marie", pid)
+    assert e.value.status == 404
+    with pytest.raises(GameError):
+        g.pvp.move("marie", pid, "charge_lourde", None)
+    g.pvp.forfeit("ethan", pid)
+    assert g.pvp.view("jules", pid)["result"] == "won"
+
+
+def test_friends_api(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from app import api, auth
+    from test_pipeline import make_data
+
+    monkeypatch.setattr(api, "DATA_DIR", make_data(tmp_path))
+    monkeypatch.setattr(auth, "users", lambda data_dir: {"tester": {}, "ethan": {}})
+    g = api.game()
+    with TestClient(api.app) as c:
+        assert c.post("/api/game/friends", json={"username": "nobody"}).status_code == 404
+        assert c.post("/api/game/friends", json={"username": "ethan"}).json() == {"status": "pending"}
+        g.friends.respond("ethan", "tester", True)
+        out = c.get("/api/game/friends").json()
+        assert [f["name"] for f in out["friends"]] == ["ethan"] and out["pvp"]["running"] is None
+        assert c.post("/api/game/pvp", json={"friend": "ethan"}).status_code == 409  # no familier yet

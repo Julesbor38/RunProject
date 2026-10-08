@@ -738,6 +738,21 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
   K.O., rage, renforts, écran de victoire / défaite ; le kit de combat affiché sur la fiche du familier.
 - 146 tests OK, 1 ignoré.
 
+### 2026-10-08 — Amis et combats amicaux en direct ; itinéraires gratuits
+- Choix validés : combats **en direct**, **sans points** (un bilan), mode normal ou équilibré au choix du défi.
+- Amis (`friends.py`, migration 006) : demande par identifiant, acceptation automatique si l'autre avait déjà
+  demandé, retrait, blocage. Ce qu'un ami voit : identifiant, familiers, bilan ; jamais sorties, traces, communes,
+  solde (la première mise en commun entre comptes, volontairement minimale).
+- Combats amicaux (`pvp.py`) : défi valable 5 min ; moteur commun (`combat.play_round` : les humains choisissent,
+  l'IA joue pour les autres) ; le défié joue le côté « enemy » du moteur et voit le combat de son côté ; tour
+  résolu quand les deux ont joué ou après 30 s (par la requête suivante, sans tâche de fond), 2 tours manqués =
+  défaite ; au 50e tour, le plus de PV restants gagne ; rejouable (graine + coups) ; abandon possible.
+- Front : sous-onglet « Amis » (ajout, demandes, défis reçus et envoyés, cartes des amis avec leurs familiers et le
+  bilan, « Défier » / « Défi équilibré »), toast « X te défie » partout dans l'app, arène en direct (attente de
+  l'ami, temps restant, rejeu des tours).
+- À la demande d'un ami testeur : **générer un itinéraire redevient gratuit** (`ROUTE_CREDITS = False`).
+- 152 tests OK, 1 ignoré.
+
 ---
 
 ## Bilan des 7 et 8 octobre 2026

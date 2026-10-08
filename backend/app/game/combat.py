@@ -309,23 +309,40 @@ def _eff_speed(f: Fighter) -> float:
 
 
 def play_turn(game: GameConfig, bc: BattleConfig, b: Battle, move_id: str, target_id: str | None = None) -> list[dict]:
-    """The player's move (and target, against a group), then the mobs'. Returns the events, in order."""
+    """Against bots: the player's move (and target, against a group), then the mobs'. Returns the events, in order."""
+    return play_round(game, bc, b, {b.player.id: (move_id, target_id)})
+
+
+def check_choice(game: GameConfig, bc: BattleConfig, b: Battle, fid: str, move_id: str) -> None:
+    f = b.by_id(fid)
+    if f is None or not f.alive:
+        raise InvalidAction("ce combattant ne peut plus jouer")
+    if move_id not in f.moves:
+        raise InvalidAction("ton familier ne connaît pas cette attaque")
+    if f.cooldowns.get(move_id, 0) > 0:
+        raise InvalidAction(f"pas encore prête : encore {f.cooldowns[move_id]} tour(s)")
+
+
+def play_round(game: GameConfig, bc: BattleConfig, b: Battle, choices: dict[str, tuple[str, str | None]]) -> list[dict]:
+    """One round: the fighters in `choices` play their move (and target), the AI plays for the others (the mobs,
+    or a friend who did not play in time). Returns the events, in order."""
     if b.status != "running":
         raise InvalidAction("le combat est terminé")
-    me = b.player
-    if move_id not in me.moves:
-        raise InvalidAction("ton familier ne connaît pas cette attaque")
-    if me.cooldowns.get(move_id, 0) > 0:
-        raise InvalidAction(f"pas encore prête : encore {me.cooldowns[move_id]} tour(s)")
-    target = b.by_id(target_id) if target_id else None
-    if target is None or target.side != "enemy" or not target.alive:
-        target = b.alive("enemy")[0]
+    for fid, (move_id, _) in choices.items():
+        check_choice(game, bc, b, fid, move_id)
     rng = random.Random(f"{b.seed}:{b.turn}")
     events: list[dict] = [{"t": "turn", "turn": b.turn}]
-    actions = [(me, move_of(game, bc, me, move_id), target)]
-    for e in b.alive("enemy"):
-        m = _ai_move(game, bc, b, e, rng)
-        actions.append((e, m, me))
+    actions = []
+    for f in [x for x in b.fighters if x.alive]:
+        foes = b.alive("enemy" if f.side == "player" else "player")
+        if f.id in choices:
+            move_id, target_id = choices[f.id]
+            target = b.by_id(target_id) if target_id else None
+            if target is None or target.side == f.side or not target.alive:
+                target = foes[0]
+            actions.append((f, move_of(game, bc, f, move_id), target))
+        else:
+            actions.append((f, _ai_move(game, bc, b, f, rng), foes[0]))
     tiebreak = {id(a[0]): rng.random() for a in actions}
     actions.sort(key=lambda a: (not a[1].priority, -_eff_speed(a[0]), tiebreak[id(a[0])]))
     for actor, move, tgt in actions:
@@ -342,6 +359,11 @@ def play_turn(game: GameConfig, bc: BattleConfig, b: Battle, move_id: str, targe
             b.status, b.end_reason = "lost", "à bout de souffle"
             events.append({"t": "end", "result": "lost", "reason": b.end_reason})
     return events
+
+
+def ai_choice(game: GameConfig, bc: BattleConfig, b: Battle, fid: str) -> str:
+    """The move the AI would play for this fighter now (a friend who did not play in time)."""
+    return _ai_move(game, bc, b, b.by_id(fid), random.Random(f"{b.seed}:{b.turn}:{fid}")).id
 
 
 def _ai_move(game: GameConfig, bc: BattleConfig, b: Battle, f: Fighter, rng: random.Random) -> Move:
@@ -489,23 +511,30 @@ def _check_end(b: Battle, events: list) -> None:
         events.append({"t": "end", "result": "won"})
 
 
-def replay(game: GameConfig, bc: BattleConfig, initial: dict, actions: list[tuple[str, str | None]]) -> Battle:
-    """The same battle again from its initial state and the player's moves (debugging, checks)."""
+def replay(game: GameConfig, bc: BattleConfig, initial: dict, actions: list) -> Battle:
+    """The same battle again from its initial state and the moves played (debugging, checks): against bots a list
+    of (move, target), between friends a list of {fighter id: (move, target)} per round."""
     b = Battle.from_dict(initial)
-    for move, target in actions:
-        play_turn(game, bc, b, move, target)
+    for a in actions:
+        if isinstance(a, dict):
+            play_round(game, bc, b, {k: tuple(v) for k, v in a.items()})
+        else:
+            play_turn(game, bc, b, *a)
     return b
 
 
 # --- what the client shows ---
 
 
-def fighter_view(game: GameConfig, bc: BattleConfig, f: Fighter) -> dict:
+def fighter_view(game: GameConfig, bc: BattleConfig, f: Fighter, mine: str = "player") -> dict:
+    """A fighter as the client shows it; `mine`: the engine side of the viewer (its fighters show as "player",
+    with their moves; between friends, the one who was challenged plays the engine's "enemy" side)."""
     sp = game.species[f.species]
-    out = {"id": f.id, "side": f.side, "name": f.name, "species": f.species, "stage": f.stage, "branch": f.branch, "type": f.type,
+    side = "player" if f.side == mine else "enemy"
+    out = {"id": f.id, "side": side, "name": f.name, "species": f.species, "stage": f.stage, "branch": f.branch, "type": f.type,
            "type_name": game.types[f.type], "color": sp.color, "hp": f.hp, "max_hp": f.max_hp, "boss": f.boss, "angry": f.angry,
            "level": f.level, "effects": sorted(f.effects), "power": f.attack + f.defense + f.speed + f.max_hp // 3}
-    if f.side == "player":
+    if side == "player":
         out["moves"] = []
         for m_id in f.moves:
             m = move_of(game, bc, f, m_id)
@@ -515,7 +544,7 @@ def fighter_view(game: GameConfig, bc: BattleConfig, f: Fighter) -> dict:
     return out
 
 
-def battle_view(game: GameConfig, bc: BattleConfig, b: Battle) -> dict:
+def battle_view(game: GameConfig, bc: BattleConfig, b: Battle, mine: str = "player") -> dict:
     return {"level": b.level, "kind": level_kind(b.level), "turn": b.turn, "max_turns": bc.p["max_turns"], "status": b.status,
-            "end_reason": b.end_reason, "fighters": [fighter_view(game, bc, f) for f in b.fighters]}
+            "end_reason": b.end_reason, "fighters": [fighter_view(game, bc, f, mine) for f in b.fighters]}
 

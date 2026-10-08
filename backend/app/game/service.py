@@ -6,20 +6,34 @@ from pathlib import Path
 from . import config
 from .battles import Battles
 from .db import GameDB
+from .friends import Friends
 from .payments import PaymentProvider, provider_from_env
 from .pets import Pet, Pets, branch_scores, profile_metrics, stats
+from .pvp import Pvp
 from .shop import Shop
 from .wallet import Wallet
 
 
 class Game:
-    def __init__(self, path: Path, cfg: config.GameConfig | None = None, payments: PaymentProvider | None = None):
+    def __init__(self, path: Path, cfg: config.GameConfig | None = None, payments: PaymentProvider | None = None,
+                 exists=lambda name: True):
         self.cfg = cfg or config.default()
         self.db = GameDB(path)
         self.wallet = Wallet(self.db)
         self.pets = Pets(self.db, self.wallet, self.cfg)
         self.shop = Shop(self.db, self.wallet, self.pets, self.cfg, payments or provider_from_env())
         self.battles = Battles(self.db, self.wallet, self.pets, self.cfg)
+        self.friends = Friends(self.db, exists)  # exists(name): is there an account with that name
+        self.pvp = Pvp(self.db, self.pets, self.friends, self.cfg)
+
+    def friend_json(self, user: str, friend: str) -> dict:
+        """What a friend sees of another: their familiers (no balance, no running data) and the record between them."""
+        pets = sorted(self.pets.all(friend), key=lambda p: not p.active)
+        return {"name": friend, "record": self.pvp.record(user, friend),
+                "pets": [{"id": p.id, "name": p.name, "species": p.species, "form": self.pets.form_name(p), "type": self.pets.type_of(p),
+                          "type_name": self.cfg.types[self.pets.type_of(p)], "color": self.cfg.species[p.species].color, "active": p.active,
+                          "stage": {"index": p.stage, "name": self.cfg.stages[p.stage].name}, "level": p.level, "branch": p.branch,
+                          "rarity": self.cfg.species[p.species].rarity, "stats": self.pets.stats(p)} for p in pets]}
 
     def abilities_json(self, sp: config.Species, stage: int | None = None, branch: str | None = None) -> list[dict]:
         """The species' abilities (those of its branch for the final form), and whether they are unlocked."""

@@ -3667,3 +3667,119 @@ body.in-battle #panel-toggle {
     animation-duration: 0.01s !important;
   }
 }
+
+/* --- friends --- */
+
+.pet-views button {
+  font-size: 12.5px;
+}
+
+.add-friend {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.add-friend input {
+  flex: 1;
+  min-width: 0;
+}
+
+.resume-pvp {
+  width: 100%;
+  margin: 4px 0 8px;
+}
+
+.friend-rows {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+}
+
+.friend-rows li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 0;
+  border-top: 1px solid var(--line);
+  font-size: 13.5px;
+}
+
+.friends {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.friend {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--sand-50);
+}
+
+.friend-art {
+  flex: none;
+}
+
+.friend-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.friend-pets {
+  display: flex;
+  gap: 2px;
+}
+
+.friend-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.challenge-toast {
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top));
+  left: 50%;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(92vw, 380px);
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: var(--pine-800);
+  color: #fff;
+  box-shadow: var(--shadow);
+  transform: translateX(-50%);
+  animation: arrive 0.4s ease;
+}
+
+.challenge-toast[hidden] {
+  display: none;
+}
+
+.challenge-toast > span:last-child {
+  display: flex;
+  gap: 8px;
+}
+
+.challenge-toast .text-btn {
+  color: #fff;
+}
+
+.waiting {
+  grid-column: 1 / -1;
+  margin: 8px 0;
+  text-align: center;
+  color: rgb(255 255 255 / 0.8);
+  animation: hint 1.6s ease-in-out infinite;
+}

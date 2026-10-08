@@ -9,6 +9,7 @@
 import { apiFetch } from "./api";
 import { BattleView } from "./battle";
 import { escape } from "./format";
+import { FriendsView } from "./friends";
 import { petArt } from "./pet-art";
 
 interface Stats {
@@ -122,8 +123,9 @@ export class PetTab {
   private open = false; // the upgrade sheet under the picture
   private busy = false;
   private box = document.getElementById("pet-body")!;
-  private view: "pets" | "shop" | "battles" = "pets";
-  private battle = new BattleView(() => this.refresh()); // back to the trail when a battle closes
+  private view: "pets" | "shop" | "battles" | "friends" = "pets";
+  readonly battle = new BattleView(() => this.refresh()); // back to the trail when a battle closes
+  private friends = new FriendsView(this.battle);
   private shop: ShopState | null = null;
 
   async refresh() {
@@ -134,6 +136,7 @@ export class PetTab {
     }
     this.state = (await r.json()) as GameState;
     if (this.view === "battles") return this.battle.renderTrail(this.box, this.views(), () => this.bindViews());
+    if (this.view === "friends") return this.friends.render(this.box, this.views(), () => this.bindViews());
     if (this.view === "shop") {
       const rs = await apiFetch("/api/game/shop");
       if (rs.ok) {
@@ -153,13 +156,14 @@ export class PetTab {
     return `<div class="pet-views" role="tablist">
       <button type="button" role="tab" data-view="pets" aria-selected="${this.view === "pets"}">Mes familiers</button>
       <button type="button" role="tab" data-view="battles" aria-selected="${this.view === "battles"}">Combats ⚔</button>
+      <button type="button" role="tab" data-view="friends" aria-selected="${this.view === "friends"}">Amis</button>
       <button type="button" role="tab" data-view="shop" aria-selected="${this.view === "shop"}">Boutique <span class="shop-spark">✦</span></button></div>`;
   }
 
   private bindViews() {
     this.box.querySelectorAll<HTMLButtonElement>(".pet-views button").forEach((b) =>
       b.addEventListener("click", () => {
-        const v = b.dataset.view as "pets" | "shop" | "battles";
+        const v = b.dataset.view as "pets" | "shop" | "battles" | "friends";
         if (v === this.view) return;
         this.view = v;
         this.refresh();

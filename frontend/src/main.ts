@@ -13,6 +13,7 @@ import { PoiLayer } from "./pois";
 import { Credits } from "./credits";
 import { ExploreView } from "./explore";
 import { PetTab } from "./pet";
+import { watchChallenges } from "./friends";
 import { Ratings } from "./ratings";
 import { addTerrain } from "./terrain";
 
@@ -81,6 +82,7 @@ map.on("load", async () => {
   );
 
   const pet = new PetTab(); // the familier, bought up with the points earned
+  watchChallenges(pet.battle); // a friend's challenge, wherever I am in the app
 
   const showTab = (tab: Tab) => {
     document.querySelectorAll<HTMLButtonElement>(".tabs [role=tab]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));

@@ -167,7 +167,7 @@ def game() -> Game:
     """The game (familiers, wallet of points and gems): data/game/game.sqlite, per user like the rest."""
     path = DATA_DIR / "game" / "game.sqlite"
     if _game.get("path") != path:
-        _game.update(path=path, game=Game(path))
+        _game.update(path=path, game=Game(path, exists=lambda name: name in auth.users(DATA_DIR)))
     return _game["game"]
 
 
@@ -482,7 +482,7 @@ def routing_status(ws: Workspace = Depends(workspace)) -> dict:
     return ws.routing.status()
 
 
-ROUTE_CREDITS = True  # a generation costs credits.ROUTE_PER_KM points per km (off in tests)
+ROUTE_CREDITS = False  # a generation used to cost credits.ROUTE_PER_KM points per km: free again since 2026-10-08
 
 
 def _route_estimate_km(req: RouteRequest) -> float:
@@ -866,6 +866,106 @@ def game_turn(battle_id: int, body: TurnIn, ws: Workspace = Depends(workspace)) 
 @app.post("/api/game/battles/{battle_id}/flee")
 def game_flee(battle_id: int, ws: Workspace = Depends(workspace)) -> dict:
     game().battles.flee(ws.user, battle_id)
+    return {"ok": True}
+
+
+# --- friends and friendly battles, live (app/game/friends.py, pvp.py) ---
+
+
+@app.get("/api/game/friends")
+def game_friends(ws: Workspace = Depends(workspace)) -> dict:
+    """My friends (their familiers, our record), the requests received and sent, the accounts I blocked."""
+    g = game()
+    lists = g.friends.lists(ws.user)
+    return {**lists, "friends": [g.friend_json(ws.user, f) for f in lists["friends"]], "pvp": g.pvp.inbox(ws.user)}
+
+
+class FriendIn(BaseModel):
+    username: str = Field(min_length=3, max_length=32)
+
+
+@app.post("/api/game/friends")
+def game_add_friend(body: FriendIn, ws: Workspace = Depends(workspace)) -> dict:
+    """A friend request (accepted at once if they had already asked me)."""
+    return {"status": _game_call(game().friends.request, ws.user, body.username)}
+
+
+@app.post("/api/game/friends/{name}/accept")
+def game_accept_friend(name: str, ws: Workspace = Depends(workspace)) -> dict:
+    _game_call(game().friends.respond, ws.user, name, True)
+    return {"ok": True}
+
+
+@app.post("/api/game/friends/{name}/decline")
+def game_decline_friend(name: str, ws: Workspace = Depends(workspace)) -> dict:
+    _game_call(game().friends.respond, ws.user, name, False)
+    return {"ok": True}
+
+
+@app.delete("/api/game/friends/{name}")
+def game_remove_friend(name: str, ws: Workspace = Depends(workspace)) -> dict:
+    """Remove a friend, or cancel a request."""
+    game().friends.remove(ws.user, name)
+    return {"ok": True}
+
+
+@app.post("/api/game/friends/{name}/block")
+def game_block(name: str, ws: Workspace = Depends(workspace)) -> dict:
+    _game_call(game().friends.block, ws.user, name)
+    return {"ok": True}
+
+
+@app.delete("/api/game/friends/{name}/block")
+def game_unblock(name: str, ws: Workspace = Depends(workspace)) -> dict:
+    game().friends.unblock(ws.user, name)
+    return {"ok": True}
+
+
+class ChallengeIn(BaseModel):
+    friend: str = Field(min_length=3, max_length=32)
+    mode: str = Field("normal", pattern="^(normal|balanced)$")
+
+
+@app.get("/api/game/pvp")
+def game_pvp_inbox(ws: Workspace = Depends(workspace)) -> dict:
+    """Challenges received and sent (still valid), and my friendly battle in progress."""
+    return game().pvp.inbox(ws.user)
+
+
+@app.post("/api/game/pvp")
+def game_challenge(body: ChallengeIn, ws: Workspace = Depends(workspace)) -> dict:
+    """Challenge a friend (valid 5 min): normal (familiers as they are) or balanced (same stage and level)."""
+    return {"id": _game_call(game().pvp.challenge, ws.user, body.friend.strip().lower(), body.mode)}
+
+
+@app.post("/api/game/pvp/{pvp_id}/accept")
+def game_pvp_accept(pvp_id: int, ws: Workspace = Depends(workspace)) -> dict:
+    _game_call(game().pvp.accept, ws.user, pvp_id)
+    return game().pvp.view(ws.user, pvp_id)
+
+
+@app.post("/api/game/pvp/{pvp_id}/decline")
+def game_pvp_decline(pvp_id: int, ws: Workspace = Depends(workspace)) -> dict:
+    """Decline a challenge, or take back one I sent."""
+    _game_call(game().pvp.decline, ws.user, pvp_id)
+    return {"ok": True}
+
+
+@app.get("/api/game/pvp/{pvp_id}")
+def game_pvp(pvp_id: int, since: int = 0, ws: Workspace = Depends(workspace)) -> dict:
+    """The battle from my side, the rounds after `since` (to animate), who has played, the seconds left."""
+    return _game_call(game().pvp.view, ws.user, pvp_id, since)
+
+
+@app.post("/api/game/pvp/{pvp_id}/move")
+def game_pvp_move(pvp_id: int, body: TurnIn, ws: Workspace = Depends(workspace)) -> dict:
+    """My move for this round (resolved as soon as my friend has played, or when the time is up)."""
+    return _game_call(game().pvp.move, ws.user, pvp_id, body.move, body.target)
+
+
+@app.post("/api/game/pvp/{pvp_id}/forfeit")
+def game_pvp_forfeit(pvp_id: int, ws: Workspace = Depends(workspace)) -> dict:
+    _game_call(game().pvp.forfeit, ws.user, pvp_id)
     return {"ok": True}
 
 
