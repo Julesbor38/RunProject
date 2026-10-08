@@ -3683,6 +3683,25 @@ body.in-battle #panel-toggle {
 .add-friend input {
   flex: 1;
   min-width: 0;
+  min-height: 44px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--sand-50);
+  font: inherit;
+  font-size: 16px; /* no zoom on focus in iOS Safari */
+  color: var(--fg);
+}
+
+.add-friend input:focus {
+  outline: 2px solid var(--pine-600);
+  outline-offset: -1px;
+  background: var(--bg);
+}
+
+.add-friend button {
+  flex: none;
+  min-height: 44px;
 }
 
 .resume-pvp {
