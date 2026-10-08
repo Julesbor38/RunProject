@@ -766,6 +766,27 @@ Journal chronologique de l'avancement (le plus ancien en haut), puis les prochai
   en pleine largeur, bouton dessous.
 - 155 tests OK, 1 ignoré.
 
+### 2026-10-08 — Types météo, doubles types, une attaque propre à chaque familier
+- **3 nouveaux types** : Pluvieux, Ensoleillé, Glacé ; table à 8 types rééquilibrée (5 types × 3 forces / 3
+  faiblesses, Glacé 2 / 2 ; triangles Montagne > Vitesse > Endurance et Pluvieux > Ensoleillé > Glacé ; vérifié
+  au chargement : autant de forces que de faiblesses).
+- **Spécificités** : météo (Averse / Canicule / Blizzard : pluie, soleil, neige pendant 4 tours ; ×1,3 au type
+  favorisé, ×0,75 aux types gênés ; la pluie soigne les Pluvieux de 5 %, la neige retire 3 % aux non-Glacés),
+  **gel** (Pic de glace 30 %, Blizzard 15 % : un tour sans agir, les Glacés n'y sont pas sensibles), brûlure
+  (Canicule), Brume (esquive + régénération), Mirage (défense + vitesse), Armure de givre (+80 % un tour).
+- **Double type** (`type2` d'une espèce ou d'une branche) : les deux multiplicateurs s'appliquent (jusqu'à ×2,25),
+  kit de 4 coups (les 2 attaques du 1er type, la 1re du 2e, la défense du 1er).
+- **5 nouveaux familiers** (boutique, et mobs) : Hiboréal (chouette des neiges, Glacé, rare), Ondinelle (axolotl
+  des nuages, Pluvieux, épique), Solarion (lion à crinière de flammes, Ensoleillé, épique), Yéticime (yéti des
+  glaciers, Glacé + Montagne, légendaire), Phénixol (phénix de l'aube, Ensoleillé + Vitesse, légendaire) ; 3 à 4
+  capacités chacun ; illustrations sur 5 stades.
+- **Animations** : chaque familier attaque à sa façon (Galet roule, Fusette zigzague, Foulon charge, Colossaure et
+  Yéticime piétinent en faisant trembler l'écran, Tempestor et Hiboréal piquent, Sylvarion se cabre, Brasaltor
+  crache le feu, Aurorelle tournoie, Ondinelle rebondit, Solarion rugit et bondit, Phénixol s'élève et plonge) ;
+  ses capacités spéciales dans sa couleur ; 9 nouvelles animations de coups ; la météo sur toute l'arène (pluie,
+  soleil, neige) ; bloc de glace sur un familier gelé.
+- 158 tests OK, 1 ignoré.
+
 ---
 
 ## Bilan des 7 et 8 octobre 2026

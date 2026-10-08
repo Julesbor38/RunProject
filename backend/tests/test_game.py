@@ -57,9 +57,9 @@ def test_starters_have_the_same_total_spread_differently():
 def test_a_broken_config_is_refused(tmp_path):
     for name in ("stages.toml", "species.toml", "types.toml"):
         (tmp_path / name).write_text((config.CONFIG_DIR / name).read_text())
-    types = (tmp_path / "types.toml").read_text().replace('nocturne = ["vitesse", "exploration"]', "nocturne = []")
+    types = (tmp_path / "types.toml").read_text().replace('nocturne = ["vitesse", "exploration", "pluvieux"]', "nocturne = []")
     (tmp_path / "types.toml").write_text(types)
-    with pytest.raises(config.ConfigError, match="nocturne"):
+    with pytest.raises(config.ConfigError, match="strength"):  # nocturne beats nobody: unbalanced
         config.load(tmp_path)
 
 
@@ -376,14 +376,14 @@ def test_shop_api(tmp_path, monkeypatch):
     g = api.game()
     with TestClient(api.app) as c:
         shop = c.get("/api/game/shop").json()
-        assert shop["payments"] == "disabled" and len(shop["items"]) == 5 and not any(i["owned"] for i in shop["items"])
+        assert shop["payments"] == "disabled" and len(shop["items"]) == 10 and not any(i["owned"] for i in shop["items"])
         assert c.post("/api/game/shop/buy", json={"item": "oeuf_aurorelle", "currency": "points", "request_id": "buy-00001"}).status_code == 402
         assert c.post("/api/game/gems/buy", json={"pack": "gems_100", "request_id": "pay-00001"}).status_code == 503
         give(g, "tester", 10000)
         out = c.post("/api/game/shop/buy", json={"item": "oeuf_aurorelle", "currency": "points", "request_id": "buy-00002"}).json()
         assert out["pet"]["species"] == "aurorelle" and out["pet"]["active"] and out["wallet"] == {"points": 0, "gems": 0}
         assert len(out["pet"]["abilities"]) == 4 and out["pet"]["rarity"] == "legendaire"
-        assert [i["owned"] for i in c.get("/api/game/shop").json()["items"]] == [False, True, False, False, False]
+        assert [i["owned"] for i in c.get("/api/game/shop").json()["items"]] == [False, True] + [False] * 8
         assert c.post("/api/game/shop/buy", json={"item": "nope", "currency": "points", "request_id": "buy-00003"}).status_code == 404
         assert c.post("/api/game/shop/buy", json={"item": "oeuf_aurorelle", "currency": "euros", "request_id": "buy-00004"}).status_code == 422
     assert g.shop.owned_species("marie") == set()
@@ -754,3 +754,49 @@ def test_friendly_three_against_three_and_chat(tmp_path):
     with pytest.raises(GameError) as e:
         g.pvp.say("marie", pid, "coucou")
     assert e.value.status == 404
+
+
+# --- the weather types, two types at once ---
+
+
+def test_weather_types_triangle_and_dual_types():
+    eff = CFG.effectiveness
+    assert eff("pluvieux", "ensoleille") == 1.5 and eff("ensoleille", "glace") == 1.5 and eff("glace", "pluvieux") == 1.5
+    assert eff("montagne", "glace", "montagne") == 1.0  # against Yéticime, a Montagne move is neutral on both types
+    assert eff("endurance", "glace", "montagne") == 2.25 and eff("ensoleille", "ensoleille", "vitesse") == 1.0
+    yeti = CFG.species["yeticime"]
+    assert (yeti.type, yeti.type2) == ("glace", "montagne")
+    f = fighter("yeticime", 3, 50)
+    assert f.type2 == "montagne" and f.moves[:4] == ["blizzard", "pic_de_glace", "eboulement", "armure_de_givre"]
+
+
+def test_weather_boosts_heals_chips_and_ends():
+    b = combat.new_battle(CFG, BC, 1, fighter("ondinelle", 2, 20), "s")
+    ev = combat.play_turn(CFG, BC, b, "averse", None)
+    assert any(e["t"] == "weather" and e["weather"] == "rain" for e in ev)  # (the mob may change it right after)
+    combat._set_weather(b, "rain", 4, [])
+    assert combat._weather_factor(BC, b, "pluvieux") == 1.3 and combat._weather_factor(BC, b, "ensoleille") == 0.75
+    for foe in b.alive("enemy"):
+        foe.moves = ["charge_lourde"]  # a mob that does not change the weather
+        foe.hp = foe.max_hp = 10_000
+    b.player.hp = b.player.max_hp = 10_000
+    for _ in range(4):
+        if b.status == "running":
+            combat.play_turn(CFG, BC, b, "brume" if b.player.cooldowns.get("brume", 0) == 0 else "trombe", None)
+    assert b.weather is None  # 4 turns, then the weather calms down
+    snow = combat.new_battle(CFG, BC, 1, fighter("hiboreal", 2, 20), "t")
+    foe, me = snow.alive("enemy")[0], snow.player
+    foe.type, foe.type2 = "vitesse", None
+    hp, my_hp = foe.hp, me.hp
+    combat._set_weather(snow, "snow", 3, [])
+    combat._end_of_round(snow, [], BC)
+    assert foe.hp < hp and me.hp == my_hp  # the snow chips at who is not Glacé, spares the Glacé
+
+
+def test_freezing_skips_an_action():
+    b = combat.new_battle(CFG, BC, 1, fighter("hiboreal", 3, 60), "s")
+    foe = b.alive("enemy")[0]
+    foe.effects["frozen"] = {"turns": 1}
+    ev = combat.play_turn(CFG, BC, b, "pic_de_glace", None)
+    assert any(e["t"] == "frozen" and e["target"] == foe.id for e in ev) or not foe.alive
+    assert not any(e["t"] == "move" and e["actor"] == foe.id for e in ev)

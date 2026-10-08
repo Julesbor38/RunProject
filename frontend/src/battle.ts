@@ -34,6 +34,8 @@ interface Fighter {
   branch: string | null;
   type: string;
   type_name: string;
+  type2?: string | null;
+  type2_name?: string | null;
   color: string;
   hp: number;
   max_hp: number;
@@ -62,6 +64,7 @@ interface BattleState {
   kind: "mobs" | "mid_boss" | "boss";
   turn: number;
   max_turns: number;
+  weather?: { kind: "rain" | "sun" | "snow"; turns: number } | null;
   status: "running" | "won" | "lost" | "done" | "invited" | "declined" | "cancelled" | "expired";
   end_reason: string;
   fighters: Fighter[];
@@ -97,7 +100,10 @@ interface Trail {
   levels: Level[];
 }
 
-const TYPE_ICON: Record<string, string> = { montagne: "▲", vitesse: "ϟ", endurance: "◉", nocturne: "☾", exploration: "❦" };
+const TYPE_ICON: Record<string, string> = {
+  montagne: "▲", vitesse: "ϟ", endurance: "◉", nocturne: "☾", exploration: "❦", pluvieux: "☂", ensoleille: "☀", glace: "❄",
+};
+const WEATHER_TEXT: Record<string, string> = { rain: "☂ Pluie", sun: "☀ Soleil", snow: "❄ Neige" };
 const KIND_LABEL = { mobs: "", mid_boss: "Boss", boss: "Grand boss" };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const nf = (n: number) => n.toLocaleString("fr-FR");
@@ -285,7 +291,7 @@ export class BattleView {
       <div class="arena t-${s.fighters.find((f) => f.side === "player")!.type}">
         <header class="arena-head">${s.pvp ? `<strong>Contre ${escape(s.friend ?? "")}</strong> <span class="boss-tag mid_boss">Amical${s.mode === "balanced" ? " · équilibré" : ""}</span>`
           : `<strong>Niveau ${s.level}</strong>${KIND_LABEL[s.kind] ? ` <span class="boss-tag ${s.kind}">${KIND_LABEL[s.kind]}</span>` : ""}`}
-          <span class="turn muted small"></span><button type="button" class="text-btn flee">${s.pvp ? "Abandonner" : "Fuir"}</button></header>
+          <span class="weather-tag"></span><span class="turn muted small"></span><button type="button" class="text-btn flee">${s.pvp ? "Abandonner" : "Fuir"}</button></header>
         <div class="foes"></div>
         <div class="banner" hidden></div>
         <div class="me"></div>
@@ -302,6 +308,7 @@ export class BattleView {
     this.overlay.querySelector(".flee")!.addEventListener("click", () => this.flee());
     this.drawFighters();
     this.drawMoves();
+    this.setWeather(s.weather?.kind ?? null);
   }
 
   private close() {
@@ -325,8 +332,8 @@ export class BattleView {
     const team = this.state!.fighters.filter((x) => x.side === f.side).length > 1;
     const size = f.side === "player" ? (team ? 92 : 130) : f.boss === "big" ? (team ? 130 : 160) : f.boss === "mid" ? (team ? 115 : 140) : 100;
     const pct = Math.round((100 * f.hp) / f.max_hp);
-    return `<div class="fighter ${f.side} ${f.boss ? `boss-${f.boss}` : ""} ${f.hp <= 0 ? "down" : ""} ${f.angry ? "angry" : ""}" data-id="${f.id}">
-      <div class="plate"><span class="fname">${escape(f.name)}</span><span class="ftype t-${f.type}">${TYPE_ICON[f.type]} ${escape(f.type_name)}</span>
+    return `<div class="fighter ${f.side} sp-${f.species} ${f.boss ? `boss-${f.boss}` : ""} ${f.hp <= 0 ? "down" : ""} ${f.angry ? "angry" : ""} ${f.effects.includes("frozen") ? "frozen" : ""}" data-id="${f.id}">
+      <div class="plate"><span class="fname">${escape(f.name)}</span><span class="ftype t-${f.type}">${TYPE_ICON[f.type]}${f.type2 ? ` ${TYPE_ICON[f.type2]}` : ` ${escape(f.type_name)}`}</span>
         <div class="hp"><div class="hp-fill ${pct < 25 ? "low" : pct < 50 ? "mid" : ""}" style="width:${pct}%"></div></div>
         <span class="hp-num">${nf(f.hp)} / ${nf(f.max_hp)}</span><span class="fx-icons">${f.effects.map((e) => `<i class="st-${e}"></i>`).join("")}</span></div>
       <div class="body">${art(f, size)}<div class="fx-layer"></div></div></div>`;
@@ -481,11 +488,30 @@ export class BattleView {
           this.banner(`${actor?.name ?? ""} : ${e.name}`, e.type);
           this.log(`${actor?.name ?? ""} utilise ${e.name}.`);
           const el = this.el(e.actor);
-          if (e.kind !== "defense") el?.classList.add(actor?.side === "player" ? "lunge-up" : "lunge-down");
+          // each familier attacks its own way (style.css: .atk-<species>), the move's animation on its targets
+          const cls = e.kind === "defense" ? "guarding" : `atk-${actor?.species ?? "x"}`;
+          el?.classList.add(cls, actor?.side === "player" ? "dir-up" : "dir-down");
+          if (e.kind === "special") this.fx(e.actor, `aura-${actor?.species ?? "x"}`, e.type);
           const on = e.kind === "defense" || (e.kind === "special" && !e.targets.some((t: string) => t !== e.actor)) ? [e.actor] : e.targets;
-          on.forEach((t: string) => this.fx(t, e.anim, e.type));
-          await sleep(e.kind === "defense" ? 650 : 520);
-          el?.classList.remove("lunge-up", "lunge-down");
+          await sleep(e.kind === "defense" ? 0 : 180); // the wind-up, then the blow lands
+          on.forEach((t: string) => this.fx(t, e.anim, e.type, actor?.color));
+          await sleep(e.kind === "defense" ? 650 : 480);
+          el?.classList.remove(cls, "dir-up", "dir-down");
+          break;
+        }
+        case "weather": {
+          this.setWeather(e.weather);
+          this.banner(e.text, e.weather ? `w-${e.weather}` : "");
+          this.log(`${e.text}${e.turns ? ` (${e.turns} tours)` : ""}.`);
+          await sleep(700);
+          break;
+        }
+        case "frozen": {
+          this.el(e.target)?.classList.add("frozen");
+          this.float(e.target, "Gelé !", "tag");
+          this.log(`${e.name} est gelé et ne peut pas agir.`);
+          await sleep(500);
+          this.el(e.target)?.classList.remove("frozen");
           break;
         }
         case "hit":
@@ -509,7 +535,8 @@ export class BattleView {
           await sleep(300);
           break;
         case "status":
-          this.float(e.target, { guard: "Défense ↑", dodge: "Esquive prête", regen: "Régénération", dot: "Rongé…", haste: "Vitesse ↑" }[e.status as string] ?? "", "tag");
+          this.float(e.target, { guard: "Défense ↑", dodge: "Esquive prête", regen: "Régénération", dot: "Rongé…", haste: "Vitesse ↑", frozen: "Figé !" }[e.status as string] ?? "", "tag");
+          if (e.status === "frozen") this.el(e.target)?.classList.add("frozen");
           await sleep(260);
           break;
         case "ko":
@@ -578,13 +605,23 @@ export class BattleView {
     if (l) l.textContent = text;
   }
 
-  /** The move's own animation on a fighter (fx-<anim>, see style.css): rocks, bolts, claws, leaves, roots… */
-  private fx(id: string, anim: string, type: string) {
+  /** The arena's weather: rain, sun or snow falling over the whole battle. */
+  private setWeather(kind: string | null) {
+    const arena = this.overlay.querySelector(".arena");
+    arena?.classList.remove("w-rain", "w-sun", "w-snow");
+    if (kind) arena?.classList.add(`w-${kind}`);
+    const tag = this.overlay.querySelector(".weather-tag");
+    if (tag) tag.textContent = kind ? WEATHER_TEXT[kind] : "";
+  }
+
+  /** The move's own animation on a fighter (fx-<anim>, see style.css): rocks, bolts, claws, leaves, roots, rain… */
+  private fx(id: string, anim: string, type: string, color?: string) {
     const layer = this.el(id)?.querySelector(".fx-layer");
     if (!layer) return;
     const d = document.createElement("div");
-    const base = anim.startsWith("special-") ? "special" : anim;
+    const base = anim.startsWith("special-") ? "special" : anim.startsWith("aura-") ? "aura" : anim;
     d.className = `fx fx-${base} t-${type}`;
+    if (color && base === "special") d.style.setProperty("--sp", color);
     d.innerHTML = FX_PARTS[base]?.() ?? "";
     layer.appendChild(d);
     setTimeout(() => d.remove(), 1200);
@@ -638,4 +675,14 @@ const FX_PARTS: Record<string, () => string> = {
   leafstorm: () => n(8, (i) => `<i class="leaf" style="--i:${i}"></i>`),
   roots: () => n(5, (i) => `<i class="root" style="--i:${i}"></i>`),
   special: () => `<i class="nova"></i>${n(8, (i) => `<i class="ray" style="--i:${i}"></i>`)}`,
+  aura: () => n(6, (i) => `<i class="ember" style="--i:${i}"></i>`),
+  downpour: () => n(10, (i) => `<i class="drop" style="--i:${i}"></i>`),
+  waterspout: () => `<i class="spout"></i><i class="splash"></i>`,
+  mist: () => n(3, (i) => `<i class="fog" style="--i:${i}"></i>`),
+  heatwave: () => n(3, (i) => `<i class="heat" style="--i:${i}"></i>`),
+  sunbeam: () => `<i class="beam"></i><i class="flare"></i>`,
+  mirage: () => n(3, (i) => `<i class="shimmer" style="--i:${i}"></i>`),
+  blizzard: () => n(10, (i) => `<i class="flake" style="--i:${i}"></i>`),
+  icespike: () => n(3, (i) => `<i class="spike" style="--i:${i}"></i>`),
+  frostarmor: () => `<i class="shell"></i>${n(4, (i) => `<i class="glint" style="--i:${i}"></i>`)}`,
 };

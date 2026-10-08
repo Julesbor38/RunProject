@@ -95,6 +95,12 @@ class Pets:
         branch = sp.branch(pet.branch)
         return branch.type if branch else sp.type
 
+    def type2_of(self, pet: Pet) -> str | None:
+        """Its second type, if any (the final form's branch decides, once evolved)."""
+        sp = self.species_of(pet)
+        branch = sp.branch(pet.branch)
+        return branch.type2 if branch else sp.type2
+
     def form_name(self, pet: Pet) -> str:
         sp = self.species_of(pet)
         branch = sp.branch(pet.branch)

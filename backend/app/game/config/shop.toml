@@ -55,3 +55,39 @@ id = "gems_1200"
 gems = 1200
 price_eur = 9.99
 label = "+20 %"
+
+# the weather types (Yéticime: Glacé + Montagne; Phénixol: Ensoleillé + Vitesse)
+[[item]]
+id = "oeuf_hiboreal"
+kind = "pet"
+species = "hiboreal"
+price_points = 3000
+price_gems = 300
+
+[[item]]
+id = "oeuf_ondinelle"
+kind = "pet"
+species = "ondinelle"
+price_points = 6000
+price_gems = 600
+
+[[item]]
+id = "oeuf_solarion"
+kind = "pet"
+species = "solarion"
+price_points = 6000
+price_gems = 600
+
+[[item]]
+id = "oeuf_yeticime"
+kind = "pet"
+species = "yeticime"
+price_points = 12000
+price_gems = 1200
+
+[[item]]
+id = "oeuf_phenixol"
+kind = "pet"
+species = "phenixol"
+price_points = 12000
+price_gems = 1200

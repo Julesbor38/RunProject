@@ -48,6 +48,8 @@ interface PetView {
   form: string;
   type: string;
   type_name: string;
+  type2: string | null;
+  type2_name: string | null;
   color: string;
   active: boolean;
   origin: string;
@@ -67,6 +69,8 @@ interface Starter {
   id: string;
   type: string;
   type_name: string;
+  type2?: string | null;
+  type2_name?: string | null;
   names: string[];
   color: string;
   description: string;
@@ -244,7 +248,7 @@ export class PetTab {
         <div class="pet-head">
           <div><h2 class="pet-name">${escape(pet.name)} <button type="button" class="text-btn rename" title="Renommer">✎</button></h2>
             <span class="muted small">${escape(pet.form)} · ${escape(st.name)}</span></div>
-          <span class="badges">${rarityBadge(pet.rarity, pet.rarity_name)}<span class="type-badge t-${pet.type}">${escape(pet.type_name)}</span></span>
+          <span class="badges">${rarityBadge(pet.rarity, pet.rarity_name)}<span class="type-badge t-${pet.type}">${escape(pet.type_name)}</span>${pet.type2 ? `<span class="type-badge t-${pet.type2}">${escape(pet.type2_name ?? "")}</span>` : ""}</span>
         </div>
         <button type="button" class="pet-art ${pet.rarity ? `r-${pet.rarity}` : ""} ${this.open ? "" : "hint"}" aria-expanded="${this.open}" aria-label="Faire progresser ${escape(pet.name)}">
           ${petArt(art(pet), 180)}
@@ -253,7 +257,7 @@ export class PetTab {
           <span class="muted small">max ${st.max_level} au stade ${escape(st.name.toLowerCase())}</span></div>
         <div class="pet-upgrade" ${this.open ? "" : "hidden"}>${this.upgrade(pet, s.wallet.points)}</div>
         ${statBars(pet.stats, STAT_SCALE)}
-        <div class="abilities"><h3>En combat (${escape(pet.type_name)})</h3><ul>${pet.kit
+        <div class="abilities"><h3>En combat (${escape(pet.type_name)}${pet.type2 ? ` et ${escape(pet.type2_name ?? "")}` : ""})</h3><ul>${pet.kit
           .map((m) => `<li class="ability on k-${m.kind === "defense" ? "guard" : "strike"}"><span class="ability-icon">${m.kind === "defense" ? "⛨" : "⚔"}</span>
             <div><strong>${escape(m.name)}</strong> <span class="muted small">${m.kind === "defense" ? "défense" : `puissance ${m.power}${m.hits > 1 ? ` ×${m.hits}` : ""}${m.target === "all" ? ", tous les adversaires" : ""}`}</span>
             <span class="muted small">${escape(m.description)}</span></div></li>`)
@@ -349,7 +353,7 @@ export class PetTab {
       v === null ? "" : `<button type="button" class="${cur === "points" ? "primary" : "action gem-btn"}" data-buy="${it.id}" data-currency="${cur}"
         ${it.owned || v > sh.wallet[cur] ? "disabled" : ""}>${cur === "points" ? "✦" : "◆"} ${nf(v)}</button>`;
     return `<article class="shop-card r-${sp.rarity}">
-      <div class="shop-top">${rarityBadge(sp.rarity, sp.rarity_name)}<span class="type-badge t-${sp.type}">${escape(sp.type_name)}</span></div>
+      <div class="shop-top">${rarityBadge(sp.rarity, sp.rarity_name)}<span class="badges"><span class="type-badge t-${sp.type}">${escape(sp.type_name)}</span>${sp.type2 ? `<span class="type-badge t-${sp.type2}">${escape(sp.type2_name ?? "")}</span>` : ""}</span></div>
       <div class="shop-art">${petArt({ species: sp.id, stage: 4, branch: final.id, color: sp.color, type: final.type }, 170)}
         <div class="shop-line">${[0, 1, 2, 3].map((st) => petArt({ species: sp.id, stage: st, color: sp.color, type: sp.type }, 40)).join("")}</div></div>
       <h3>${escape(final.name)}</h3>

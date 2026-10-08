@@ -14,6 +14,9 @@ export interface ArtOf {
 }
 
 const TYPE_ACCENT: Record<string, string> = {
+  pluvieux: "#3a8fd9",
+  ensoleille: "#f2a516",
+  glace: "#9fdcff",
   montagne: "#6b5a45",
   vitesse: "#ffb020",
   endurance: "#1b5a43",
@@ -667,4 +670,201 @@ const colossaure: Draw = (id, o) => {
   return { ground: r + 18, aura: st >= 3 ? "#bdf4ff" : undefined, body: parts.join("") };
 };
 
-const SPECIES: Record<string, Draw> = { galet, fusette, foulon, brasaltor, aurorelle, tempestor, sylvarion, colossaure };
+// --- the weather familiers ---
+
+const EGG = "M100 40c-30 0-50 42-50 80 0 32 22 60 50 60s50-28 50-60c0-38-20-80-50-80z";
+
+function feet(r: number, cy: number, color: string, dx = 0.42): string {
+  return `${ell(100 - r * dx, cy + r * 0.92, r * 0.26, r * 0.14).replace("/>", ` fill="${color}"/>`)}${ell(100 + r * dx, cy + r * 0.92, r * 0.26, r * 0.14).replace("/>", ` fill="${color}"/>`)}`;
+}
+
+function face(cx: number, ey: number, r: number, st: number, glow: string, fang = true): string {
+  const parts = [st >= 3 ? eyes(cx, ey, r * 0.34, 9, "glow", glow) : eyes(cx, ey, r * 0.34, 9.5, st === 1 ? "cute" : "bold")];
+  if (st < 3) parts.push(blush(cx, ey + 14, r * 0.56, 6));
+  parts.push(mouth(cx, ey + 17, st >= 3 ? 10 : 7, st >= 3 ? (fang ? "grin" : "fang") : st === 2 ? "fang" : "smile"));
+  return parts.join("");
+}
+
+// Ondinelle: an axolotl of the rain clouds
+const RAIN = "#3a8fd9";
+const RAIN_L = "#9fd3ff";
+
+function drops(xs: number[], y0: number, h: number): string {
+  return xs.map((x, i) => `<path d="M${x} ${y0 + (i % 3) * 8}q-4 ${h * 0.5} 0 ${h}q4 ${-h * 0.5} 0 ${-h}z" fill="${RAIN_L}" opacity=".85"/>`).join("");
+}
+
+const ondinelle: Draw = (id, o) => {
+  if (o.stage === 0)
+    return { ground: 36, aura: RAIN_L, body: `${blob(id, path(EGG), RAIN)}${cloud(100, 70, 40)}${drops([86, 100, 114], 84, 14)}
+      <path d="M62 140q38 14 76 0" stroke="${RAIN_L}" stroke-width="4" fill="none" opacity=".7"/>` };
+  const st = o.stage;
+  const r = [0, 40, 48, 56, 60][st];
+  const cy = 182 - r * 0.95;
+  const head = cy - r * 0.6;
+  const parts: string[] = [];
+  if (st === 4) parts.push(`<circle cx="100" cy="${cy}" r="${r * 1.35}" fill="none" stroke="${RAIN_L}" stroke-width="4" opacity=".7" stroke-dasharray="4 8"/>`);
+  // tail fin
+  parts.push(`<path d="M${100 + r * 0.6} ${cy + r * 0.5}q${r * 0.9} ${-r * 0.1} ${r * 1.05} ${-r * 0.75}q${-r * 0.25} ${r * 0.85} ${-r * 1.0} ${r * 0.95}z" fill="${RAIN_L}" opacity=".9"/>`);
+  // gill fronds, 3 a side, longer with the stages
+  const fl = [0, 14, 20, 26, 32][st];
+  for (const sd of [-1, 1])
+    for (let i = 0; i < 3; i++) {
+      const a = (-55 + i * 30) * sd;
+      parts.push(`<g transform="rotate(${a} ${100 + sd * r * 0.7} ${head})"><ellipse cx="${100 + sd * r * 0.7}" cy="${head - fl * 0.55}" rx="${4 + st}" ry="${fl * 0.6}" fill="#ff8ad8"/>
+        <ellipse cx="${100 + sd * r * 0.7}" cy="${head - fl * 0.55}" rx="${1.5 + st * 0.4}" ry="${fl * 0.45}" fill="#ffd0f0"/></g>`);
+    }
+  parts.push(`${feet(r, cy, "#2a6aa8")}${blob(id, ell(100, cy, r, r * 0.92), RAIN)}
+    <ellipse cx="100" cy="${cy + r * 0.3}" rx="${r * 0.55}" ry="${r * 0.45}" fill="${RAIN_L}" opacity=".55"/>
+    ${[[-0.5, -0.1], [0.55, 0.15], [-0.25, 0.55]].map(([dx, dy]) => `<circle cx="${100 + dx * r}" cy="${cy + dy * r}" r="${r * 0.07}" fill="#fff" opacity=".6"/>`).join("")}`);
+  if (st >= 2) parts.push(cloud(100, cy - r * 1.12, r * (st === 4 ? 1.1 : 0.8)), drops(st === 4 ? [70, 84, 100, 116, 130] : [88, 100, 112], cy - r * 0.98, 10));
+  if (st === 4) parts.push(bolt(118, cy - r * 1.4, 18, id), `${sparkle(24, 60, 6, RAIN_L)}${sparkle(176, 50, 5, "#fff", 0.5)}${sparkle(184, 140, 4, RAIN_L, 1)}`);
+  parts.push(face(100, cy - r * 0.15, r, st, "#bff6ff", false));
+  return { ground: r + 10, aura: st >= 3 ? RAIN_L : undefined, rays: st === 4 ? "#9fd3ff" : undefined, body: parts.join("") };
+};
+
+// Solarion: a lion with a mane of flames
+const SUN = "#f2a516";
+const SUN_D = "#c97a00";
+
+function mane(cx: number, cy: number, r: number, n: number, len: number, id: string, hot: boolean): string {
+  return Array.from({ length: n }, (_, i) => {
+    const a = (i / n) * Math.PI * 2;
+    const x1 = cx + Math.cos(a - 0.18) * r, y1 = cy + Math.sin(a - 0.18) * r;
+    const x2 = cx + Math.cos(a + 0.18) * r, y2 = cy + Math.sin(a + 0.18) * r;
+    const tx = cx + Math.cos(a) * (r + len), ty = cy + Math.sin(a) * (r + len);
+    return `<path d="M${x1.toFixed(1)} ${y1.toFixed(1)}Q${(tx + x1) / 2} ${(ty + y1) / 2 - 3} ${tx.toFixed(1)} ${ty.toFixed(1)}Q${(tx + x2) / 2} ${(ty + y2) / 2 + 3} ${x2.toFixed(1)} ${y2.toFixed(1)}z" fill="${i % 2 ? "#ff7a1a" : "#ffd23f"}"${hot ? ` filter="url(#${id}-glow)"` : ""}/>`;
+  }).join("");
+}
+
+const solarion: Draw = (id, o) => {
+  if (o.stage === 0)
+    return { ground: 36, aura: "#ffd166", body: `${blob(id, path(EGG), SUN)}<circle cx="100" cy="110" r="22" fill="#fff3b0"/>${mane(100, 110, 22, 10, 10, id, false)}<circle cx="100" cy="110" r="16" fill="#ffe680"/>` };
+  const st = o.stage;
+  const r = [0, 40, 48, 56, 60][st];
+  const cy = 182 - r * 0.95;
+  const hy = cy - r * 0.18;
+  const parts: string[] = [];
+  if (st === 4) parts.push(`<circle cx="100" cy="${hy}" r="${r * 1.45}" fill="#ffe680" opacity=".35"/>`);
+  // tail with a flame tuft
+  parts.push(`<path d="M${100 + r * 0.7} ${cy + r * 0.55}q${r * 0.6} ${r * 0.05} ${r * 0.75} ${-r * 0.6}" stroke="${SUN_D}" stroke-width="${r * 0.12}" fill="none" stroke-linecap="round"/>
+    <path d="M${100 + r * 1.45} ${cy - r * 0.05}q-10 -10 -2 -24q4 10 12 10q-2 10 -10 14z" fill="#ff7a1a"/>`);
+  parts.push(mane(100, hy, r * 0.85, [0, 10, 12, 14, 18][st], [0, 8, 14, 20, 30][st], id, st >= 3));
+  parts.push(`${feet(r, cy, SUN_D, 0.45)}${blob(id, ell(100, cy, r * 0.95, r * 0.95), SUN)}
+    <ellipse cx="100" cy="${cy + r * 0.35}" rx="${r * 0.5}" ry="${r * 0.42}" fill="#fff3b0" opacity=".8"/>
+    ${[-1, 1].map((sd) => `<circle cx="${100 + sd * r * 0.6}" cy="${hy - r * 0.62}" r="${r * 0.2}" fill="${SUN}"/><circle cx="${100 + sd * r * 0.6}" cy="${hy - r * 0.62}" r="${r * 0.1}" fill="#ffd0a0"/>`).join("")}
+    <ellipse cx="100" cy="${hy + r * 0.25}" rx="${r * 0.28}" ry="${r * 0.2}" fill="#fff3b0"/>`);
+  if (st >= 3) parts.push(`<path d="M${100 - r * 0.12} ${hy - r * 0.55}l${r * 0.12} ${-r * 0.2} ${r * 0.12} ${r * 0.2}z" fill="#ff7a1a"/>`);
+  parts.push(face(100, hy - r * 0.05, r, st, "#fff7c2"));
+  if (st === 4) parts.push(`${sparkle(26, 40, 7, "#ffd23f")}${sparkle(176, 44, 6, "#fff", 0.4)}${sparkle(20, 150, 5, "#ff7a1a", 0.8)}`);
+  return { ground: r + 10, aura: st >= 3 ? "#ffd166" : undefined, rays: st === 4 ? GOLD_RAYS : undefined, body: parts.join("") };
+};
+
+// Hiboréal: a snowy owl, its wingbeats drop the frost
+const SNOW = "#f4fbff";
+const SNOW_D = "#bfd8e8";
+
+function owlWing(sd: number, cx: number, cy: number, r: number, spread: number, tip: string): string {
+  const x = cx + sd * r * 0.85;
+  return `<path d="M${x} ${cy - r * 0.35}q${sd * r * (0.5 + spread)} ${r * 0.2} ${sd * r * (0.45 + spread)} ${r * 0.95}q${-sd * r * 0.25} ${-r * 0.1} ${-sd * r * 0.45} ${-r * 0.25}z" fill="${SNOW_D}"/>
+    ${[0.35, 0.6, 0.85].map((f) => `<path d="M${x + sd * r * (0.3 + spread) * f} ${cy + r * 0.6 * f}l${sd * 6} 8l${-sd * 2} -10z" fill="${tip}"/>`).join("")}`;
+}
+
+const hiboreal: Draw = (id, o) => {
+  if (o.stage === 0)
+    return { ground: 36, aura: "#cdefff", body: `${blob(id, path(EGG), SNOW)}${crystal(86, 96, 18, 6, -10, "#9fdcff")}${crystal(116, 132, 14, 5, 15, "#9fdcff")}
+      <path d="M70 70l6 6m0-6l-6 6M126 90l6 6m0-6l-6 6" stroke="#9fdcff" stroke-width="2.5"/>` };
+  const st = o.stage;
+  const r = [0, 40, 48, 54, 58][st];
+  const cy = 182 - r * 0.95;
+  const parts: string[] = [];
+  const spread = [0, 0, 0.1, 0.35, 0.8][st];
+  parts.push(owlWing(-1, 100, cy, r, spread, st >= 3 ? "#9fdcff" : SNOW_D), owlWing(1, 100, cy, r, spread, st >= 3 ? "#9fdcff" : SNOW_D));
+  parts.push(`${feet(r, cy, "#f2a516", 0.3)}${blob(id, ell(100, cy, r * 0.9, r), SNOW)}
+    ${[[-0.3, 0.3], [0.2, 0.45], [-0.1, 0.65], [0.35, 0.15]].map(([dx, dy]) => `<path d="M${100 + dx * r - 4} ${cy + dy * r}q4 3 8 0" stroke="#8aa8bb" stroke-width="2" fill="none"/>`).join("")}`);
+  // ear tufts, a facial disc, a beak
+  parts.push([-1, 1].map((sd) => `<path d="M${100 + sd * r * 0.35} ${cy - r * 0.78}l${sd * r * 0.25} ${-r * 0.35}l${-sd * r * 0.05} ${r * 0.4}z" fill="${SNOW_D}"/>`).join(""),
+    `<ellipse cx="${100 - r * 0.3}" cy="${cy - r * 0.25}" rx="${r * 0.3}" ry="${r * 0.28}" fill="#fff"/><ellipse cx="${100 + r * 0.3}" cy="${cy - r * 0.25}" rx="${r * 0.3}" ry="${r * 0.28}" fill="#fff"/>`);
+  const ey = cy - r * 0.25;
+  parts.push(st >= 3 ? eyes(100, ey, r * 0.3, 8.5, "glow", "#ffd84d") : eyes(100, ey, r * 0.3, 9, st === 1 ? "cute" : "bold"));
+  if (st < 3) parts.push(blush(100, ey + 12, r * 0.55, 5.5));
+  parts.push(`<path d="M${100 - 5} ${ey + 8}l5 9 5 -9z" fill="#f2a516"/>`);
+  if (st >= 3) parts.push(crystal(100, cy - r * 0.92, 16 + (st - 3) * 10, 6, 0, "#9fdcff", ` filter="url(#${id}-glow)"`));
+  if (st === 4) parts.push(`${["M24 50", "M176 40", "M14 130", "M188 120", "M100 18"].map((m) => `<path d="${m}m-6 0h12m-6-6v12m-4-10l8 8m0-8l-8 8" stroke="#9fdcff" stroke-width="2"/>`).join("")}`);
+  return { ground: r + 8, aura: st >= 3 ? "#cdefff" : undefined, body: parts.join("") };
+};
+
+// Yéticime: the yeti of the glaciers, Glacé and Montagne
+const FUR_W = "#eef5fa";
+const FUR_S = "#c7d9e6";
+const ICE = "#9fdcff";
+
+const yeticime: Draw = (id, o) => {
+  if (o.stage === 0)
+    return { ground: 38, aura: "#cdefff", body: `${blob(id, path(EGG), FUR_W)}<path d="M54 120l20-24 14 14 12-22 14 18 12-12 20 26" stroke="${ICE}" stroke-width="5" fill="none" stroke-linejoin="round"/>
+      ${crystal(100, 62, 16, 6, 0, ICE)}` };
+  const st = o.stage;
+  const r = [0, 42, 52, 60, 66][st];
+  const cy = 182 - r * 0.92;
+  const parts: string[] = [];
+  if (st >= 3) parts.push(`<path d="M${100 - r * 1.15} ${cy - r * 0.2}L${100 - r * 0.85} ${cy - r * 1.0}L${100 - r * 0.55} ${cy - r * 0.5}L${100 - r * 0.35} ${cy - r * 0.8}L${100 - r * 0.2} ${cy - r * 0.3}zM${100 + r * 1.15} ${cy - r * 0.2}L${100 + r * 0.85} ${cy - r * 1.0}L${100 + r * 0.55} ${cy - r * 0.5}L${100 + r * 0.35} ${cy - r * 0.8}L${100 + r * 0.2} ${cy - r * 0.3}z" fill="#8a9bab"/>
+      <path d="M${100 - r * 0.85} ${cy - r * 1.0}l-6 10 12 0zM${100 + r * 0.85} ${cy - r * 1.0}l-6 10 12 0z" fill="#fff"/>`);
+  // shaggy arms
+  parts.push([-1, 1].map((sd) => `${blob(id, ell(100 + sd * r * 0.95, cy + r * 0.15, r * 0.3, r * 0.55), FUR_S)}<ellipse cx="${100 + sd * r * 1.0}" cy="${cy + r * 0.62}" rx="${r * 0.22}" ry="${r * 0.15}" fill="#7a9db8"/>`).join(""));
+  parts.push(`${feet(r, cy, "#7a9db8", 0.4)}${blob(id, ell(100, cy, r, r * 0.95), FUR_W)}
+    <path d="M${100 - r} ${cy + r * 0.1}q${r * 0.25} ${r * 0.25} ${r * 0.5} 0q${r * 0.25} ${r * 0.25} ${r * 0.5} 0q${r * 0.25} ${r * 0.25} ${r * 0.5} 0q${r * 0.25} ${r * 0.25} ${r * 0.5} 0" stroke="${FUR_S}" stroke-width="4" fill="none"/>
+    <ellipse cx="100" cy="${cy - r * 0.25}" rx="${r * 0.55}" ry="${r * 0.42}" fill="#7aa8cc"/>`);
+  // ice horns
+  const hl = [0, 10, 18, 28, 40][st];
+  parts.push(horn(100 - r * 0.45, cy - r * 0.8, hl, -hl * 0.4, ICE, 6 + st), horn(100 + r * 0.45, cy - r * 0.8, hl, hl * 0.4, ICE, 6 + st));
+  if (st >= 3) parts.push(crystal(100, cy + r * 0.55, 20 + (st - 3) * 10, 9, 0, ICE, ` filter="url(#${id}-glow)"`));
+  const ey = cy - r * 0.3;
+  parts.push(st >= 3 ? eyes(100, ey, r * 0.24, 8, "glow", "#bdf4ff") : eyes(100, ey, r * 0.24, 8.5, st === 1 ? "cute" : "bold"));
+  if (st < 3) parts.push(blush(100, ey + 12, r * 0.42, 5));
+  parts.push(mouth(100, ey + 16, st >= 3 ? 11 : 7, st >= 3 ? "grin" : "smile"));
+  if (st === 4) parts.push(`${["M22 40", "M178 34", "M14 120", "M188 110"].map((m) => `<path d="${m}m-7 0h14m-7-7v14m-5-12l10 10m0-10l-10 10" stroke="#fff" stroke-width="2.5"/>`).join("")}`);
+  return { ground: r + 16, aura: st >= 3 ? "#cdefff" : undefined, rays: st === 4 ? "#bdf4ff" : undefined, body: parts.join("") };
+};
+
+// Phénixol: the phoenix of dawn, Ensoleillé and Vitesse
+const FIRE = "#ff6b2e";
+
+function flameWing(sd: number, x: number, y: number, span: number, h: number, id: string): string {
+  const feathers = Array.from({ length: 5 }, (_, i) => {
+    const f = i / 4;
+    const tx = x + sd * span * (0.45 + 0.55 * f), ty = y - h * (1 - f * 0.9);
+    return `<path d="M${x + sd * span * 0.15 * f} ${y + h * 0.15 * f}Q${tx - sd * 8} ${ty + 14} ${tx} ${ty}Q${tx - sd * 2} ${ty + 18} ${x + sd * span * (0.2 + 0.3 * f)} ${y + h * 0.3}z" fill="${i % 2 ? "#ffd23f" : FIRE}"/>`;
+  }).join("");
+  return `<g filter="url(#${id}-glow)">${feathers}</g>`;
+}
+
+const phenixol: Draw = (id, o) => {
+  if (o.stage === 0)
+    return { ground: 36, aura: "#ffb36b", body: `${blob(id, path(EGG), FIRE)}<path d="M100 60q16 20 6 40q14-6 16-22q14 26-6 46q-10 10-16 10q-6 0-16-10q-20-20-6-46q2 16 16 22q-10-20 6-40z" fill="#ffd23f" opacity=".9"/>` };
+  const st = o.stage;
+  const r = [0, 36, 44, 50, 54][st];
+  const cy = 182 - r * 1.05;
+  const parts: string[] = [];
+  if (st === 4) parts.push(`<circle cx="100" cy="${cy - r * 0.3}" r="${r * 1.2}" fill="none" stroke="#ffd23f" stroke-width="4" opacity=".8" filter="url(#${id}-glow)"/>`);
+  // tail plumes
+  const tl = [0, 16, 26, 36, 50][st];
+  parts.push([-0.3, 0, 0.3].map((a) => `<path d="M100 ${cy + r * 0.7}q${a * 40} ${tl * 0.6} ${a * 60} ${tl}q${-a * 6} ${-tl * 0.2} ${-a * 20} ${-tl * 0.4}z" fill="${a ? "#ffd23f" : FIRE}" transform="rotate(${a * 30} 100 ${cy + r * 0.7})"/>`).join(""));
+  if (st >= 2) {
+    const span = [0, 0, 40, 56, 66][st], h = [0, 0, 34, 52, 72][st];
+    parts.push(flameWing(-1, 100 - r * 0.55, cy - r * 0.1, span, h, id), flameWing(1, 100 + r * 0.55, cy - r * 0.1, span, h, id));
+  } else parts.push([-1, 1].map((sd) => `<ellipse cx="${100 + sd * r * 0.85}" cy="${cy + r * 0.1}" rx="${r * 0.22}" ry="${r * 0.38}" fill="#ffd23f" transform="rotate(${sd * 20} ${100 + sd * r * 0.85} ${cy})"/>`).join(""));
+  parts.push(`${feet(r, cy, "#a8401a", 0.25)}${blob(id, ell(100, cy, r * 0.85, r), FIRE)}
+    <ellipse cx="100" cy="${cy + r * 0.35}" rx="${r * 0.45}" ry="${r * 0.45}" fill="#ffd23f" opacity=".8"/>`);
+  // flame crest
+  const cl = [0, 12, 18, 26, 34][st];
+  parts.push([-0.35, 0, 0.35].map((dx, i) => `<path d="M${100 + dx * r - 5} ${cy - r * 0.85}q${5 + dx * 10} ${-cl * (i === 1 ? 1.3 : 1)} ${10} 0z" fill="${i === 1 ? "#ffd23f" : FIRE}"${st >= 3 ? ` filter="url(#${id}-glow)"` : ""}/>`).join(""));
+  const ey = cy - r * 0.3;
+  parts.push(st >= 3 ? eyes(100, ey, r * 0.34, 8.5, "glow", "#fff3b0") : eyes(100, ey, r * 0.34, 9, st === 1 ? "cute" : "bold"));
+  if (st < 3) parts.push(blush(100, ey + 12, r * 0.56, 5.5));
+  parts.push(`<path d="M${100 - 6} ${ey + 9}l6 10 6 -10z" fill="#ffd23f" stroke="#a8401a" stroke-width="1.5"/>`);
+  if (st === 4) parts.push(`${sparkle(26, 40, 7, "#ffd23f")}${sparkle(176, 36, 6, "#fff", 0.5)}${sparkle(184, 150, 5, FIRE, 1)}${sparkle(16, 140, 5, "#ffd23f", 0.3)}`);
+  return { ground: r + 6, aura: st >= 3 ? "#ffb36b" : undefined, rays: st === 4 ? GOLD_RAYS : undefined, body: parts.join("") };
+};
+
+const SPECIES: Record<string, Draw> = {
+  galet, fusette, foulon, brasaltor, aurorelle, tempestor, sylvarion, colossaure, ondinelle, solarion, hiboreal, yeticime, phenixol,
+};

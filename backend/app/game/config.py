@@ -37,6 +37,7 @@ class Branch:
     metric: str
     reference: float
     hint: str = ""
+    type2: str | None = None  # a second type
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,7 @@ class Species:
     description: str = ""
     rarity: str | None = None
     abilities: tuple[Ability, ...] = ()
+    type2: str | None = None  # a second type (both apply in battle: its kit, and the damage it takes)
 
     def branch(self, branch_id: str | None) -> Branch | None:
         return next((b for b in self.branches if b.id == branch_id), None)
@@ -114,12 +116,17 @@ class GameConfig:
     def levels_cost(self, current: int, target: int) -> int:
         return sum(self.level_cost(n) for n in range(current + 1, target + 1))
 
-    def effectiveness(self, attacker: str, defender: str) -> float:
-        if defender in self.strong.get(attacker, ()):
-            return self.strong_multiplier
-        if attacker in self.strong.get(defender, ()):
-            return self.weak_multiplier
-        return 1.0
+    def effectiveness(self, attacker: str, defender: str, defender2: str | None = None) -> float:
+        """A move of type `attacker` against a familier of type `defender` (and `defender2`: both multipliers)."""
+        out = 1.0
+        for d in (defender, defender2):
+            if d is None:
+                continue
+            if d in self.strong.get(attacker, ()):
+                out *= self.strong_multiplier
+            elif attacker in self.strong.get(d, ()):
+                out *= self.weak_multiplier
+        return out
 
     def starters(self) -> list[Species]:
         return [s for s in self.species.values() if s.starter]
@@ -139,12 +146,13 @@ def load(folder: Path = CONFIG_DIR) -> GameConfig:
     strong = {t: frozenset(ty["strong"].get(t, ())) for t in types}
     species = {}
     for s in sp["species"]:
-        branches = tuple(Branch(b["id"], b["name"], b["type"], b["metric"], float(b["reference"]), b.get("hint", "")) for b in s["branch"])
+        branches = tuple(Branch(b["id"], b["name"], b["type"], b["metric"], float(b["reference"]), b.get("hint", ""), b.get("type2"))
+                         for b in s["branch"])
         abilities = tuple(Ability(a["id"], a["name"], a["kind"], a["stage"], int(a.get("power", 0)), int(a.get("value", 0)),
                                   a.get("branch"), a.get("description", "")) for a in s.get("ability", ()))
         species[s["id"]] = Species(s["id"], s["type"], tuple(s["names"]), {k: int(s["base"][k]) for k in STATS}, branches,
                                    bool(s.get("starter", False)), s.get("color", "#888888"), s.get("description", ""),
-                                   s.get("rarity"), abilities)
+                                   s.get("rarity"), abilities, s.get("type2"))
     shop = {i["id"]: ShopItem(i["id"], i["kind"], i.get("species"), i.get("price_points"), i.get("price_gems"), bool(i.get("random", False)))
             for i in sh.get("item", ())}
     packs = {p["id"]: GemPack(p["id"], int(p["gems"]), float(p["price_eur"]), p.get("label", "")) for p in sh.get("gem_pack", ())}
@@ -170,10 +178,13 @@ def validate(cfg: GameConfig) -> None:
         weak = [o for o in cfg.types if t in cfg.strong[o]]
         if not cfg.strong[t] or not weak:
             raise ConfigError(f"types: {t} needs at least one strength and one weakness")
+        if len(cfg.strong[t]) != len(weak):
+            raise ConfigError(f"types: {t} has {len(cfg.strong[t])} strengths for {len(weak)} weaknesses (as many of each)")
     for s in cfg.species.values():
         where = f"species {s.id}"
-        if s.type not in cfg.types or any(b.type not in cfg.types for b in s.branches):
-            raise ConfigError(f"{where}: unknown type")
+        types = [s.type, s.type2] + [t for b in s.branches for t in (b.type, b.type2)]
+        if any(t is not None and t not in cfg.types for t in types) or s.type == s.type2 or any(b.type == b.type2 for b in s.branches):
+            raise ConfigError(f"{where}: unknown type, or the same type twice")
         if len(s.names) != len(cfg.stages) - 1:
             raise ConfigError(f"{where}: one name per stage before the final form ({len(cfg.stages) - 1})")
         if not s.branches or any(b.metric not in METRICS or b.reference <= 0 for b in s.branches):

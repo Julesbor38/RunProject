@@ -7,6 +7,10 @@
 # blows), `priority` (acts first), `crit` (extra critical chance), `drain` (% of the damage healed), `dot`
 # (% of the target's max HP lost per turn, for `dot_turns`). Defences: `guard` (defence +% for `turns`),
 # `dodge` (attacks avoided), `heal` (% of max HP), `regen` (% per turn for `turns`).
+# Weather (`weather` = rain, sun or snow, for `weather_turns`): rain boosts Pluvieux moves and weakens Ensoleillé
+# ones, and heals the Pluvieux a little each turn; sun the other way round (and weakens Glacé); snow boosts Glacé
+# moves and chips at everyone who is not Glacé (battles.toml has the numbers). `freeze`: % chance that the target
+# misses its next action, frozen.
 
 special_cooldown = 3
 defense_cooldown = 1         # turns to wait after a defence before the next one (no endless dodging or healing)
@@ -17,6 +21,9 @@ vitesse = { attacks = ["eclair", "rafale_de_coups"], defense = "esquive" }
 endurance = { attacks = ["charge_lourde", "coup_de_fond"], defense = "second_souffle" }
 nocturne = { attacks = ["griffe_d_ombre", "nuee_nocturne"], defense = "voile_de_nuit" }
 exploration = { attacks = ["ronces", "pluie_de_feuilles"], defense = "racines" }
+pluvieux = { attacks = ["averse", "trombe"], defense = "brume" }
+ensoleille = { attacks = ["canicule", "rayon_solaire"], defense = "mirage" }
+glace = { attacks = ["blizzard", "pic_de_glace"], defense = "armure_de_givre" }
 
 # --- Montagne: heavy, slow, area damage; defence: a wall of rock
 
@@ -165,3 +172,100 @@ regen = 6
 turns = 3
 anim = "roots"
 description = "S'enracine : défense +40 % et 6 % de PV par tour pendant 3 tours."
+
+# --- Pluvieux: brings the rain, which heals it; defence: mist
+
+[[move]]
+id = "averse"
+name = "Averse"
+type = "pluvieux"
+power = 55
+target = "all"
+weather = "rain"
+weather_turns = 4
+anim = "downpour"
+description = "Une averse sur tous les adversaires : il pleut pendant 4 tours."
+
+[[move]]
+id = "trombe"
+name = "Trombe d'eau"
+type = "pluvieux"
+power = 100
+anim = "waterspout"
+description = "Une colonne d'eau qui s'abat d'un coup, encore plus forte sous la pluie."
+
+[[move]]
+id = "brume"
+name = "Brume"
+type = "pluvieux"
+dodge = 1
+regen = 8
+turns = 2
+anim = "mist"
+description = "Se fond dans la brume : évite la prochaine attaque, 8 % de PV par tour pendant 2 tours."
+
+# --- Ensoleillé: heat that burns, a scorching ray; defence: a mirage
+
+[[move]]
+id = "canicule"
+name = "Canicule"
+type = "ensoleille"
+power = 55
+target = "all"
+dot = 5
+dot_turns = 2
+weather = "sun"
+weather_turns = 4
+anim = "heatwave"
+description = "Une vague de chaleur sur tous : brûlés 2 tours, et le soleil tape pendant 4 tours."
+
+[[move]]
+id = "rayon_solaire"
+name = "Rayon solaire"
+type = "ensoleille"
+power = 110
+crit = 10
+anim = "sunbeam"
+description = "Un rayon brûlant concentré sur un adversaire."
+
+[[move]]
+id = "mirage"
+name = "Mirage"
+type = "ensoleille"
+guard = 40
+haste = 30
+turns = 2
+anim = "mirage"
+description = "Trouble l'air : défense +40 % et vitesse +30 % pendant 2 tours."
+
+# --- Glacé: freezes, slows; defence: an armour of frost
+
+[[move]]
+id = "blizzard"
+name = "Blizzard"
+type = "glace"
+power = 55
+target = "all"
+freeze = 15
+weather = "snow"
+weather_turns = 4
+anim = "blizzard"
+description = "Un blizzard sur tous les adversaires, qui peut les figer ; il neige pendant 4 tours."
+
+[[move]]
+id = "pic_de_glace"
+name = "Pic de glace"
+type = "glace"
+power = 90
+freeze = 30
+anim = "icespike"
+description = "Une lance de glace : 30 % de chances de figer l'adversaire un tour."
+
+[[move]]
+id = "armure_de_givre"
+name = "Armure de givre"
+type = "glace"
+guard = 80
+turns = 1
+anim = "frostarmor"
+description = "Se couvre de givre : défense +80 % pendant 1 tour."

@@ -31,7 +31,8 @@ class Game:
         pets = sorted(self.pets.all(friend), key=lambda p: not p.active)
         return {"name": friend, "record": self.pvp.record(user, friend),
                 "pets": [{"id": p.id, "name": p.name, "species": p.species, "form": self.pets.form_name(p), "type": self.pets.type_of(p),
-                          "type_name": self.cfg.types[self.pets.type_of(p)], "color": self.cfg.species[p.species].color, "active": p.active,
+                          "type_name": self.cfg.types[self.pets.type_of(p)], "type2": self.pets.type2_of(p),
+                          "color": self.cfg.species[p.species].color, "active": p.active,
                           "stage": {"index": p.stage, "name": self.cfg.stages[p.stage].name}, "level": p.level, "branch": p.branch,
                           "rarity": self.cfg.species[p.species].rarity, "stats": self.pets.stats(p)} for p in pets]}
 
@@ -46,8 +47,14 @@ class Game:
                         "stage": self.cfg.stages[at].name, "branch": a.branch, "unlocked": stage is not None and stage >= at})
         return out
 
+    def kit(self, type_: str, type2: str | None = None) -> list:
+        """The moves of a familier of these types (two types: both attacks of the first, one of the second)."""
+        kit = self.battles.bc.kit(type_)
+        return kit[:2] + [self.battles.bc.kit(type2)[0], kit[2]] if type2 else kit
+
     def species_json(self, sp: config.Species) -> dict:
         return {"id": sp.id, "type": sp.type, "type_name": self.cfg.types[sp.type], "names": list(sp.names),
+                "type2": sp.type2, "type2_name": self.cfg.types.get(sp.type2 or ""),
                 "color": sp.color, "description": sp.description, "base": sp.base, "total": sum(sp.base.values()),
                 "rarity": sp.rarity, "rarity_name": config.RARITIES.get(sp.rarity or ""),
                 "branches": [{"id": b.id, "name": b.name, "type": b.type, "hint": b.hint} for b in sp.branches],
@@ -80,8 +87,9 @@ class Game:
             "level": pet.level, "branch": pet.branch, "stats": self.pets.stats(pet),
             "rarity": sp.rarity, "rarity_name": config.RARITIES.get(sp.rarity or ""),
             "abilities": self.abilities_json(sp, pet.stage, pet.branch),
+            "type2": self.pets.type2_of(pet), "type2_name": cfg.types.get(self.pets.type2_of(pet) or ""),
             "kit": [{"id": m.id, "name": m.name, "kind": m.kind, "type": m.type, "power": m.power, "hits": m.hits, "target": m.target,
-                     "description": m.description} for m in self.battles.bc.kit(self.pets.type_of(pet))],
+                     "description": m.description} for m in self.kit(self.pets.type_of(pet), self.pets.type2_of(pet))],
             "next_level": None if at_cap else {
                 "cost": cfg.level_cost(pet.level + 1),
                 "cost_5": cfg.levels_cost(pet.level, min(stage.max_level, pet.level + 5)),

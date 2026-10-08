@@ -417,3 +417,231 @@ base = { hp = 125, attack = 80, defense = 100, speed = 55 }
   power = 120
   stage = "final"
   description = "Des tonnes lancées au galop."
+
+# ---------------------------------------------------------------- shop: the weather types (two with a second type)
+
+[[species]]
+id = "ondinelle"
+rarity = "epique"
+type = "pluvieux"
+names = ["Œuf de pluie", "Gouttelin", "Ondinet", "Ondinelle"]
+color = "#3a8fd9"
+description = "Un axolotl des nuages qui danse sous l'averse. Plus il pleut, plus il guérit vite."
+base = { hp = 105, attack = 90, defense = 95, speed = 100 }
+
+  [[species.branch]]
+  id = "deluvia"
+  name = "Déluvia"
+  type = "pluvieux"
+  metric = "night_share"
+  reference = 0.15
+  hint = "forme finale unique"
+
+  [[species.ability]]
+  id = "bulle"
+  name = "Bulle d'eau"
+  kind = "strike"
+  power = 65
+  stage = "baby"
+  description = "Une grosse bulle qui éclate au visage."
+
+  [[species.ability]]
+  id = "pluie_fine"
+  name = "Pluie fine"
+  kind = "heal"
+  value = 30
+  stage = "adult"
+  description = "Une pluie douce referme ses blessures."
+
+  [[species.ability]]
+  id = "deluge"
+  name = "Déluge"
+  kind = "strike"
+  power = 130
+  stage = "final"
+  description = "Le ciel se vide d'un coup sur l'adversaire."
+
+[[species]]
+id = "solarion"
+rarity = "epique"
+type = "ensoleille"
+names = ["Œuf solaire", "Soleillon", "Crinière", "Flamboyant"]
+color = "#f2a516"
+description = "Un lion à la crinière de flammes qui ne chasse qu'en plein soleil."
+base = { hp = 95, attack = 115, defense = 85, speed = 95 }
+
+  [[species.branch]]
+  id = "solarion"
+  name = "Solarion"
+  type = "ensoleille"
+  metric = "fast_share"
+  reference = 0.2
+  hint = "forme finale unique"
+
+  [[species.ability]]
+  id = "etincelle"
+  name = "Étincelle"
+  kind = "strike"
+  power = 65
+  stage = "baby"
+  description = "Une petite flamme lancée d'un coup de crinière."
+
+  [[species.ability]]
+  id = "rugissement_solaire"
+  name = "Rugissement solaire"
+  kind = "haste"
+  value = 40
+  stage = "adult"
+  description = "Un rugissement qui l'embrase : vitesse +40 % pendant 2 tours."
+
+  [[species.ability]]
+  id = "zenith"
+  name = "Éclat du zénith"
+  kind = "strike"
+  power = 135
+  stage = "final"
+  description = "Le soleil de midi concentré dans un seul coup de griffe."
+
+[[species]]
+id = "hiboreal"
+rarity = "rare"
+type = "glace"
+names = ["Œuf de givre", "Floconnet", "Givrelin", "Harfang"]
+color = "#bfe3f7"
+description = "Une chouette des neiges silencieuse, dont chaque battement d'ailes fait tomber le givre."
+base = { hp = 90, attack = 85, defense = 85, speed = 100 }
+
+  [[species.branch]]
+  id = "hiboreal"
+  name = "Hiboréal"
+  type = "glace"
+  metric = "night_share"
+  reference = 0.15
+  hint = "forme finale unique"
+
+  [[species.ability]]
+  id = "plume_de_givre"
+  name = "Plume de givre"
+  kind = "strike"
+  power = 60
+  stage = "baby"
+  description = "Des plumes gelées, coupantes comme du verre."
+
+  [[species.ability]]
+  id = "duvet_glace"
+  name = "Duvet glacé"
+  kind = "guard"
+  value = 45
+  stage = "adult"
+  description = "Se gonfle de duvet gelé : défense +45 % pendant 2 tours."
+
+  [[species.ability]]
+  id = "nuit_polaire"
+  name = "Nuit polaire"
+  kind = "strike"
+  power = 120
+  stage = "final"
+  description = "Fond sur l'adversaire au cœur d'une nuit de glace."
+
+[[species]]
+id = "yeticime"
+rarity = "legendaire"
+type = "glace"
+type2 = "montagne"
+names = ["Œuf des neiges", "Yétinou", "Névé", "Sérac"]
+color = "#e8f2f8"
+description = "Le gardien des glaciers, un yéti haut comme une montagne. Glacé et Montagne à la fois : ses coups gèlent et écrasent."
+base = { hp = 120, attack = 110, defense = 120, speed = 70 }
+
+  [[species.branch]]
+  id = "yeticime"
+  name = "Yéticime"
+  type = "glace"
+  type2 = "montagne"
+  metric = "ascent_per_km"
+  reference = 25.0
+  hint = "forme finale unique"
+
+  [[species.ability]]
+  id = "boule_de_neige"
+  name = "Boule de neige géante"
+  kind = "strike"
+  power = 75
+  stage = "baby"
+  description = "Une boule de neige grosse comme un rocher."
+
+  [[species.ability]]
+  id = "crevasse"
+  name = "Crevasse"
+  kind = "drain"
+  power = 90
+  value = 35
+  stage = "young"
+  description = "Ouvre la glace sous l'adversaire et s'en nourrit."
+
+  [[species.ability]]
+  id = "coeur_de_glacier"
+  name = "Cœur de glacier"
+  kind = "guard"
+  value = 55
+  stage = "adult"
+  description = "Durcit comme un glacier : défense +55 % pendant 2 tours."
+
+  [[species.ability]]
+  id = "ere_glaciaire"
+  name = "Ère glaciaire"
+  kind = "strike"
+  power = 145
+  stage = "final"
+  description = "Toute la montagne gèle d'un coup."
+
+[[species]]
+id = "phenixol"
+rarity = "legendaire"
+type = "ensoleille"
+type2 = "vitesse"
+names = ["Œuf d'aube", "Flammèche", "Pyrelle", "Phénixia"]
+color = "#ff6b2e"
+description = "Un phénix né du soleil levant, plus rapide que la lumière. Ensoleillé et Vitesse à la fois ; il renaît de ses cendres."
+base = { hp = 90, attack = 120, defense = 80, speed = 130 }
+
+  [[species.branch]]
+  id = "phenixol"
+  name = "Phénixol"
+  type = "ensoleille"
+  type2 = "vitesse"
+  metric = "fast_share"
+  reference = 0.2
+  hint = "forme finale unique"
+
+  [[species.ability]]
+  id = "plume_ardente"
+  name = "Plume ardente"
+  kind = "strike"
+  power = 70
+  stage = "baby"
+  description = "Une plume de feu lancée en piqué."
+
+  [[species.ability]]
+  id = "envol_solaire"
+  name = "Envol solaire"
+  kind = "haste"
+  value = 50
+  stage = "young"
+  description = "S'élève vers le soleil : vitesse +50 % pendant 2 tours."
+
+  [[species.ability]]
+  id = "renaissance"
+  name = "Renaissance"
+  kind = "heal"
+  value = 45
+  stage = "adult"
+  description = "Renaît de ses cendres : récupère 45 % de ses PV."
+
+  [[species.ability]]
+  id = "aube_flamboyante"
+  name = "Aube flamboyante"
+  kind = "strike"
+  power = 145
+  stage = "final"
+  description = "Le soleil se lève dans un torrent de flammes."

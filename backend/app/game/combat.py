@@ -19,6 +19,9 @@ from pathlib import Path
 from .config import CONFIG_DIR, ConfigError, GameConfig, Species
 
 ATTACK_FIELDS = ("power",)
+# weather -> (type favoured, types hindered)
+WEATHERS = {"rain": ("pluvieux", ("ensoleille",)), "sun": ("ensoleille", ("pluvieux", "glace")), "snow": ("glace", ("ensoleille",))}
+WEATHER_NAMES = {"rain": "La pluie tombe", "sun": "Le soleil tape", "snow": "Il neige"}
 DEFENCE_FIELDS = ("guard", "dodge", "heal", "regen", "haste")
 
 
@@ -41,6 +44,9 @@ class Move:
     regen: int = 0
     haste: int = 0
     turns: int = 2
+    weather: str = ""  # rain, sun, snow: set for weather_turns
+    weather_turns: int = 4
+    freeze: int = 0  # % chance that the target misses its next action
     anim: str = ""
     description: str = ""
     special: bool = False  # a species ability (cooldown)
@@ -105,6 +111,8 @@ def _validate(cfg: BattleConfig, game: GameConfig) -> None:
     for m in cfg.moves.values():
         if m.target not in ("one", "all") or m.hits < 1:
             raise ConfigError(f"moves: {m.id}: target one or all, hits >= 1")
+        if m.weather and m.weather not in WEATHERS:
+            raise ConfigError(f"moves: {m.id}: weather among {sorted(WEATHERS)}")
     for sp in cfg.mob_species + tuple(b.species for b in cfg.mid_bosses + cfg.bosses) + tuple(b.summon for b in cfg.bosses if b.summon):
         if sp not in game.species:
             raise ConfigError(f"battles: unknown species {sp}")
@@ -158,6 +166,7 @@ class Fighter:
     speed: int
     moves: list[str]  # move ids: the type kit, then the unlocked specials ("sp:…")
     level: int | None = None
+    type2: str | None = None
     boss: str | None = None  # mid, big
     summon: str | None = None
     phase: int = 1
@@ -178,6 +187,7 @@ class Battle:
     turn: int = 1
     status: str = "running"  # running, won, lost
     end_reason: str = ""
+    weather: dict | None = None  # {"kind": rain | sun | snow, "turns": n}
 
     def by_id(self, fid: str) -> Fighter | None:
         return next((f for f in self.fighters if f.id == fid), None)
@@ -202,8 +212,11 @@ class Battle:
         return Battle(**{**d, "fighters": [Fighter(**f) for f in d["fighters"]]})
 
 
-def _moves_of(game: GameConfig, bc: BattleConfig, sp: Species, stage: int, branch: str | None, type_: str, specials: bool) -> tuple[list[str], dict[str, Move]]:
+def _moves_of(game: GameConfig, bc: BattleConfig, sp: Species, stage: int, branch: str | None, type_: str, specials: bool,
+              type2: str | None = None) -> tuple[list[str], dict[str, Move]]:
     kit = bc.kit(type_)
+    if type2:  # two types: both attacks of the first, the first attack of the second, the first's defence
+        kit = kit[:2] + [bc.kit(type2)[0], kit[2]]
     extra = {}
     if specials:
         for a in sp.abilities:
@@ -213,12 +226,16 @@ def _moves_of(game: GameConfig, bc: BattleConfig, sp: Species, stage: int, branc
     return [m.id for m in kit] + list(extra), extra
 
 
-def player_fighter(game: GameConfig, bc: BattleConfig, pet, stats: dict, type_: str, form: str, fid: str = "p", side: str = "player") -> Fighter:
+def player_fighter(game: GameConfig, bc: BattleConfig, pet, stats: dict, type_: str, form: str, fid: str = "p", side: str = "player",
+                   type2: str | None = None) -> Fighter:
     sp = game.species[pet.species]
-    moves, _ = _moves_of(game, bc, sp, pet.stage, pet.branch, type_, specials=True)
+    if type2 is None:
+        b = sp.branch(pet.branch)
+        type2 = b.type2 if b else sp.type2
+    moves, _ = _moves_of(game, bc, sp, pet.stage, pet.branch, type_, specials=True, type2=type2)
     hp = round(stats["hp"] * bc.p["hp_factor"])
     return Fighter(fid, side, pet.name, sp.id, pet.stage, pet.branch, type_, hp, hp, stats["attack"], stats["defense"], stats["speed"],
-                   moves, level=pet.level)
+                   moves, level=pet.level, type2=type2)
 
 
 def _enemy(game: GameConfig, bc: BattleConfig, fid: str, species: str, stage: int, branch: str | None, scale: float,
@@ -226,14 +243,15 @@ def _enemy(game: GameConfig, bc: BattleConfig, fid: str, species: str, stage: in
     sp = game.species[species]
     b = sp.branch(branch)
     type_ = b.type if b else sp.type
+    type2 = b.type2 if b else sp.type2
     # as strong as a starter, whatever its species (its own spread of stats); a boss then gets its own scale
     scale *= bc.p["mob_total"] / sum(sp.base.values())
     k = {s: scale * (extra or {}).get(s, 1.0) for s in ("hp", "attack", "defense", "speed")}
     st = {s: max(1, round(sp.base[s] * k[s])) for s in k}
     hp = round(st["hp"] * bc.p["hp_factor"])
-    moves, _ = _moves_of(game, bc, sp, stage, branch, type_, specials=boss is not None)
+    moves, _ = _moves_of(game, bc, sp, stage, branch, type_, specials=boss is not None, type2=type2)
     return Fighter(fid, "enemy", name, species, stage, branch, type_, hp, hp, st["attack"], st["defense"], st["speed"], moves,
-                   boss=boss, summon=summon)
+                   boss=boss, summon=summon, type2=type2)
 
 
 def level_kind(level: int) -> str:
@@ -376,10 +394,18 @@ def play_round(game: GameConfig, bc: BattleConfig, b: Battle, choices: dict[str,
     for actor, move, tgt in actions:
         if not actor.alive or b.status != "running":
             continue
+        if actor.effects.pop("frozen", None):
+            events.append({"t": "frozen", "target": actor.id, "name": actor.name})
+            continue
         _act(game, bc, b, actor, move, tgt, rng, events)
         _check_end(b, events)
     if b.status == "running":
-        _end_of_round(b, events)
+        _end_of_round(b, events, bc)
+        if b.weather:
+            b.weather["turns"] -= 1
+            if b.weather["turns"] <= 0:
+                b.weather = None
+                events.append({"t": "weather", "weather": None, "text": "Le temps se calme"})
         _check_end(b, events)
     if b.status == "running":
         b.turn += 1
@@ -442,7 +468,7 @@ def _act(game: GameConfig, bc: BattleConfig, b: Battle, actor: Fighter, move: Mo
         for _ in range(move.hits):
             if not t.alive:
                 break
-            dmg, crit, eff = _damage(game, bc, actor, t, move, rng)
+            dmg, crit, eff = _damage(game, bc, actor, t, move, rng, _weather_factor(bc, b, move.type))
             t.hp = max(0, t.hp - dmg)
             dealt += dmg
             events.append({"t": "hit", "target": t.id, "dmg": dmg, "crit": crit, "eff": eff, "hp": t.hp})
@@ -451,20 +477,38 @@ def _act(game: GameConfig, bc: BattleConfig, b: Battle, actor: Fighter, move: Mo
         if t.alive and move.dot:
             t.effects["dot"] = {"pct": move.dot, "turns": move.dot_turns, "type": move.type}
             events.append({"t": "status", "target": t.id, "status": "dot", "turns": move.dot_turns})
+        if t.alive and move.freeze and "glace" not in (t.type, t.type2) and rng.random() * 100 < move.freeze:
+            t.effects["frozen"] = {"turns": 1}
+            events.append({"t": "status", "target": t.id, "status": "frozen"})
         if t.alive:
             _phase(game, bc, b, t, events)
     if move.drain and dealt and actor.alive:
         _heal(actor, round(dealt * move.drain / 100), events)
+    if move.weather:
+        _set_weather(b, move.weather, move.weather_turns, events)
 
 
-def _damage(game: GameConfig, bc: BattleConfig, a: Fighter, t: Fighter, move: Move, rng: random.Random) -> tuple[int, bool, str]:
+def _set_weather(b: Battle, kind: str, turns: int, events: list) -> None:
+    b.weather = {"kind": kind, "turns": turns}
+    events.append({"t": "weather", "weather": kind, "turns": turns, "text": WEATHER_NAMES[kind]})
+
+
+def _weather_factor(bc: BattleConfig, b: Battle, move_type: str) -> float:
+    if not b.weather:
+        return 1.0
+    favoured, hindered = WEATHERS[b.weather["kind"]]
+    return bc.p["weather_boost"] if move_type == favoured else bc.p["weather_malus"] if move_type in hindered else 1.0
+
+
+def _damage(game: GameConfig, bc: BattleConfig, a: Fighter, t: Fighter, move: Move, rng: random.Random, weather: float = 1.0) -> tuple[int, bool, str]:
     att = a.attack * (1.3 if a.angry else 1.0)
     guard = t.effects.get("guard")
     dfn = t.defense * (1 + guard["pct"] / 100 if guard else 1)
-    eff = game.effectiveness(move.type, t.type)
+    eff = game.effectiveness(move.type, t.type, t.type2)
     spread = bc.p["random_spread"] / 100
     crit = rng.random() * 100 < bc.p["crit_chance"] + move.crit
     dmg = move.power / 100 * att * (att / (att + dfn)) * 2 * bc.p["damage_scale"] * eff * rng.uniform(1 - spread, 1 + spread)
+    dmg *= weather
     if crit:
         dmg *= bc.p["crit_multiplier"]
     return max(1, round(dmg)), crit, ("super" if eff > 1 else "weak" if eff < 1 else "")
@@ -510,8 +554,18 @@ def _phase(game: GameConfig, bc: BattleConfig, b: Battle, f: Fighter, events: li
             events.append({"t": "summon", "actor": f.id, "fighter": fighter_view(game, bc, mob)})
 
 
-def _end_of_round(b: Battle, events: list) -> None:
+def _end_of_round(b: Battle, events: list, bc: BattleConfig | None = None) -> None:
+    w = b.weather["kind"] if b.weather else None
     for f in [x for x in b.fighters if x.alive]:
+        if bc and w == "rain" and "pluvieux" in (f.type, f.type2):
+            _heal(f, round(f.max_hp * bc.p["rain_heal"] / 100), events)
+        if bc and w == "snow" and "glace" not in (f.type, f.type2):
+            dmg = max(1, round(f.max_hp * bc.p["snow_chip"] / 100))
+            f.hp = max(0, f.hp - dmg)
+            events.append({"t": "hit", "target": f.id, "dmg": dmg, "crit": False, "eff": "", "hp": f.hp, "dot": True, "weather": "snow"})
+            if not f.alive:
+                events.append({"t": "ko", "target": f.id, "name": f.name})
+                continue
         dot = f.effects.get("dot")
         if dot:
             dmg = max(1, round(f.max_hp * dot["pct"] / 100))
@@ -567,7 +621,8 @@ def fighter_view(game: GameConfig, bc: BattleConfig, f: Fighter, mine: str = "pl
     sp = game.species[f.species]
     side = "player" if f.side == mine else "enemy"
     out = {"id": f.id, "side": side, "name": f.name, "species": f.species, "stage": f.stage, "branch": f.branch, "type": f.type,
-           "type_name": game.types[f.type], "color": sp.color, "hp": f.hp, "max_hp": f.max_hp, "boss": f.boss, "angry": f.angry,
+           "type_name": game.types[f.type], "type2": f.type2,
+           "type2_name": game.types[f.type2] if f.type2 else None, "color": sp.color, "hp": f.hp, "max_hp": f.max_hp, "boss": f.boss, "angry": f.angry,
            "level": f.level, "effects": sorted(f.effects), "power": f.attack + f.defense + f.speed + f.max_hp // 3}
     if side == "player":
         out["moves"] = []
@@ -581,5 +636,5 @@ def fighter_view(game: GameConfig, bc: BattleConfig, f: Fighter, mine: str = "pl
 
 def battle_view(game: GameConfig, bc: BattleConfig, b: Battle, mine: str = "player") -> dict:
     return {"level": b.level, "kind": level_kind(b.level), "turn": b.turn, "max_turns": bc.p["max_turns"], "status": b.status,
-            "end_reason": b.end_reason, "fighters": [fighter_view(game, bc, f, mine) for f in b.fighters]}
+            "end_reason": b.end_reason, "weather": b.weather, "fighters": [fighter_view(game, bc, f, mine) for f in b.fighters]}
 

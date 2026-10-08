@@ -18,6 +18,13 @@ crit_chance = 6
 crit_multiplier = 1.5
 random_spread = 10           # ±% on every blow
 
+# weather: moves of the favoured type x weather_boost, of the hindered type x weather_malus; rain heals the
+# Pluvieux rain_heal % of max HP a turn; snow chips snow_chip % at everyone not Glacé
+weather_boost = 1.3
+weather_malus = 0.75
+rain_heal = 5
+snow_chip = 3
+
 # team trail (3 against 3): every enemy at team_scale (a guard of a boss at team_guard_scale on top)
 team_scale = 1.0
 team_guard_scale = 0.75
@@ -30,7 +37,8 @@ replay_share = 0.25
 daily_rewarded = 10
 
 # wild mobs met on the trail, by stage as the levels go up (stage = 1 + level / mob_stage_every, max 3)
-mob_species = ["galet", "fusette", "foulon", "colossaure", "tempestor", "sylvarion", "brasaltor", "aurorelle"]
+mob_species = ["galet", "fusette", "foulon", "colossaure", "tempestor", "sylvarion", "brasaltor", "aurorelle",
+               "hiboreal", "ondinelle", "solarion", "yeticime", "phenixol"]
 mob_stage_every = 12
 
 # Bosses, in turn: mid-bosses on levels 5, 15, 25…, big bosses on 10, 20, 30… (after the list, it starts again,

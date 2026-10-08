@@ -1,6 +1,8 @@
 # Types and their strengths. When A is strong against B, A deals x strong_multiplier to B, and B deals only
-# x weak_multiplier to A; anything else is x1. Every type must have at least one strength and one weakness,
-# and the three starter types form a triangle (Montagne > Vitesse > Endurance > Montagne).
+# x weak_multiplier to A; anything else is x1. Against a familier with two types, both multipliers apply.
+# Every type has as many strengths as weaknesses (checked when the config loads); the three starter types form a
+# triangle (Montagne > Vitesse > Endurance > Montagne), and so do the three weather types
+# (Pluvieux > Ensoleillé > Glacé > Pluvieux).
 
 strong_multiplier = 1.5
 weak_multiplier = 0.75
@@ -11,10 +13,16 @@ vitesse = "Vitesse"
 endurance = "Endurance"
 nocturne = "Nocturne"
 exploration = "Exploration"
+pluvieux = "Pluvieux"
+ensoleille = "Ensoleillé"
+glace = "Glacé"
 
 [strong]
-montagne = ["vitesse", "nocturne"]        # climbs break the pace; peaks stand in daylight
-vitesse = ["endurance", "exploration"]    # the sprint beats the long haul and the wandering
-endurance = ["montagne", "nocturne"]      # the long haul wears hills down and lasts through the night
-nocturne = ["vitesse", "exploration"]     # nobody runs fast in the dark, nor finds their way
-exploration = ["montagne", "endurance"]   # the side path goes round the peak; variety beats routine
+montagne = ["vitesse", "nocturne", "ensoleille"]       # climbs break the pace; peaks stand in daylight; their shade
+vitesse = ["endurance", "exploration", "pluvieux"]      # the sprint beats the long haul and the wandering; outruns the rain
+endurance = ["montagne", "nocturne", "glace"]           # wears hills down, lasts through the night, the effort keeps warm
+nocturne = ["vitesse", "exploration", "pluvieux"]       # nobody runs fast in the dark, nor finds their way; night storms
+exploration = ["montagne", "endurance", "ensoleille"]   # the side path goes round the peak; variety; the shade of the woods
+pluvieux = ["ensoleille", "montagne", "exploration"]    # clouds hide the sun; rain wears the rock; floods the trails
+ensoleille = ["glace", "endurance", "nocturne"]         # sun melts the ice, exhausts in the heat, chases the night
+glace = ["pluvieux", "vitesse"]                         # rain freezes; ice slows everyone down

@@ -78,6 +78,13 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   `team_cleared`, gains et limite du jour partagés avec le solo) ; entre amis, format 1 contre 1 ou 3 contre 3 au
   défi ; on choisit ses 3 familiers éclos (`src/team-picker.ts`), chacun choisit son coup et sa cible ; l'IA vise le
   plus faible le plus souvent. Migration 007.
+  **8 types** : + Pluvieux, Ensoleillé, Glacé (triangle Pluvieux > Ensoleillé > Glacé > Pluvieux ; chaque type a
+  autant de forces que de faiblesses, vérifié au chargement) ; **météo** (Averse → pluie, Canicule → soleil, Blizzard →
+  neige, 4 tours : ×1,3 au type favorisé, ×0,75 aux types gênés, la pluie soigne les Pluvieux, la neige use les non
+  Glacés) ; **gel** (un tour sans agir) ; **double type** (`type2` : les deux multiplicateurs, kit = 2 attaques du
+  1er type + la 1re du 2e + la défense du 1er). 5 familiers de boutique : Hiboréal (Glacé, rare), Ondinelle
+  (Pluvieux), Solarion (Ensoleillé), épiques ; Yéticime (Glacé + Montagne), Phénixol (Ensoleillé + Vitesse),
+  légendaires. Chaque familier attaque à sa façon (`.atk-<espèce>` dans style.css : roule, zigzague, piétine, pique…).
   Prochaine étape : brancher un vrai paiement (App Store / Stripe).
 - **Points** (anciennement « crédits » ; `app/explore/credits.py`, `src/credits.ts`) : **gains** en place — 1/km couru, +2/km de chemin
   nouveau, 10/km², lieux 1–10, paliers de commune 10–100, 25/badge ; journal par compte (table `credits`, clé unique,
@@ -98,7 +105,7 @@ prochaines étapes) et la section « État actuel » ci-dessous, puis committer 
   import en arrière-plan, bandeau des nouvelles sorties) ; évaluation de chaque sortie de 1 à 5 sur
   8 critères (sécurité, éclairage, beauté du paysage, plaisir, entretien, abri, tranquillité,
   peu de circulation) + commentaire, en attendant de les reporter sur les tronçons (étape 3).
-- Tests : 155 OK, 1 ignoré.
+- Tests : 158 OK, 1 ignoré.
 
 ## Architecture
 - backend/ : Python 3.12, FastAPI (`app/api.py`), PostgreSQL + PostGIS prévu (docker-compose, pas encore utilisé)
